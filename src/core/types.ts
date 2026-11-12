@@ -1,0 +1,292 @@
+// Shared data types. Pure TypeScript: no three.js imports, so data and logic can be unit-tested in Node.
+
+export type StatKey =
+  | 'maxHealth'
+  | 'stamina'
+  | 'staminaRegen'
+  | 'damage'
+  | 'moveSpeed'
+  | 'sprintSpeed'
+  | 'attackSpeed'
+  | 'defense'
+  | 'size';
+
+export type Stats = Record<StatKey, number>;
+
+/** 'speed' is shorthand for both moveSpeed and sprintSpeed. */
+export type ModStat = StatKey | 'speed';
+
+export interface StatMod {
+  stat: ModStat;
+  /** Fractional change, e.g. 0.2 = +20%. Percentages on the same stat add together. */
+  pct?: number;
+  /** Flat amount added after percentages. */
+  flat?: number;
+}
+
+export type StageId = 'juvenile' | 'adult' | 'alpha';
+export type BiomeId = 'forest' | 'jungle' | 'plains' | 'winter';
+export type Diet = 'carnivore' | 'herbivore' | 'omnivore';
+export type FoodKind = 'carcass' | 'fish' | 'fruit' | 'plant';
+
+export interface StageDef {
+  id: StageId;
+  name: string;
+  levelRequired: number;
+  sizeScale: number;
+  /** Multiplier on max health and damage. */
+  powerMult: number;
+  /** Growth meter needed to leave this stage; null for the final stage. */
+  growthToNext: number | null;
+  /** Head size multiplier so juveniles read as young animals. */
+  headScale: number;
+}
+
+export interface BiomeModDef {
+  biome: BiomeId;
+  stat: ModStat;
+  pct: number;
+  /** Only active when the condition holds. */
+  condition?: 'nearWater';
+}
+
+// ---------- Animal appearance ----------
+
+export type FeatureId =
+  | 'maneSmall'
+  | 'mane'
+  | 'ruff'
+  | 'scar'
+  | 'hump'
+  | 'antlersSmall'
+  | 'antlers'
+  | 'tusks'
+  | 'ridge'
+  | 'tailTipLight'
+  | 'tailTipDark';
+
+export interface BodyColors {
+  body: number;
+  belly: number;
+  accent: number;
+}
+
+/** Parametric quadruped proportions, in metres at size 1.0. */
+export interface BodyPlan {
+  bodyLength: number;
+  bodyHeight: number;
+  bodyWidth: number;
+  legLength: number;
+  legThickness: number;
+  neckLength: number;
+  /** Radians above horizontal. */
+  neckAngle: number;
+  headSize: number;
+  snoutLength: number;
+  ears: 'pointed' | 'round' | 'long' | 'none';
+  earSize: number;
+  tail: 'bushy' | 'tuft' | 'stub' | 'thin';
+  tailLength: number;
+  /** Front torso bulk multiplier (1 = same as the middle). */
+  chestBulk: number;
+}
+
+// ---------- Abilities ----------
+
+export type AbilityEffect =
+  | {
+      kind: 'leap';
+      distance: number;
+      duration: number;
+      damageMult: number;
+      radius: number;
+      knockback: number;
+      stun?: number;
+    }
+  | {
+      kind: 'melee';
+      windup: number;
+      damageMult: number;
+      range: number;
+      arcDeg: number;
+      knockback: number;
+      hits?: number;
+      hitInterval?: number;
+      bleed?: { dpsMult: number; duration: number };
+      selfRoot?: boolean;
+    }
+  | {
+      kind: 'aoe';
+      windup: number;
+      radius: number;
+      damageMult: number;
+      knockback: number;
+      stun?: number;
+      slow?: { pct: number; duration: number };
+    }
+  | { kind: 'buff'; duration: number; mods: StatMod[] }
+  | {
+      kind: 'passive';
+      mods?: StatMod[];
+      /** Bonus damage against targets below a health fraction. */
+      lowHealthBonus?: { threshold: number; pct: number };
+      swim?: { speedPct: number };
+      foodBonus?: { kind: FoodKind; pct: number };
+    };
+
+export interface AbilityDef {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  signature?: boolean;
+  maxRank: number;
+  /** Each rank after the first multiplies the effect by (1 + rankScale). */
+  rankScale: number;
+  cooldown: number;
+  staminaCost: number;
+  effect: AbilityEffect;
+  /** Set when the effect is a placeholder for a later milestone. */
+  todo?: string;
+}
+
+// ---------- Species ----------
+
+export interface BasicAttackDef {
+  range: number;
+  arcDeg: number;
+  knockback: number;
+}
+
+export interface SpeciesVariant {
+  id: string;
+  name: string;
+  colors: BodyColors;
+  biomeMods: BiomeModDef[];
+  /** Ability ids in menu order. Active abilities map to keys 1, 2, 3 in this order. */
+  abilities: string[];
+}
+
+export interface SpeciesDef {
+  id: string;
+  name: string;
+  role: string;
+  diet: Diet;
+  /** Milestone in which the species becomes playable. */
+  playableFrom: number;
+  rig: 'quadruped' | 'winged';
+  baseStats: Stats;
+  body: BodyPlan;
+  stageFeatures: Record<StageId, FeatureId[]>;
+  attack: BasicAttackDef;
+  variants: SpeciesVariant[];
+}
+
+// ---------- Enemies ----------
+
+export interface EnemyAttackDef {
+  id: string;
+  kind: 'melee' | 'charge' | 'aoe';
+  /** Melee/aoe: reach beyond body radii. Charge: maximum start distance. */
+  range: number;
+  windup: number;
+  recover: number;
+  damageMult: number;
+  knockback: number;
+  cooldown: number;
+  arcDeg?: number;
+  /** Charge only. */
+  minRange?: number;
+  speed?: number;
+  duration?: number;
+  /** Aoe only. */
+  radius?: number;
+}
+
+export interface EnemyBehavior {
+  /** Distance at which the animal notices the player. */
+  aggroRadius: number;
+  /** Attacks on sight. */
+  aggressive: boolean;
+  /** Runs on sight (prey). */
+  fleeOnSight: boolean;
+  /** Runs when health drops below this fraction (0 = never). */
+  fleeHealthPct: number;
+  /** Gives up the chase beyond this distance from home. */
+  leashRadius: number;
+  wanderRadius: number;
+  /** Seconds of full-speed fleeing before the animal is winded. */
+  fleeBurst: number;
+  windedSpeedMult: number;
+}
+
+export interface EnemyDef {
+  id: string;
+  name: string;
+  baseStats: Stats;
+  body: BodyPlan;
+  colors: BodyColors;
+  features: FeatureId[];
+  behavior: EnemyBehavior;
+  attacks: EnemyAttackDef[];
+  /** XP at level 1. */
+  xp: number;
+  /** Growth given by its carcass. */
+  carcassGrowth: number;
+}
+
+export interface BossDef {
+  id: string;
+  biome: BiomeId;
+  title: string;
+  level: number;
+  enemy: EnemyDef;
+}
+
+// ---------- Biomes ----------
+
+export interface SpawnZoneDef {
+  enemyId: string;
+  count: number;
+  x: number;
+  z: number;
+  radius: number;
+  levelMin: number;
+  levelMax: number;
+}
+
+export interface BiomePalette {
+  ground: number;
+  groundAlt: number;
+  dirt: number;
+  rock: number;
+  foliage: number;
+  foliageAlt: number;
+  trunk: number;
+  water: number;
+  skyTop: number;
+  skyHorizon: number;
+  fog: number;
+  sun: number;
+}
+
+export interface BiomeDef {
+  id: BiomeId;
+  name: string;
+  order: number;
+  /** False for biomes that arrive in a later milestone. */
+  implemented: boolean;
+  bossId: string | null;
+  palette: BiomePalette;
+  fogNear: number;
+  fogFar: number;
+}
+
+export interface FoodDef {
+  kind: FoodKind;
+  name: string;
+  /** Default growth value (carcasses use the enemy's own value). */
+  growth: number;
+  /** Fraction of max health restored. */
+  healPct: number;
+}
