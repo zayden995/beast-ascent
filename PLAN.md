@@ -41,6 +41,7 @@ src/
     damage.ts              damage and defense formula
     biome.ts               which buff/nerf is active for a species in a biome
     saveData.ts            validates and clamps whatever comes out of storage
+    dayNight.ts            time of day -> sun height, daylight, twilight, phase name
     heightfield.ts         forest terrain height function
   animals/
     AnimalModel.ts         interface gameplay code talks to (glTF can replace it later)
@@ -49,7 +50,7 @@ src/
   world/
     terrain.ts             terrain mesh from the height function
     forest.ts              instanced trees/rocks/grass, pond, den, arena, gate, world queries
-    sky.ts                 sky dome, clouds, lights, fog
+    sky.ts                 sky dome, sun, moon, stars, clouds, lights, fog; the day and night cycle
     colliders.ts           static circle colliders in a grid
   systems/
     input.ts               keyboard, mouse, pointer lock
@@ -61,6 +62,7 @@ src/
     ai.ts                  enemy state machine
     spawner.ts             spawn zones, respawn, boss
     food.ts                carcasses, fish, berries
+    ambient.ts             peaceful animals behind the title screen (scenery, not the enemy AI)
     growth.ts              profile + both growth tracks
     fx.ts                  slashes, shockwaves, attack warnings
     save.ts                localStorage wrapper
@@ -77,7 +79,7 @@ src/
     Game.ts                one play session: owns the systems and the update loop
     debug.ts               test hooks (dev / ?debug only)
 tests/
-  unit/*.test.ts           26 logic and data tests (node --test, no extra dependency)
+  unit/*.test.ts           32 logic and data tests (node --test, no extra dependency)
   e2e/smoke.mjs            Playwright: plays the core loop for each species, checks console, screenshots
 ```
 
@@ -99,7 +101,13 @@ Choices the bible leaves open (also recorded in its Decisions Log):
 - Forest enemies: **deer** (flees on sight), **boar** (fights back, charges), **fox** (small, fast, flees when hurt).
 - Each player level adds a small stat bonus so that visible enemy levels are a fair comparison.
 - Eating also heals a little; slow health regeneration out of combat.
-- Death penalty: lose 25% of the XP progress toward the next level.
+- Death resets the animal to a level 1 Juvenile of the same species; ruled biomes are kept. (First build: lose 25% of XP progress. Changed after the user's playtest.)
+- The boss returns each time the player re-enters its biome; the biome stays ruled.
+- Day and night cycle: 6 minutes per day, visual only (moved forward from M4 after the user's playtest).
+- The boss pays its full XP once, then 50 XP per repeat win.
+- The den is a safe refuge (18 m, ring of stones): wild animals never enter and ignore a player inside.
+- Rival predators (wild wolves, lion, bear) live at the edges of the Forest; the player's own species is left out.
+- The title screen shows the forest's animals roaming by the pond.
 - `@types/three` (type definitions only) was added as a dev dependency.
 - Evolving is done from the Tab menu (no extra key).
 - Polar bear has two active abilities (Heavy Swipe, Ice Slam) and two passives, exactly as listed in the bible.
@@ -107,7 +115,7 @@ Choices the bible leaves open (also recorded in its Decisions Log):
 
 ## Milestone 1 task list
 
-Status on 2026-11-13: all tasks built and verified (26 unit tests, 74 browser checks, production build). Waiting for the user's playtest.
+Status on 2026-11-14: M1 is DONE and accepted by the user. All tasks built, and the user's playtest points addressed (tasks 16 and 17). Verified with 32 unit tests, 101 browser checks and a production build. M2 is next; its plan is not written yet (discuss it with the user first, see CLAUDE.md "Notes for Milestone 2").
 
 - [x] **1. Scaffold** — Vite + TS project, scripts (`dev`, `build`, `test`, `test:e2e`), `.gitignore`. Check: `npm run build` succeeds.
 - [x] **2. Data + logic** — all data files, pure logic, unit tests written first. Check: `npm test` passes.
@@ -124,11 +132,14 @@ Status on 2026-11-13: all tasks built and verified (26 unit tests, 74 browser ch
 - [x] **13. Menus** — title, species select with 3D turntable, pause, Tab growth/ability menu.
 - [x] **14. Verification** — Playwright run of the whole loop for each species, zero console errors, screenshots reviewed, `npm run build` clean.
 - [x] **15. Wrap-up** — update CLAUDE.md (Milestone Status, Decisions Log, Known Issues, notes for M2).
+- [x] **16. Playtest feedback (2026-11-14)** — catchable prey, boss returns on re-entry, day and night cycle, death resets the animal, animals on the title screen. Details in the CLAUDE.md Decisions Log.
+- [x] **17. Second round of feedback (2026-11-14)** — repeat boss wins pay 50 XP, den refuge, 6 minute day, rival predators.
 
 ## Review focus (things the tests must not miss)
 
 - Pointer lock refused or lost (Esc) must pause cleanly, never throw.
 - localStorage unavailable or holding a corrupt/old save must fall back to a new game.
-- Dying during the boss fight resets the boss and never removes a level or life stage.
+- Dying during the boss fight resets the boss. Dying anywhere resets the animal to a level 1 Juvenile, saves at once, and never removes a ruled biome.
+- Prey must stay catchable by the slowest playable species (unit test on the data, hunt checks in the browser test).
 - Evolving while buffs or biome modifiers are active keeps health ratio and stats consistent.
 - A low frame rate (large `dt`) must not let actors tunnel through the boundary or fall through terrain.

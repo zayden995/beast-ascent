@@ -103,6 +103,46 @@ async function fight(kind, { maxSeconds = 40, keepAlive = false } = {}) {
   return { killed: !alive, hurt, seconds: t, target, states };
 }
 
+/** Hunt prey the way a player does: sprint at it and attack when in reach. */
+async function hunt(kind, maxSeconds = 45) {
+  let s = await B.state();
+  const target = s.enemies
+    .filter((e) => e.alive && e.kind === kind && ['idle', 'wander'].includes(e.state))
+    .sort((a, b) => a.level - b.level)[0];
+  if (!target) return { killed: false, reason: `no calm ${kind}` };
+  await B.call('setHp', s.player.maxHp);
+  // Start 20 m away so the prey notices the player and bolts, as in real play.
+  await B.teleport(target.x, target.z + 20);
+  await B.advance(0.3);
+  await page.mouse.move(640, 360);
+  await page.keyboard.down('KeyW');
+  await page.keyboard.down('ShiftLeft');
+  let t = 0;
+  let attacking = false;
+  let fled = false;
+  let alive = true;
+  while (alive && t < maxSeconds) {
+    s = await B.state();
+    const now = s.enemies.find((e) => e.id === target.id);
+    alive = !!now && now.alive;
+    if (!alive) break;
+    if (now.state === 'flee') fled = true;
+    await B.lookAt(now.x, now.z);
+    // This checks that prey can be caught, not that the hunter survives whatever else it runs into.
+    if (s.player.hp < s.player.maxHp * 0.6) await B.call('setHp', s.player.maxHp);
+    const inReach = now.dist < 2.6;
+    if (inReach && !attacking) await page.mouse.down();
+    if (!inReach && attacking) await page.mouse.up();
+    attacking = inReach;
+    await B.advance(0.1);
+    t += 0.1;
+  }
+  if (attacking) await page.mouse.up();
+  await page.keyboard.up('ShiftLeft');
+  await page.keyboard.up('KeyW');
+  return { killed: !alive, fled, seconds: Math.round(t * 10) / 10, level: target.level };
+}
+
 try {
   // ---------- Title and species select ----------
   await page.goto(url);
@@ -110,6 +150,12 @@ try {
   await page.waitForTimeout(600);
   check('title screen shows', await page.locator('.title h1').isVisible());
   check('no Continue without a save', (await page.getByRole('button', { name: /Continue/ }).count()) === 0);
+  const herd = await B.call('titleAnimals');
+  await B.call('advanceTitle', 30);
+  const herdLater = await B.call('titleAnimals');
+  const roamed = herd.filter((a, i) => Math.hypot(herdLater[i].x - a.x, herdLater[i].z - a.z) > 0.5).length;
+  check('animals roam behind the title screen: prey and predators', herd.length >= 8 && herd.some((a) => a.predator) && herd.some((a) => !a.predator) && roamed >= herd.length - 2, `${herd.length} animals, ${roamed} moved in 30 s`);
+  await B.call('setTimeOfDay', 0.34);
   await shot('01-title');
 
   let begin = await newGame('Lion');
@@ -137,8 +183,86 @@ try {
   check('game starts as a level 1 juvenile wolf', s.screen === 'playing' && s.player.level === 1 && s.player.stage === 'juvenile');
   check('wolf gets its Forest speed buff', s.player.mods.includes('speed:0.2') && Math.abs(s.player.moveSpeed - 6.2 * 1.2) < 0.01);
   check('juvenile is 0.6 size', Math.abs(s.player.size - 0.6) < 1e-6);
-  check('3 enemy types + boss are in the world', new Set(s.enemies.map((e) => e.kind)).size === 4 && s.enemies.some((e) => e.boss), `${s.enemies.length} animals`);
+  const kinds = s.enemies.map((e) => e.kind);
+  check('3 enemy types + boss are in the world', ['deer', 'boar', 'fox'].every((k) => kinds.includes(k)) && s.enemies.some((e) => e.boss), `${s.enemies.length} animals`);
+  check('a wolf meets rival predators (a lion and a bear), never its own kind',
+    kinds.filter((k) => k === 'rival_lion').length === 1 && kinds.filter((k) => k === 'rival_bear').length === 1 && !kinds.includes('rival_wolf'), kinds.filter((k) => k.startsWith('rival')).join(' '));
+  check('title animals are gone once the game starts', (await B.call('titleAnimals')) === null);
   await shot('05-gameplay-start');
+
+  // Day and night.
+  await settle();
+  check('a session starts in daylight and the HUD says so', s.phase === 'day' && s.daylight === 1 && (await page.locator('.hud-biome small').textContent()) === 'Day', s.phase);
+  // Kept short: a fox may wander up and attack an animal that stands idle at the den for long.
+  const tod0 = s.timeOfDay;
+  await B.advance(1.2);
+  s = await B.state();
+  check('time of day moves on while playing (6 minute cycle)', Math.abs(s.timeOfDay - tod0 - 1.2 / 360) < 1e-4, `${tod0.toFixed(4)} -> ${s.timeOfDay.toFixed(4)}`);
+  await B.call('setTimeOfDay', 0.785);
+  await settle();
+  check('sunset is called Dusk', (await B.state()).phase === 'dusk' && (await page.locator('.hud-biome small').textContent()) === 'Dusk');
+  await shot('20-sunset');
+  await B.call('setTimeOfDay', 0);
+  await settle();
+  s = await B.state();
+  check('midnight is Night, with no daylight', s.phase === 'night' && s.daylight === 0 && (await page.locator('.hud-biome small').textContent()) === 'Night');
+  await shot('21-night');
+  await B.call('setTimeOfDay', 0.34);
+
+  // The den is a safe refuge: wild animals ignore a player inside it and never come in.
+  await B.teleport(0, 43, Math.PI);
+  await B.advance(0.1);
+  await settle();
+  s = await B.state();
+  check('the player starts inside the den refuge and the HUD says so', s.player.safe && /Safe at the den/.test(await page.locator('.hud-status').textContent()));
+  // Put a boar just outside the ring of stones, 8 m from a player standing inside it.
+  const moved = await page.evaluate(() => {
+    const g = window.__beast.app.game;
+    const boar = g.spawner.enemies.find((e) => e.def.id === 'boar');
+    const keep = { id: boar.id, x: boar.pos.x, z: boar.pos.z, homeX: boar.homeX, homeZ: boar.homeZ };
+    boar.pos.set(0, g.world.heightAt(0, 30), 30);
+    boar.homeX = 0;
+    boar.homeZ = 30;
+    boar.state = 'idle';
+    boar.timer = 99;
+    return keep;
+  });
+  const guard = async () => (await B.state()).enemies.find((e) => e.id === moved.id);
+  await B.teleport(0, 38, Math.PI);
+  await B.advance(5);
+  s = await B.state();
+  let g1 = await guard();
+  check('a boar ignores a player inside the refuge, 8 m away', s.player.safe && s.player.hp === s.player.maxHp && g1.state === 'idle' && g1.dist < 10, `${g1.state}, ${g1.dist.toFixed(1)} m`);
+  // Stand on the far side of the boar, so that its knockback cannot push the player back into safety.
+  await B.teleport(0, 26.5, 0);
+  await B.advance(1.5);
+  s = await B.state();
+  g1 = await guard();
+  check('outside the refuge the same boar attacks', !s.player.safe && ['chase', 'windup', 'charging', 'recover'].includes(g1.state), g1.state);
+  await B.teleport(0, 43, Math.PI);
+  await B.advance(4);
+  s = await B.state();
+  g1 = await guard();
+  const hpThen = s.player.hp;
+  await B.advance(3);
+  s = await B.state();
+  check('it gives up when the player steps back in, and never enters the refuge',
+    s.player.safe && s.player.hp >= hpThen && ['return', 'idle', 'wander'].includes(g1.state) && Math.hypot(g1.x, g1.z - 52) >= 17.99,
+    `${g1.state}, ${Math.hypot(g1.x, g1.z - 52).toFixed(1)} m from the den`);
+  await page.evaluate((k) => {
+    const g = window.__beast.app.game;
+    const boar = g.spawner.enemies.find((e) => e.id === k.id);
+    boar.pos.set(k.x, g.world.heightAt(k.x, k.z), k.z);
+    boar.homeX = k.homeX;
+    boar.homeZ = k.homeZ;
+    boar.state = 'idle';
+    boar.timer = 1;
+    boar.provoked = false;
+  }, moved);
+  await B.call('setHp', s.player.maxHp);
+  await B.teleport(0, 43, Math.PI);
+  await B.advance(0.1);
+  s = await B.state();
 
   const start = s.player;
   await page.keyboard.down('KeyW');
@@ -205,7 +329,7 @@ try {
   await shot('06-carcass-prompt');
   await tap('KeyE');
   s = await B.state();
-  check('eating fills the growth meter', s.player.growth > 0 && !s.food.some((f) => f.kind === 'carcass'), `growth ${s.player.growth}`);
+  check('eating fills the growth meter and uses up the carcass', s.player.growth > 0 && s.food.filter((f) => f.kind === 'carcass').length === carcass.length - 1, `growth ${s.player.growth}`);
 
   // Signature ability.
   const prey = nearest(s, 'boar') ?? nearest(s);
@@ -288,8 +412,8 @@ try {
   check('boss bar appears', await page.locator('.hud-boss').isVisible());
   await shot('10-boss-engaged');
 
-  // Die to the boss: respawn at the den, keep level and stage, boss resets.
-  const levelBefore = s.player.level;
+  // Die to the boss: wake at the den as a level 1 Juvenile with nothing but the signature ability.
+  check('about to die as a grown animal', s.player.level >= 8 && s.player.stage === 'adult' && Object.keys(s.player.ranks).length === 4);
   await B.teleport(boss.x, boss.z + 4);
   await B.call('setHp', 1);
   let waited = 0;
@@ -301,22 +425,44 @@ try {
   }
   s = await B.state();
   check('player can die', s.player.dead, `after ${waited}s`);
-  check('death screen shows', await page.locator('.hud-death').isVisible());
+  check('death screen shows and says what is lost', (await page.locator('.hud-death').isVisible()) && /level, abilities and growth are lost/i.test(await page.locator('.hud-death').innerText()));
+  const savedDead = await page.evaluate(() => JSON.parse(localStorage.getItem('beastAscent.save.v1')));
+  check('the reset is saved the moment the animal dies', savedDead.progress.level === 1 && savedDead.progress.stage === 'juvenile');
   await shot('11-defeated');
-  await B.advance(3);
+  await B.advance(4);
   s = await B.state();
   const d = s.player;
   check('respawns at the den', !d.dead && d.alive && Math.hypot(d.x - 0, d.z - 43) < 2 && d.hp === d.maxHp);
-  check('death never removes a level or life stage', d.level === levelBefore && d.stage === 'adult');
+  check('death resets the animal: level 1 Juvenile, no XP, growth, points or bought abilities',
+    d.level === 1 && d.stage === 'juvenile' && d.xp === 0 && d.growth === 0 && d.abilityPoints === 0 && JSON.stringify(d.ranks) === '{"wolf_pounce":1}',
+    `level ${d.level} ${d.stage}, ranks ${JSON.stringify(d.ranks)}`);
+  check('the reset animal has Juvenile size and health again', Math.abs(d.size - 0.6) < 1e-6 && Math.abs(d.maxHp - 90) < 0.01, `size ${d.size}, hp ${d.maxHp}`);
   await B.advance(12);
   s = await B.state();
   boss = s.enemies.find((e) => e.boss);
   check('boss resets to full health after the player dies', boss.hp === boss.maxHp && ['idle', 'wander', 'return'].includes(boss.state), `${boss.hp}/${boss.maxHp} ${boss.state}`);
 
+  // Grow back to an Adult before taking on the boss again.
+  await B.call('grantXp', 600);
+  await B.call('addGrowth', 100);
+  await page.keyboard.press('Tab');
+  await page.locator('.growth-card').waitFor();
+  for (let i = 0; i < 3; i++) await page.locator('.ability-row .chip:not(:disabled)', { hasText: 'Unlock' }).first().click();
+  await evolveBtn.click();
+  await B.advance(0.2);
+  s = await B.state();
+  check('the animal can grow back to Adult after dying', s.player.stage === 'adult' && s.player.level >= 8 && Object.keys(s.player.ranks).length === 4 && s.screen === 'playing');
+
   await B.teleport(boss.x, boss.z + 5);
+  const watchXp = () => page.evaluate(() => {
+    window.__xp = [];
+    window.__beast.app.game.events.on('xp', (e) => window.__xp.push(e.amount));
+  });
+  await watchXp();
   const bossFight = await fight('boss', { maxSeconds: 240, keepAlive: true });
   s = await B.state();
   check('boss can be defeated', bossFight.killed, `${bossFight.seconds}s`);
+  check('the first win over the boss pays 300 XP', (await page.evaluate(() => window.__xp)).join() === '300');
   check('"Forest Ruled": biome ruled, next biome unlocked, gate open', s.ruled.includes('forest') && s.unlocked.includes('jungle') && s.gateOpen);
   check('"Forest Ruled" banner shows', /Forest Ruled/.test(await page.locator('.hud').innerText()));
   await shot('12-forest-ruled');
@@ -353,7 +499,33 @@ try {
   await B.advance(0.2);
   s = await B.state();
   check('Continue restores species, stage, level, abilities and ruled biomes after a reload',
-    s.player.stage === 'adult' && s.player.level === level && Object.keys(s.player.ranks).length === 4 && s.ruled.includes('forest') && s.gateOpen && !s.enemies.some((e) => e.boss));
+    s.player.stage === 'adult' && s.player.level === level && Object.keys(s.player.ranks).length === 4 && s.ruled.includes('forest') && s.gateOpen);
+  boss = s.enemies.find((e) => e.boss);
+  check('the boss is back when the player returns to the Forest, at full health', !!boss && boss.alive && boss.hp === boss.maxHp, boss ? `${boss.hp}/${boss.maxHp}` : 'no boss');
+
+  // Beating it again pays the small repeat XP and rules nothing new.
+  await watchXp();
+  await page.evaluate(() => {
+    const g = window.__beast.app.game;
+    g.combat.damage(g.player.actor, g.spawner.boss, { damage: 1e7, knockback: 0 });
+  });
+  await B.advance(0.3);
+  await page.waitForTimeout(100);
+  s = await B.state();
+  check('a repeat win pays only 50 XP, says so, and keeps the Forest ruled',
+    (await page.evaluate(() => window.__xp)).join() === '50' && /defeated again: \+50 XP/.test(await page.locator('.hud-toasts').innerText()) && s.ruled.join() === 'forest' && s.gateOpen && !/Forest Ruled/.test(await page.locator('.hud').innerText()));
+  await B.advance(3);
+  check('the beaten boss stays down for the rest of this visit', !(await B.state()).enemies.some((e) => e.boss));
+
+  // Dying after ruling the Forest resets the animal but not the biome.
+  await page.evaluate(() => {
+    const g = window.__beast.app.game;
+    const foe = g.spawner.enemies.find((e) => e.alive);
+    g.combat.damage(foe, g.player.actor, { damage: 1e7, knockback: 0 });
+  });
+  await B.advance(4.5);
+  s = await B.state();
+  check('death keeps ruled biomes and the open gate', !s.player.dead && s.player.level === 1 && s.player.stage === 'juvenile' && s.ruled.includes('forest') && s.unlocked.includes('jungle') && s.gateOpen);
 
   // ---------- Lion ----------
   await page.keyboard.press('Escape');
@@ -387,6 +559,23 @@ try {
   await B.advance(0.8);
   s = await B.state();
   check('lion: Claw Swipe and Pounce Slam go on cooldown', s.player.cooldowns[1] > 0 && s.player.cooldowns[2] > 0);
+  await B.teleport(0, 40, Math.PI);
+  await B.advance(20);
+  const lionHunt = await hunt('deer');
+  check('lion can run down and kill a fleeing deer', lionHunt.killed && lionHunt.fled, JSON.stringify(lionHunt));
+
+  // Rival predators.
+  s = await B.state();
+  const lionRivals = s.enemies.map((e) => e.kind).filter((k) => k.startsWith('rival'));
+  check('a lion meets a pair of wolves and a bear, never another lion', lionRivals.sort().join() === 'rival_bear,rival_wolf,rival_wolf', lionRivals.join(' '));
+  const rivalWolf = nearest(s, 'rival_wolf');
+  await B.teleport(rivalWolf.x, rivalWolf.z + 9);
+  await B.advance(1.2);
+  const wolfNow = (await B.state()).enemies.find((e) => e.id === rivalWolf.id);
+  check('a rival wolf attacks on sight', ['chase', 'windup', 'charging', 'recover'].includes(wolfNow.state), wolfNow.state);
+  await B.call('grantXp', 400);
+  const rivalFight = await fight('rival_wolf', { keepAlive: true, maxSeconds: 60 });
+  check('a rival predator fights back and can be killed', rivalFight.killed && rivalFight.hurt, `${rivalFight.seconds}s`);
 
   // ---------- Bears ----------
   await page.keyboard.press('Escape');
@@ -431,6 +620,8 @@ try {
   await begin();
   s = await B.state();
   check('brown bear: +20% max health in the Forest', s.player.mods.includes('maxHealth:0.2') && Math.abs(s.player.maxHp - 180) < 0.01, `hp ${s.player.maxHp}`);
+  const bearRivals = s.enemies.map((e) => e.kind).filter((k) => k.startsWith('rival'));
+  check('a bear meets a pair of wolves and a lion, never another bear', bearRivals.sort().join() === 'rival_lion,rival_wolf,rival_wolf', bearRivals.join(' '));
   const bearTarget = nearest(s, 'boar');
   await B.teleport(bearTarget.x, bearTarget.z + 1.6);
   await B.lookAt(bearTarget.x, bearTarget.z);
@@ -440,6 +631,15 @@ try {
   const swiped = s.enemies.find((e) => e.id === bearTarget.id);
   check('Heavy Swipe hits hard', !swiped || swiped.hp < bearTarget.hp - 25, swiped ? `${bearTarget.hp.toFixed(0)} -> ${swiped.hp.toFixed(0)}` : 'killed');
   await shot('18-brown-bear');
+  // The bear is the slowest playable animal, and a level 1 Juvenile here: the hardest case for catching prey.
+  await B.teleport(0, 40, Math.PI);
+  await B.advance(20);
+  const bearDeer = await hunt('deer');
+  check('juvenile bear (slowest species) can run down and kill a fleeing deer', bearDeer.killed && bearDeer.fled, JSON.stringify(bearDeer));
+  await B.teleport(0, 40, Math.PI);
+  await B.advance(10);
+  const bearFox = await hunt('fox');
+  check('juvenile bear can catch a fox that bolts when hurt', bearFox.killed, JSON.stringify(bearFox));
 
   // ---------- Large time steps must not break the world ----------
   await B.teleport(96, 0, Math.PI / 2);

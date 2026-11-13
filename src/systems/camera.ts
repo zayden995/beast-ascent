@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { clamp, damp } from '../core/math.ts';
+import { TAU, clamp, damp, lerp } from '../core/math.ts';
+import type { TitleViewDef } from '../core/types.ts';
 import { TUNING } from '../data/tuning.ts';
 import type { HeightFn } from '../logic/heightfield.ts';
 
@@ -57,11 +58,14 @@ export class ThirdPersonCamera {
     this.snapNext = false;
   }
 
-  /** Slow orbit used behind the title screen. */
-  orbit(time: number, centre: THREE.Vector3, radius: number, height: number): void {
-    const a = time * 0.06;
-    this.camera.position.set(centre.x + Math.sin(a) * radius, centre.y + height, centre.z + Math.cos(a) * radius);
-    this.camera.lookAt(centre.x, centre.y + 2.5, centre.z);
+  /** Slow pan back and forth, used behind the title screen. */
+  pan(time: number, view: TitleViewDef, heightAt: HeightFn): void {
+    const k = 0.5 - 0.5 * Math.cos((time / view.period) * TAU);
+    const x = lerp(view.from.x, view.to.x, k);
+    const z = lerp(view.from.z, view.to.z, k);
+    this.camera.position.set(x, heightAt(x, z) + view.height, z);
+    const at = view.lookAt;
+    this.camera.lookAt(at.x, heightAt(at.x, at.z) + at.height, at.z);
   }
 
   resize(aspect: number): void {

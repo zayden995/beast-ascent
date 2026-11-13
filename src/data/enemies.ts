@@ -1,13 +1,15 @@
 import type { EnemyDef } from '../core/types.ts';
+import { getSpecies, getVariant } from './species.ts';
 
 // Wild animals. Base stats are level 1; health, damage and XP scale per level (see tuning.ts).
 
 const list: EnemyDef[] = [
   {
-    // Prey: runs on sight, never fights.
+    // Prey: runs on sight, never fights. It bolts in short bursts, then tires, so every playable
+    // species can run it down (its sprint stays below the slowest predator's sprint).
     id: 'deer', name: 'Deer',
     baseStats: {
-      maxHealth: 50, stamina: 100, staminaRegen: 10, damage: 0, moveSpeed: 2.6, sprintSpeed: 8.6,
+      maxHealth: 50, stamina: 100, staminaRegen: 10, damage: 0, moveSpeed: 2.6, sprintSpeed: 7.4,
       attackSpeed: 1, defense: 0, size: 1,
     },
     body: {
@@ -18,8 +20,9 @@ const list: EnemyDef[] = [
     colors: { body: 0xb5834f, belly: 0xead8b8, accent: 0x7a5630 },
     features: ['antlersSmall', 'tailTipLight'],
     behavior: {
-      aggroRadius: 13, aggressive: false, fleeOnSight: true, fleeHealthPct: 1,
-      leashRadius: 60, wanderRadius: 16, fleeBurst: 5, windedSpeedMult: 0.62,
+      aggroRadius: 11, aggressive: false, fleeOnSight: true, fleeHealthPct: 1,
+      leashRadius: 60, wanderRadius: 16, fleeBurst: 3.5, windedSeconds: 5, windedSpeedMult: 0.55,
+      woundedSpeedMult: 0.65,
     },
     attacks: [],
     xp: 12, carcassGrowth: 14,
@@ -40,7 +43,8 @@ const list: EnemyDef[] = [
     features: ['tusks', 'ridge'],
     behavior: {
       aggroRadius: 10, aggressive: true, fleeOnSight: false, fleeHealthPct: 0,
-      leashRadius: 38, wanderRadius: 12, fleeBurst: 0, windedSpeedMult: 1,
+      leashRadius: 38, wanderRadius: 12, fleeBurst: 0, windedSeconds: 0, windedSpeedMult: 1,
+      woundedSpeedMult: 1,
     },
     attacks: [
       {
@@ -58,7 +62,7 @@ const list: EnemyDef[] = [
     // Small and fast: nips at close range, bolts when hurt.
     id: 'fox', name: 'Fox',
     baseStats: {
-      maxHealth: 38, stamina: 100, staminaRegen: 10, damage: 6, moveSpeed: 3.0, sprintSpeed: 9,
+      maxHealth: 38, stamina: 100, staminaRegen: 10, damage: 6, moveSpeed: 3.0, sprintSpeed: 7.6,
       attackSpeed: 1, defense: 0, size: 1,
     },
     body: {
@@ -70,7 +74,8 @@ const list: EnemyDef[] = [
     features: ['tailTipLight'],
     behavior: {
       aggroRadius: 7, aggressive: true, fleeOnSight: false, fleeHealthPct: 0.4,
-      leashRadius: 30, wanderRadius: 14, fleeBurst: 4, windedSpeedMult: 0.7,
+      leashRadius: 30, wanderRadius: 14, fleeBurst: 2.5, windedSeconds: 4.5, windedSpeedMult: 0.6,
+      woundedSpeedMult: 0.7,
     },
     attacks: [
       {
@@ -81,6 +86,81 @@ const list: EnemyDef[] = [
     xp: 10, carcassGrowth: 8,
   },
 ];
+
+/** A wild predator that looks like a playable species: the adult body, colours and features. */
+function rival(speciesId: string, variantId: string, def: Omit<EnemyDef, 'body' | 'colors' | 'features'>): EnemyDef {
+  const species = getSpecies(speciesId);
+  return { ...def, body: species.body, colors: getVariant(species, variantId).colors, features: species.stageFeatures.adult };
+}
+
+const stands = {
+  aggressive: true, fleeOnSight: false, fleeHealthPct: 0, fleeBurst: 0, windedSeconds: 0, windedSpeedMult: 1, woundedSpeedMult: 1,
+};
+
+// Rival predators attack on sight and never run. They chase more slowly than any playable species
+// can sprint, so a fight with one can always be escaped (and the den is always safe).
+list.push(
+  rival('wolf', 'default', {
+    // Quick bites and a short lunge. Lives in a pair.
+    id: 'rival_wolf', name: 'Wolf',
+    baseStats: {
+      maxHealth: 65, stamina: 100, staminaRegen: 10, damage: 8, moveSpeed: 2.8, sprintSpeed: 7.8,
+      attackSpeed: 1, defense: 3, size: 1,
+    },
+    behavior: { ...stands, aggroRadius: 13, leashRadius: 42, wanderRadius: 16 },
+    attacks: [
+      {
+        id: 'bite', kind: 'melee', range: 1.0, windup: 0.35, recover: 0.55, damageMult: 1,
+        arcDeg: 100, knockback: 3, cooldown: 1.1,
+      },
+      {
+        id: 'lunge', kind: 'charge', range: 9, minRange: 4, windup: 0.5, recover: 0.8,
+        damageMult: 1.4, knockback: 6, cooldown: 6, speed: 14, duration: 0.5,
+      },
+    ],
+    xp: 30, carcassGrowth: 18,
+  }),
+  rival('lion', 'default', {
+    // Wide claw swipes and a pounce from range.
+    id: 'rival_lion', name: 'Lion',
+    baseStats: {
+      maxHealth: 85, stamina: 100, staminaRegen: 10, damage: 10, moveSpeed: 2.6, sprintSpeed: 7.4,
+      attackSpeed: 1, defense: 5, size: 1,
+    },
+    behavior: { ...stands, aggroRadius: 12, leashRadius: 40, wanderRadius: 14 },
+    attacks: [
+      {
+        id: 'claw', kind: 'melee', range: 1.3, windup: 0.45, recover: 0.7, damageMult: 1,
+        arcDeg: 130, knockback: 6, cooldown: 1.5,
+      },
+      {
+        id: 'pounce', kind: 'charge', range: 10, minRange: 5, windup: 0.7, recover: 1.0,
+        damageMult: 1.6, knockback: 9, cooldown: 7, speed: 14, duration: 0.6,
+      },
+    ],
+    xp: 40, carcassGrowth: 24,
+  }),
+  rival('bear', 'brown', {
+    // Slow and tough: a heavy swipe and a ground slam.
+    id: 'rival_bear', name: 'Bear',
+    baseStats: {
+      maxHealth: 120, stamina: 100, staminaRegen: 10, damage: 11, moveSpeed: 2.2, sprintSpeed: 6.6,
+      attackSpeed: 1, defense: 8, size: 1,
+    },
+    behavior: { ...stands, aggroRadius: 11, leashRadius: 36, wanderRadius: 12 },
+    attacks: [
+      {
+        id: 'swipe', kind: 'melee', range: 1.5, windup: 0.7, recover: 0.9, damageMult: 1.3,
+        arcDeg: 120, knockback: 8, cooldown: 2.0,
+      },
+      {
+        id: 'slam', kind: 'aoe', range: 2.0, radius: 4.5, windup: 0.9, recover: 1.1,
+        damageMult: 1.1, knockback: 7, cooldown: 9,
+      },
+    ],
+    xp: 50, carcassGrowth: 30,
+  }),
+);
 
 export const ENEMIES: Record<string, EnemyDef> = Object.fromEntries(list.map((e) => [e.id, e]));
 

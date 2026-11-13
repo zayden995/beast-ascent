@@ -1,5 +1,5 @@
 import type { AnimalModel } from '../animals/AnimalModel.ts';
-import { dampAngle } from '../core/math.ts';
+import { dampAngle, lerp } from '../core/math.ts';
 import type { EnemyAttackDef, EnemyDef, SpawnZoneDef } from '../core/types.ts';
 import { TUNING } from '../data/tuning.ts';
 import type { StatInputs } from '../logic/stats.ts';
@@ -99,6 +99,7 @@ function pickWanderTarget(e: EnemyActor, ctx: AiContext): void {
     const z = e.homeZ + Math.sin(a) * d;
     if (Math.hypot(x, z) > ctx.world.boundary - 3) continue;
     if (ctx.world.waterDepth(x, z) > 0.2) continue;
+    if (ctx.world.inRefuge(x, z, 2)) continue;
     e.targetX = x;
     e.targetZ = z;
     return;
@@ -170,7 +171,9 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
   const playerFromHome = Math.hypot(p.pos.x - e.homeX, p.pos.z - e.homeZ);
   // Bosses guard their arena: they notice anyone who steps inside it.
   const noticeDist = e.isBoss ? playerFromHome : dist;
-  const sees = p.alive && noticeDist < b.aggroRadius;
+  // The den is a refuge: a player inside it is left alone, and any chase ends at its edge.
+  const refuge = ctx.world.inRefuge(p.pos.x, p.pos.z);
+  const sees = p.alive && !refuge && noticeDist < b.aggroRadius;
   // A badly hurt animal stops picking fights and keeps its distance until it has recovered.
   const hurt = b.fleeHealthPct > 0 && e.hp / e.stats.maxHealth < b.fleeHealthPct;
   const walk = e.stats.moveSpeed;
@@ -192,7 +195,7 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
           e.startFlee();
           break;
         }
-        if (!hurt && ((sees && b.aggressive) || (e.provoked && p.alive && dist < b.aggroRadius * 2))) {
+        if (!hurt && ((sees && b.aggressive) || (e.provoked && p.alive && !refuge && dist < b.aggroRadius * 2))) {
           e.state = 'chase';
           break;
         }
@@ -216,7 +219,7 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
       }
       case 'chase': {
         const tooFar = e.isBoss ? playerFromHome > b.leashRadius + 6 : distHome > b.leashRadius;
-        if (!p.alive || tooFar) {
+        if (!p.alive || tooFar || refuge) {
           e.state = 'return';
           e.provoked = false;
           break;
@@ -269,7 +272,7 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
         const speed = atk?.speed ?? 12;
         e.vx = e.chargeX * speed;
         e.vz = e.chargeZ * speed;
-        if (atk && !e.chargeHit && p.alive && dist < e.radius + p.radius + 0.5) {
+        if (atk && !e.chargeHit && p.alive && !refuge && dist < e.radius + p.radius + 0.5) {
           e.chargeHit = true;
           ctx.combat.damage(e, p, { damage: e.stats.damage * atk.damageMult, knockback: atk.knockback });
         }
@@ -292,8 +295,9 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
       case 'flee': {
         e.fleeTime += dt;
         // Sprint in bursts, then tire: this is what lets a predator run prey down.
-        const cycle = b.fleeBurst + 4;
-        const winded = b.fleeBurst > 0 && e.fleeTime % cycle > b.fleeBurst;
+        const winded = b.fleeBurst > 0 && e.fleeTime % (b.fleeBurst + b.windedSeconds) > b.fleeBurst;
+        // A wounded animal cannot keep its pace, so every bite makes the next one easier.
+        const wounded = lerp(b.woundedSpeedMult, 1, e.hp / e.stats.maxHealth);
         let ax = -dx / (dist || 1);
         let az = -dz / (dist || 1);
         // Near the world edge, slide along it instead of running into the wall.
@@ -306,7 +310,7 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
           ax /= n;
           az /= n;
         }
-        moveToward(e, e.pos.x + ax * 5, e.pos.z + az * 5, run * (winded ? b.windedSpeedMult : 1), dt);
+        moveToward(e, e.pos.x + ax * 5, e.pos.z + az * 5, run * (winded ? b.windedSpeedMult : 1) * wounded, dt);
         if (!p.alive || dist > b.aggroRadius * 2.6) {
           e.state = 'return';
           e.provoked = false;
@@ -336,6 +340,7 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
   }
 
   integrate(e, dt, ctx.world);
+  ctx.world.keepOutOfRefuge(e.pos, e.radius);
   e.anim.speed = Math.hypot(e.vx, e.vz);
   e.anim.sprinting = e.anim.speed > walk * 1.6;
 }

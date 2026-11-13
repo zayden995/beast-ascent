@@ -3,7 +3,7 @@
 > **Instructions for Claude Code (read this first, every session):**
 > 1. Read this entire file at the start of every session, before writing or changing any code.
 > 2. This file is the source of truth for the design. Do NOT invent mechanics, species, biomes, abilities or numbers that contradict it. If something is not specified here, make the simplest reasonable choice, record it in the "Decisions Log" at the bottom, and tell the user in your final report.
-> 3. Build ONLY the milestone marked as CURRENT in "Milestone Status". Never build ahead.
+> 3. Build ONLY the milestone marked as CURRENT in "Milestone Status". Never build ahead. (Exception already made: at the user's request the day and night cycle was built in M1, ahead of M4.)
 > 4. Never claim something works unless you ran it. Verify by running (see "Verification").
 > 5. At the end of each session, update "Milestone Status", the "Decisions Log" and the "Known Issues / TODO" sections of this file.
 > 6. Numbers marked *(tunable)* are starting values. Keep them in data files so they are easy to change.
@@ -97,10 +97,10 @@ Starting values *(tunable)*:
 - Health, stamina, hit detection (hitboxes/arcs), knockback, damage numbers, hit flash.
 - Basic attack on left click. Abilities on 1/2/3 with cooldowns.
 - Dodge roll with brief invulnerability.
-- **Enemy AI states**: idle/wander, aggro, chase, attack, and **flee** (prey animals flee at low health or on sight).
+- **Enemy AI states**: idle/wander, aggro, chase, attack, and **flee** (prey animals flee at low health or on sight). Fleeing animals sprint in short bursts, then tire, and slow down as they are wounded, so that every playable species can run them down.
 - Enemies have a **visible level** above them so danger is readable (color-coded relative to the player's level).
 - Defeated animals drop **food** (carcass) and give XP.
-- Death: the player respawns at a **den** with a small penalty (lose some XP progress or growth-meter fill; never lose a life stage or level).
+- Death: the player respawns at a **den** and their animal is **reset**: back to a level 1 Juvenile of the same species, with no XP, growth, ability points or bought abilities. Ruled and unlocked biomes are kept. (Changed on 2026-11-14 at the user's request; the first design was a small XP penalty.)
 
 ### 4.4 Biomes, buffs and nerfs
 Each biome gives species-dependent **buffs or nerfs**. They are data-driven. Each species has favored and disfavored biomes, applying roughly **+/-15 to 25%** to one stat *(tunable)*. The HUD shows the active modifier.
@@ -121,6 +121,7 @@ Species not listed as favored or disfavored in a biome get no modifier there.
 ### 4.5 Bosses and ruling a biome
 - Each biome has **one boss**: a large unique animal fought in an **arena**.
 - Defeating the boss = **that biome is ruled**. A "Biome Ruled" message appears and the gate to the next biome opens.
+- The boss **returns every time the player leaves the biome and comes back** (like a domain boss). The biome stays ruled and its gate stays open; beating the boss again unlocks nothing new and pays only a small repeat XP (Forest: 300 XP the first time, 50 XP after that).
 - Biome order: **Forest -> Jungle -> Plains -> Winter** *(tunable)*.
 - The player may freely re-explore ruled biomes and any biome already unlocked.
 - **Win condition**: all four biomes ruled.
@@ -135,7 +136,9 @@ Save to **localStorage** (selected species and variant, level, XP, life stage, g
 
 - Four biomes, each with distinct terrain, plants, enemies, boss arena and den spots.
 - Early milestones: one biome at a time, with a bounded world (world boundary).
-- Later milestones: larger world, minimap, day/night cycle, dens/rest spots.
+- A **day and night cycle** runs in every biome (built in M1 at the user's request; 6 minutes per day; visual only for now).
+- The **den is a safe refuge**: a ring of pale stones marks it, wild animals never enter it, and they ignore a player who is inside.
+- Later milestones: larger world, minimap, dens/rest spots.
 - Not planned: massive streamed worlds, dungeons, NPC dialogue, crafting, multiplayer (multiplayer may be considered after Milestone 5).
 
 Starter enemy roster (placeholders, to be refined; all enemy animals are data-driven):
@@ -143,7 +146,7 @@ Starter enemy roster (placeholders, to be refined; all enemy animals are data-dr
 - **Jungle**: monkey, snake, capybara/tapir.
 - **Plains**: zebra/antelope (prey), hyena, buffalo.
 - **Winter**: arctic hare, seal, arctic fox.
-- Wild animals also can include other predator species not chosen by the player, so players meet "competing" animals.
+- Wild animals also include the other predator species not chosen by the player, so players meet "competing" animals. In the Forest (built in M1): a pair of wolves, a lion and a bear, each in its own territory; the player's own species is left out, so 2 or 3 rivals are met.
 
 ---
 
@@ -183,7 +186,7 @@ Each species has a **signature ability** (available at level 1 to 3) plus upgrad
 
 HUD: health bar, stamina bar, XP bar and level, growth meter, ability icons with cooldowns, biome name with active buff/nerf indicator, damage numbers, enemy level tags, interaction prompts (eat, enter gate).
 
-Menus: Title screen -> Species select (3D turntable preview showing stats, diet, favored/disfavored biomes, variant toggle for bear) -> Game. Pause menu. Tab growth/ability menu (unlock abilities, see growth meter, evolve button when eligible).
+Menus: Title screen (the biome's animals roam peacefully behind it) -> Species select (3D turntable preview showing stats, diet, favored/disfavored biomes, variant toggle for bear) -> Game. Pause menu. Tab growth/ability menu (unlock abilities, see growth meter, evolve button when eligible).
 
 ---
 
@@ -207,30 +210,31 @@ Menus: Title screen -> Species select (3D turntable preview showing stats, diet,
 | **M1** | Playable vertical slice: Forest only, Wolf/Lion/Bear, core loop (see Section 10) |
 | M2 | Remaining species (Tiger, Elephant, Crocodile, Eagle with flight) and the full Alpha stage |
 | M3 | Jungle, Plains and Winter biomes, with bosses and the buff/nerf system fully active across biomes |
-| M4 | Larger open world, minimap, day/night cycle, dens/rest spots |
+| M4 | Larger open world, minimap, dens/rest spots. (The day/night cycle was built early, in M1. Gameplay effects of night, if wanted, belong here.) |
 | M5 | Audio, boss phases, balance pass, polish, settings, optional glTF art |
 | After | Optional: multiplayer, touch controls, real animal art (Higgsfield or free glTF assets) |
 
 ### Milestone Status
-- M1: **CURRENT**. Built on 2026-11-13; every automated check passes (see "Verification"). Waiting for the user's own playtest and sign-off. Do not start M2 until the user says M1 is accepted.
-- M2 to M5: not started
+- M1: **DONE, accepted by the user on 2026-11-14.** Built on 2026-11-13, then revised the same day after the user's two rounds of playtest feedback (catchable prey, boss returns on re-entry and pays 50 XP after the first win, day and night cycle of 6 minutes, death resets the animal, animals on the title screen, a safe den refuge, rival predators). See the Decisions Log. Every automated check passes (see "Verification"). Acceptance was inferred from "seems good" plus the user's wish to start M2; the user did not separately comment on the camera, UI style or the `@types/three` dev dependency, so those stand as built.
+- M2: **CURRENT, not started.** Next session begins here: read "Notes for Milestone 2" below, then discuss the plan with the user before building (the user's rules ask for approval of the approach first).
+- M3 to M5: not started
 
 (Update this list at the end of every session.)
 
 ---
 
-## 10. Milestone 1 Scope (CURRENT)
+## 10. Milestone 1 Scope (DONE)
 
-- Title screen -> species select (3D turntable preview, stats, diet, favored/disfavored biomes) -> Forest world.
+- Title screen (forest animals roaming by the pond) -> species select (3D turntable preview, stats, diet, favored/disfavored biomes) -> Forest world.
 - Playable: **Wolf, Lion, Bear (brown and polar)**. Other species shown as locked "Coming soon".
-- **Forest biome**: rolling terrain, trees, rocks, grass, a pond, fog, sky, world boundary, a den respawn point.
+- **Forest biome**: rolling terrain, trees, rocks, grass, a pond, fog, sky with a day and night cycle, world boundary, a den respawn point.
 - Player: walk, sprint, jump, dodge, basic attack, plus one working signature ability per species. Third-person camera with smooth orbit.
-- **3 wild enemy types** with AI (for example a fleeing prey animal, a fighting boar-type, a small fast animal). They respawn and drop food.
+- **3 wild enemy types** with AI (for example a fleeing prey animal, a fighting boar-type, a small fast animal). They respawn and drop food. Plus **rival predators** (wild wolves, lion, bear; never the player's own species).
 - XP and levels, ability points, **at least 3 unlockable abilities per playable species**.
 - Food and growth meter, and **Juvenile -> Adult** evolution (Alpha can be a stub that is clearly marked as a TODO).
 - Full HUD as in Section 7, including the biome buff/nerf indicator.
-- **Forest boss**: a large animal in an arena. Defeating it shows "Forest Ruled" and opens a gate to the (stubbed) next biome.
-- Death and respawn at the den with a small penalty.
+- **Forest boss**: a large animal in an arena. Defeating it shows "Forest Ruled" and opens a gate to the (stubbed) next biome. It is back each time the player re-enters the Forest.
+- Death and respawn at the den, with the animal reset to a level 1 Juvenile (ruled biomes kept). The den is a safe refuge from wild animals.
 - Save and load via localStorage.
 
 ### Done when
@@ -257,11 +261,13 @@ Menus: Title screen -> Species select (3D turntable preview showing stats, diet,
 - `npm test`: unit tests for the rules in `src/logic` and the data in `src/data` (Node's built-in test runner, no extra dependency).
 - `npm run test:e2e`: starts the dev server, opens the game in headless Chromium, plays the whole M1 loop with real key and mouse events for all three species, fails on any console error, and writes screenshots to `tests/e2e/screenshots/`. First time on a new machine: `npx playwright install chromium`.
 - `npm run build`: typecheck plus a static site in `dist/` (relative paths, so it works from any sub-folder).
-- Adding `?debug` to the URL (or running in dev) exposes `window.__beast` test hooks: step the simulation, teleport, grant XP. They are not present in a normal production page.
+- Adding `?debug` to the URL (or running in dev) exposes `window.__beast` test hooks: step the simulation, teleport, grant XP, set the time of day (`__beast.setTimeOfDay(0)` is midnight, `0.5` is noon). They are not present in a normal production page.
 
-### State at the end of the M1 session (2026-11-13)
-- Passing: 26 unit tests, 74 browser checks, production build, and a load of the built `dist/` from a sub-path.
-- Not verified: frame rate on a real graphics card (the test browser renders in software), and how the game feels to play. Balance numbers are a first pass that no human has tuned yet.
+### State at the end of the M1 feedback session (2026-11-14)
+- Passing: 32 unit tests, 101 browser checks (run three times in a row), production build.
+- The browser test now also hunts prey like a player would (sprint and attack, real key and mouse events): a lion and a level 1 Juvenile bear, the slowest species, each run down and kill a fleeing deer; the bear also catches a fox.
+- Not verified: frame rate on a real graphics card (the test browser renders in software), and how the changes feel to a human. The prey numbers were tuned against a bot that never misses, so a person will take longer than its 8 to 17 seconds per deer.
+- Not re-checked this session: loading the built `dist/` from a sub-path (checked on 2026-11-13; the build settings have not changed).
 
 ## 13. Things to Avoid
 
@@ -299,6 +305,15 @@ Keep it short: what works, what is rough, how to run it, what was changed in thi
 - 2026-11-13 (M1 build): Attacks turn the animal toward the nearest enemy in front of the camera (light aim assist), so melee connects in third person.
 - 2026-11-13 (M1 build): The game pauses while the Tab menu is open.
 - 2026-11-13 (M1 build): UI style is a trailhead signpost: arrow-ended sign planks for menu choices, dark bark panels, cream lettering, one system signage typeface (Bahnschrift with fallbacks, no downloaded fonts). Open to change if the user prefers another direction.
+- 2026-11-14 (M1 feedback): **Prey can be caught.** Measured first: a lion or a bear chasing a deer with a perfect bot landed no hit in 60 seconds, because deer sprinted about as fast as they do and outlasted their stamina. Now deer sprint at 7.4 (was 8.6) and foxes at 7.6 (was 9), below every playable species; they bolt for 3.5 s / 2.5 s, then are winded for 5 s / 4.5 s; they slow down as they lose health (down to 65% / 70% speed); deer notice the player at 11 m (was 13 m). All of it is data in `src/data/enemies.ts`. A unit test keeps every fleeing animal slower than the slowest playable species.
+- 2026-11-14 (M1 feedback): **The boss returns on re-entry.** The user asked for the boss to come back whenever the player leaves the biome and returns. In M1 that means quitting to the title and pressing Continue; from M3 it also means travelling between biomes. The Forest stays ruled and the gate stays open. A repeat win gives the boss's XP and carcass again and shows a short message instead of the "Forest Ruled" banner. Within one visit a beaten boss stays down.
+- 2026-11-14 (M1 feedback): **Death resets the animal.** This replaces the 25% XP penalty above. The user chose: same species, back to a level 1 Juvenile with no XP, growth, ability points or bought abilities (the signature ability stays); ruled and unlocked biomes are kept. The reset is applied and saved the moment the animal dies, so closing the game on the death screen cannot undo it. Respawn takes 3.5 s (was 2.5 s) so the message can be read.
+- 2026-11-14 (M1 feedback): **Day and night cycle, moved forward from M4** at the user's request. One full day lasts 8 minutes (`TUNING.dayNight.cycleSeconds`), about 58% of it daylight. Sun, moon, stars, sky, fog, light colour and shadows all follow the time of day. Every session starts in the morning; the time of day is not saved. It is visual only: night does not change stats, enemies or spawns. Night is kept bright enough to play. The HUD shows Dawn / Day / Dusk / Night under the biome name.
+- 2026-11-14 (M1 feedback): **Animals on the title screen.** The title now shows the clearing on the west shore of the pond with ten animals living there: three deer, two foxes, a boar, a brown bear at the water, two wolves and a lion. They wander, stop and move on; nobody fights, and prey trots away when a predator comes within 3.5 m. The camera sits low and pans slowly. The cast and the camera path are data (`FOREST_TITLE` in `src/data/biomes.ts`); the animals are scenery (`src/systems/ambient.ts`) and do not use the game's enemy AI.
+- 2026-11-14 (M1 feedback, second round): **Repeat boss wins pay 50 XP.** Only the first win over a boss pays its full XP (300 for the Ancient Stag). Every later win pays `repeatXp` from `src/data/bosses.ts` (50). "First" means the biome was not yet ruled, so it stays "repeat" after a death too, because ruled biomes are kept.
+- 2026-11-14 (M1 feedback, second round): **The den is a safe refuge.** A circle of 18 m around the den (`den.refugeRadius`; the den clearing itself is still 8 m), marked by a ring of pale stones, which covers the spawn point with 9 m to spare. Wild animals never enter it, do not pick spots inside it to wander to or spawn in, do not notice a player who is inside, and break off a chase the moment the player steps in. The HUD shows "Safe at the den". It gives no healing bonus beyond the normal slow regeneration. The trees were left where they are, so the rest of the Forest's layout is unchanged.
+- 2026-11-14 (M1 feedback, second round): **A day lasts 6 minutes** (was 8). `TUNING.dayNight.cycleSeconds = 360`.
+- 2026-11-14 (M1 feedback, second round): **Rival predators** (this replaces the 2026-11-13 note that they were not in M1). The user asked for 1 to 3 predators in the biome. Built as the bible's "competing animals": a pair of wolves (level 4 to 5, west edge), a lion (level 5 to 6, east of the pond) and a bear (level 6 to 7, south-east), using the playable species' adult bodies. The player's own species is left out, so a wolf meets 2 rivals and a lion or bear meets 3. They attack on sight, never flee, each have two attacks, give more XP and growth than a boar, and come back 150 s after being killed. Their chase speed is below every playable species' sprint, so a fight can always be escaped. They are hostile to the player only: **they do not hunt deer or fight each other** (wild animals cannot damage one another yet).
 
 ## 16. Known Issues / TODO
 
@@ -315,9 +330,14 @@ Keep it short: what works, what is rough, how to run it, what was changed in thi
 - Animals do not path around obstacles; they slide along them.
 - The player can walk around behind the gate (there is nothing there).
 - Animal models are simple shapes. They read as wolf, lion and bear, but they are placeholders for nicer art.
-- Balance is untuned by a human: fight length, XP pace and boss difficulty are first guesses in the data files.
+- Balance is only partly tuned: prey speed was fixed from the user's playtest, but fight length, XP pace and boss difficulty are still first guesses in the data files.
+- Death is now harsh, and regrowing means hunting from level 1 again. The den refuge gives a safe place to recover, but a level 1 Juvenile that walks into a rival's territory (levels 4 to 7) will lose. Their level tags show red as a warning.
+- Rival predators ignore prey and each other; only the player is attacked. A player can also stand just inside the refuge and hit an animal at its edge without being hit back; the animal walks away and heals, so it gains little.
+- Rival stats are a first guess, untested by a human.
+- Night is visual only, and the moon is rarely on screen: the hills around the Forest and the camera's upward limit hide most of the high sky.
 - Frame rate on real hardware is unmeasured. A typical frame is about 270 draw calls and 340k triangles, which should be comfortable for a mid-range laptop.
 - After pressing Esc, browsers refuse to re-lock the mouse for about a second. Resuming with the Resume button works; resuming by pressing Esc again may need one click on the game.
+- The project is a git repository on branch `main` with remote `origin` (github.com/zayden995/beast-ascent). `dist/`, `node_modules/` and the test screenshots are not tracked.
 - `node_modules` sits inside a OneDrive folder, which makes installs slow and syncs thousands of files. Consider excluding it from sync or moving the project out of OneDrive.
 
 ### Notes for Milestone 2
@@ -326,6 +346,12 @@ Keep it short: what works, what is rough, how to run it, what was changed in thi
 - Flight needs changes in `integrate` (`src/systems/actor.ts`) and the jump handling in `src/systems/player.ts`.
 - Abilities are data. An existing effect kind (`leap`, `melee`, `aoe`, `buff`, `passive`) needs only a data entry; a new mechanic (hit from behind, grab, "unseen") needs a new field in `AbilityEffect` and its handling in `src/systems/abilities.ts`.
 - Extend `tests/e2e/smoke.mjs` with a section per new species, as done for the lion and the bears.
+- **Rival predators and the unit test that guards them.** `FOREST_SPAWNS` holds rival zones tagged `rivalOf` (a wolf pair, a lion, a bear), and the player's own species is filtered out in `Game`. `tests/unit/data.test.ts` checks every playable species meets 1 to 3 rivals, but it only looks at species playable in Milestone 1. Once Tiger, Elephant, Crocodile and Eagle are playable the rule needs a decision: they would meet all four existing rivals. Options: add `rivalOf` zones for the new species and let each species skip its own kind and one other, or keep 4 rivals and relax the test to "1 to 4". Ask the user. New rivals are just data in `src/data/enemies.ts` (the `rival()` helper copies a playable species' adult body).
+- **Death now resets the animal** (level 1 Juvenile). With the Alpha stage playable in M2, dying as an Alpha throws away a lot; watch how that feels and whether the user wants the rule softened.
+- **Title screen cast** (`FOREST_TITLE` in `src/data/biomes.ts`) could include the new species once they have models. Eagle needs a winged rig first.
+- **Eagle flight vs the refuge and rivals**: flying animals will cross the den refuge ring and the world boundary differently; `integrate` (`src/systems/actor.ts`) and `World.keepOutOfRefuge` both treat the ground plane only.
+- The browser test hunts prey with a bot (`hunt()` in `tests/e2e/smoke.mjs`); reuse it to check that any new species can catch deer and foxes. A unit test already keeps fleeing animals slower than the slowest playable species, so a slow new species (the Elephant) needs a check against it.
+- Run order for a clean start on a new machine: `npm install`, `npx playwright install chromium`, `npm test`, `npm run test:e2e`.
 
 # CLAUDE.md
 

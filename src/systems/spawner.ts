@@ -70,7 +70,7 @@ export class Spawner {
       const cx = zone.x + Math.cos(a) * d;
       const cz = zone.z + Math.sin(a) * d;
       if (this.world.waterDepth(cx, cz) > 0 || this.world.colliders.blocked(cx, cz, 1)) continue;
-      if (!this.world.isOpenGround(cx, cz, 1)) continue;
+      if (!this.world.isOpenGround(cx, cz, 1) || this.world.inRefuge(cx, cz, 2)) continue;
       x = cx;
       z = cz;
       if (!avoid || Math.hypot(cx - avoid.x, cz - avoid.z) > 28) break;
@@ -109,7 +109,7 @@ export class Spawner {
     e.anim.warn = 0;
     e.anim.hitFlash = 0;
     e.removeAt = this.clock.time + DEATH_SECONDS;
-    if (e.zone) this.respawns.push({ zone: e.zone, at: this.clock.time + TUNING.enemies.respawnSeconds });
+    if (e.zone) this.respawns.push({ zone: e.zone, at: this.clock.time + (e.zone.respawnSeconds ?? TUNING.enemies.respawnSeconds) });
   }
 
   update(playerPos: THREE.Vector3): void {

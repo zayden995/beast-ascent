@@ -46,11 +46,13 @@ export function enemyXp(baseXp: number, level: number): number {
   return Math.round(baseXp * (1 + TUNING.enemies.levelXpPct * (level - 1)));
 }
 
-/** Death never removes a level or a life stage, only progress toward the next level. */
-export function applyDeathPenalty(p: Progress): number {
-  const lost = Math.floor(p.xp * TUNING.death.xpProgressLossPct);
-  p.xp -= lost;
-  return lost;
+/**
+ * Death sends the animal back to the start: level 1 Juvenile, no XP, growth or bought abilities.
+ * Changes `p` in place (the save and the systems hold on to it). Ruled biomes live in the profile,
+ * not here, so they survive.
+ */
+export function resetProgress(p: Progress, abilityIds: string[]): void {
+  Object.assign(p, newProgress(abilityIds));
 }
 
 export type Threat = 'trivial' | 'easy' | 'even' | 'hard' | 'deadly';

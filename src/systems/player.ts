@@ -103,14 +103,14 @@ export class PlayerController {
     });
   }
 
-  /** New life stage: swap in the bigger model and heal to full. */
-  private rebuildModel(): void {
+  /** Swaps in the model for the current life stage and heals to full. */
+  private rebuildModel(celebrate = true): void {
     this.actor.model.dispose();
     const model = this.buildModel();
     this.actor.setModel(model);
     this.d.scene.add(model.root);
     this.actor.refreshStats(true);
-    this.d.fx.ring(this.actor.pos, 6, 0xfff2b0, 0.9);
+    if (celebrate) this.d.fx.ring(this.actor.pos, 6, 0xfff2b0, 0.9);
   }
 
   /** Called by the game when the player's actor dies. */
@@ -120,6 +120,9 @@ export class PlayerController {
     this.swing = null;
     this.dodge = null;
     this.abilities.cancel();
+    // Buffs and cooldowns die with the animal; its abilities are reset along with its level.
+    this.abilities.setLoadout(this.d.growth.variant.abilities);
+    this.actor.buffs = [];
     this.actor.vx = 0;
     this.actor.vz = 0;
     this.actor.anim.dodgeT = -1;
@@ -130,11 +133,11 @@ export class PlayerController {
   private respawn(): void {
     const { world, growth, cam, events } = this.d;
     const a = this.actor;
-    const lost = growth.deathPenalty();
     const spawn = world.layout.playerSpawn;
     a.alive = true;
     a.clearStatuses();
-    a.refreshStats(true);
+    // Progress was reset when the animal died (see Game); wake up in the Juvenile body.
+    this.rebuildModel(false);
     a.pos.set(spawn.x, world.heightAt(spawn.x, spawn.z), spawn.z);
     a.yaw = spawn.yaw;
     a.vx = a.vz = a.vy = 0;
@@ -143,10 +146,7 @@ export class PlayerController {
     this.exhausted = false;
     cam.snap(spawn.yaw);
     events.emit('playerRespawned', null);
-    events.emit('toast', {
-      text: lost > 0 ? `You wake at the den. Lost ${lost} XP.` : 'You wake at the den.',
-      tone: 'bad',
-    });
+    events.emit('toast', { text: `You wake at the den as a Juvenile ${growth.species.name}. Start again.`, tone: 'bad' });
   }
 
   /** Turn toward the nearest enemy roughly in front of the camera, so attacks connect. */

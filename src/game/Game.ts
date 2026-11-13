@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import { EventBus } from '../core/events.ts';
+import type { BossDef } from '../core/types.ts';
 import { mulberry32 } from '../core/math.ts';
 import { BIOMES, FOREST_SPAWNS, nextBiome } from '../data/biomes.ts';
 import { getBoss } from '../data/bosses.ts';
@@ -44,6 +45,7 @@ export class Game {
   readonly events = new EventBus<GameEvents>();
   readonly clock = { time: 0 };
   readonly world: ForestWorld;
+  readonly sky: Sky;
   readonly growth: Growth;
   readonly player: PlayerController;
   readonly spawner: Spawner;
@@ -58,12 +60,14 @@ export class Game {
   private ctx: GameContext;
   private actors: Actor[] = [];
   private rand = mulberry32((Date.now() & 0xffff) + 17);
+  private bossDef: BossDef | null = null;
   private dirty = false;
   private lastSave = 0;
 
   constructor(ctx: GameContext, profile: Profile) {
     this.ctx = ctx;
     this.world = ctx.world;
+    this.sky = ctx.sky;
     const { scene, world, input, cam } = ctx;
 
     this.growth = new Growth(profile, this.events);
@@ -73,13 +77,15 @@ export class Game {
       scene, world, input, cam, combat: this.combat, fx: this.fx, growth: this.growth, events: this.events, clock: this.clock,
     });
     this.spawner = new Spawner(scene, world, this.rand, this.clock);
-    this.spawner.spawnZones(FOREST_SPAWNS);
+    // Rival predators of the player's own species are left out.
+    this.spawner.spawnZones(FOREST_SPAWNS.filter((zone) => zone.rivalOf !== profile.speciesId));
     this.food = new FoodSystem(scene, world, this.rand, this.clock);
 
-    // The boss stays dead once its biome is ruled; the gate stays open.
-    const ruled = profile.ruledBiomes.includes(world.biome.id);
-    world.setGateOpen(ruled);
-    if (!ruled && world.biome.bossId) this.spawner.spawnBoss(getBoss(world.biome.bossId));
+    // The boss is back every time the player enters the biome, even after it has been beaten.
+    // A ruled biome stays ruled and its gate stays open.
+    world.setGateOpen(profile.ruledBiomes.includes(world.biome.id));
+    this.bossDef = world.biome.bossId ? getBoss(world.biome.bossId) : null;
+    if (this.bossDef) this.spawner.spawnBoss(this.bossDef);
 
     this.hud = new Hud(ctx.ui, this);
     this.labels = new WorldLabels(ctx.ui);
@@ -107,22 +113,34 @@ export class Game {
     ev.on('death', ({ actor }) => {
       if (actor === playerActor) {
         this.player.onDeath();
-        // Dying mid-fight resets the boss; the player never loses a level or life stage.
+        // Dying resets the animal to a level 1 Juvenile. It is applied and saved right away, so
+        // closing the game on the death screen cannot undo it. Ruled biomes are kept.
+        this.growth.resetOnDeath();
+        this.save();
+        // Dying mid-fight also sends the boss home at full health.
         this.spawner.resetBoss();
         return;
       }
       if (!(actor instanceof EnemyActor)) return;
       this.spawner.onDeath(actor);
       this.food.dropCarcass(actor.pos, actor.def.carcassGrowth, actor.stats.size);
-      this.growth.gainXp(enemyXp(actor.def.xp, actor.isBoss ? 1 : actor.level));
-      if (actor.isBoss) this.ruleBiome();
+      // Only the first win over a boss pays its full XP; later wins pay the small repeat amount.
+      const repeatWin = actor.isBoss && this.growth.profile.ruledBiomes.includes(this.world.biome.id);
+      const xp = repeatWin && this.bossDef ? this.bossDef.repeatXp : enemyXp(actor.def.xp, actor.isBoss ? 1 : actor.level);
+      this.growth.gainXp(xp);
+      if (actor.isBoss) this.bossDefeated(actor, repeatWin, xp);
     });
 
     ev.on('progress', () => (this.dirty = true));
   }
 
-  private ruleBiome(): void {
+  private bossDefeated(boss: EnemyActor, repeatWin: boolean, xp: number): void {
     const biome = this.world.biome;
+    if (repeatWin) {
+      // The biome is already ruled, so there is nothing new to unlock.
+      this.events.emit('toast', { text: `${boss.name} defeated again: +${xp} XP. It will be back when you return to the ${biome.name}.`, tone: 'good' });
+      return;
+    }
     const next = nextBiome(biome.id);
     this.growth.ruleBiome(biome.id, next);
     this.world.setGateOpen(true);
@@ -170,6 +188,8 @@ export class Game {
 
     cam.update(dt, pa.pos, pa.model.height, pa.stats.size, world.heightAt);
     world.update(this.clock.time, cam.camera.position);
+    sky.advance(dt);
+    world.setUnlitTint(sky.unlitTint);
     sky.update(cam.camera.position, pa.pos);
 
     if (this.dirty && this.clock.time - this.lastSave > 1) this.save();

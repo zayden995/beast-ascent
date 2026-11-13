@@ -47,17 +47,33 @@ export function installDebug(app: App): void {
       addGrowth(g.growth.progress, amount);
       g.events.emit('progress', null);
     },
+    /** The animals behind the title screen, or null while a game is running. */
+    titleAnimals() {
+      return app.titleLife?.snapshot() ?? null;
+    },
+    /** Runs the title-screen animals for `seconds` without waiting for frames. */
+    advanceTitle(seconds: number, dt = 1 / 30) {
+      const steps = Math.round(seconds / dt);
+      for (let i = 0; i < steps; i++) app.titleLife?.update(dt);
+    },
+    /** 0 = midnight, 0.5 = noon. */
+    setTimeOfDay(time: number) {
+      app.sky.setTime(time);
+      app.world.setUnlitTint(app.sky.unlitTint);
+    },
     setHp(hp: number) {
       const g = app.game;
       if (g) g.player.actor.hp = hp;
     },
     state() {
       const g = app.game;
-      if (!g) return { screen: app.screen };
+      const sky = { timeOfDay: app.sky.time, phase: app.sky.state.phase, daylight: app.sky.state.daylight };
+      if (!g) return { screen: app.screen, ...sky };
       const a = g.player.actor;
       const p = g.growth.progress;
       return {
         screen: app.screen,
+        ...sky,
         time: g.clock.time,
         prompt: g.prompt,
         gateOpen: g.world.isGateOpen(),
@@ -67,7 +83,7 @@ export function installDebug(app: App): void {
           x: a.pos.x, y: a.pos.y, z: a.pos.z, yaw: a.yaw,
           hp: a.hp, maxHp: a.stats.maxHealth, stamina: a.stamina, maxStamina: a.stats.stamina,
           damage: a.stats.damage, moveSpeed: a.stats.moveSpeed, defense: a.stats.defense, size: a.stats.size,
-          alive: a.alive, dead: g.player.dead, grounded: a.grounded, swimming: a.swimming, invuln: a.invuln,
+          alive: a.alive, dead: g.player.dead, safe: g.world.inRefuge(a.pos.x, a.pos.z), grounded: a.grounded, swimming: a.swimming, invuln: a.invuln,
           level: p.level, xp: p.xp, abilityPoints: p.abilityPoints, stage: p.stage, growth: p.growth,
           ranks: { ...p.abilityRanks },
           mods: g.player.activeMods.map((m) => `${m.stat}:${m.pct}`),

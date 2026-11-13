@@ -34,6 +34,7 @@ export class ForestWorld {
   private gateBarrier = new THREE.Group();
   private gatePortal!: THREE.Mesh;
   private grassChunks: { mesh: THREE.InstancedMesh; x: number; z: number }[] = [];
+  private grassMaterial: THREE.MeshBasicMaterial | null = null;
   private gateOpen = false;
 
   constructor(scene: THREE.Scene) {
@@ -63,6 +64,28 @@ export class ForestWorld {
   nearWater(x: number, z: number): boolean {
     const { pond, nearWaterMargin } = this.layout;
     return Math.hypot(x - pond.x, z - pond.z) < pond.radius + nearWaterMargin;
+  }
+
+  /** True inside the den's refuge, where wild animals never go (`margin` widens it). */
+  inRefuge(x: number, z: number, margin = 0): boolean {
+    const { den } = this.layout;
+    return Math.hypot(x - den.x, z - den.z) < den.refugeRadius + margin;
+  }
+
+  /** Moves a wild animal that has strayed into the den's refuge back out to its edge. */
+  keepOutOfRefuge(pos: { x: number; z: number }, radius: number): void {
+    const { den } = this.layout;
+    const dx = pos.x - den.x;
+    const dz = pos.z - den.z;
+    const d = Math.hypot(dx, dz);
+    const min = den.refugeRadius + radius;
+    if (d >= min) return;
+    if (d < 1e-4) {
+      pos.z = den.z - min;
+      return;
+    }
+    pos.x = den.x + (dx / d) * min;
+    pos.z = den.z + (dz / d) * min;
   }
 
   /** Pushes a position out of trees/rocks and back inside the world boundary. */
@@ -96,6 +119,11 @@ export class ForestWorld {
 
   isGateOpen(): boolean {
     return this.gateOpen;
+  }
+
+  /** Grass blades are unlit, so the sky hands them the colour of the current light (day and night). */
+  setUnlitTint(tint: THREE.Color): void {
+    this.grassMaterial?.color.copy(tint);
   }
 
   update(time: number, cameraPos: THREE.Vector3): void {
@@ -273,6 +301,7 @@ export class ForestWorld {
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
     // Unlit: a lit double-sided blade would shade its back face dark.
     const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    this.grassMaterial = material;
 
     const chunkSize = 54;
     const buckets = new Map<string, { matrix: THREE.Matrix4; color: THREE.Color }[]>();
@@ -346,6 +375,26 @@ export class ForestWorld {
     dark.position.set(0, 1.1, 0.5);
     den3d.add(dark);
     this.group.add(den3d);
+
+    // A ring of pale stones marks the edge of the refuge. They are low enough to step over.
+    const stoneRand = mulberry32(this.layout.seed + 71);
+    const stones: { matrix: THREE.Matrix4; color: THREE.Color }[] = [];
+    const stoneCount = 34;
+    for (let i = 0; i < stoneCount; i++) {
+      const a = (i / stoneCount) * TAU;
+      const x = den.x + Math.cos(a) * den.refugeRadius;
+      const z = den.z + Math.sin(a) * den.refugeRadius;
+      if (this.colliders.blocked(x, z, 0.6)) continue;
+      const s = 0.42 + stoneRand() * 0.22;
+      _q.setFromEuler(_e.set(stoneRand() * 0.4, stoneRand() * TAU, stoneRand() * 0.4));
+      stones.push({
+        matrix: new THREE.Matrix4().compose(
+          new THREE.Vector3(x, this.heightAt(x, z) + s * 0.2, z), _q, new THREE.Vector3(s * 1.2, s * 0.75, s),
+        ),
+        color: new THREE.Color(0xe6dfc9).multiplyScalar(0.9 + stoneRand() * 0.15),
+      });
+    }
+    this.instanced(rockGeo, toonMaterial(), stones, true);
 
     this.colliders.add(den.x - 2.6, den.z + 0.2, 2.3);
     this.colliders.add(den.x + 2.6, den.z + 0.2, 2.3);

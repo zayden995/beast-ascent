@@ -65,6 +65,57 @@ test('data: biome order, forest boss and spawn zones are consistent', () => {
   }
 });
 
+test('data: every playable species can run down every animal that flees', () => {
+  const playable = SPECIES.filter((s) => isPlayable(s, 1));
+  const slowestSprint = Math.min(...playable.map((s) => s.baseStats.sprintSpeed));
+  const slowestWalk = Math.min(...playable.map((s) => s.baseStats.moveSpeed));
+  const runners = Object.values(ENEMIES).filter((e) => e.behavior.fleeOnSight || e.behavior.fleeHealthPct > 0);
+  assert.ok(runners.length >= 2, 'deer and fox both flee');
+  for (const e of runners) {
+    const b = e.behavior;
+    assert.ok(e.baseStats.sprintSpeed < slowestSprint, `${e.id} out-sprints the slowest playable species`);
+    assert.ok(b.fleeBurst > 0 && b.windedSeconds > 0, `${e.id} never tires`);
+    assert.ok(e.baseStats.sprintSpeed * b.windedSpeedMult < slowestWalk, `a winded ${e.id} out-walks the slowest playable species`);
+    assert.ok(b.woundedSpeedMult > 0 && b.woundedSpeedMult <= 1);
+  }
+});
+
+test('data: rival predators: every playable species meets 1 to 3 of the others and can outrun them', () => {
+  const playable = SPECIES.filter((s) => isPlayable(s, 1));
+  const slowestSprint = Math.min(...playable.map((s) => s.baseStats.sprintSpeed));
+  const rivalZones = FOREST_SPAWNS.filter((z) => z.rivalOf);
+  assert.ok(rivalZones.length >= 2);
+  for (const zone of rivalZones) {
+    const def = ENEMIES[zone.enemyId];
+    assert.ok(playable.some((s) => s.id === zone.rivalOf), `${zone.enemyId} is a rival of an unknown species`);
+    assert.ok(def.behavior.aggressive && !def.behavior.fleeOnSight && def.attacks.length >= 2, `${def.id} must be a real fighter`);
+    assert.ok(def.baseStats.sprintSpeed < slowestSprint, `${def.id} must be escapable by the slowest playable species`);
+  }
+  for (const species of playable) {
+    const met = rivalZones.filter((z) => z.rivalOf !== species.id);
+    const count = met.reduce((n, z) => n + z.count, 0);
+    assert.ok(count >= 1 && count <= 3, `a ${species.id} meets ${count} rival predators`);
+    assert.ok(met.every((z) => z.rivalOf !== species.id), 'never its own kind');
+  }
+});
+
+test('data: a boss pays full XP once, then a small repeat amount', () => {
+  for (const boss of Object.values(BOSSES)) {
+    assert.ok(boss.repeatXp > 0 && boss.repeatXp < boss.enemy.xp, `${boss.id}`);
+  }
+  assert.equal(BOSSES.ancient_stag.enemy.xp, 300);
+  assert.equal(BOSSES.ancient_stag.repeatXp, 50);
+});
+
+test('data: the den refuge covers the spawn point and stays clear of spawn zones and the arena', () => {
+  const { den, playerSpawn, arena } = FOREST_LAYOUT;
+  const fromDen = (x: number, z: number) => Math.hypot(x - den.x, z - den.z);
+  assert.ok(den.refugeRadius > den.radius);
+  assert.ok(fromDen(playerSpawn.x, playerSpawn.z) < den.refugeRadius - 5, 'the player wakes well inside the refuge');
+  assert.ok(fromDen(arena.x, arena.z) > den.refugeRadius + arena.radius + 20);
+  for (const zone of FOREST_SPAWNS) assert.ok(fromDen(zone.x, zone.z) > den.refugeRadius, `${zone.enemyId} zone is centred in the refuge`);
+});
+
 test('data: diets', () => {
   assert.ok(canEat('carnivore', 'carcass') && canEat('carnivore', 'fish'));
   assert.ok(!canEat('carnivore', 'fruit'));

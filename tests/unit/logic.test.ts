@@ -3,14 +3,16 @@ import { test } from 'node:test';
 import { getAbility } from '../../src/data/abilities.ts';
 import { FOREST_LAYOUT } from '../../src/data/biomes.ts';
 import { STAGES } from '../../src/data/stages.ts';
+import { TUNING } from '../../src/data/tuning.ts';
 import { getSpecies, getVariant } from '../../src/data/species.ts';
 import { activeBiomeMods, describeMod, toStatMods } from '../../src/logic/biome.ts';
 import { lowHealthMultiplier, mitigate } from '../../src/logic/damage.ts';
 import { createForestHeight } from '../../src/logic/heightfield.ts';
 import {
-  abilityPower, addGrowth, addXp, applyDeathPenalty, evolve, evolveStatus, newProgress,
+  abilityPower, addGrowth, addXp, evolve, evolveStatus, newProgress, resetProgress,
   summarizePassives, threatLevel, upgradeAbility, xpToNext,
 } from '../../src/logic/progression.ts';
+import { advanceDay, dayState, wrapDay } from '../../src/logic/dayNight.ts';
 import { computeStats } from '../../src/logic/stats.ts';
 
 const wolf = getSpecies('wolf');
@@ -141,17 +143,21 @@ test('progression: Alpha is locked in milestone 1 even when requirements are met
   assert.equal(addGrowth(p, 10), 0, 'final stage has no meter');
 });
 
-test('progression: death costs XP progress only', () => {
+test('progression: death resets the animal to a level 1 Juvenile, in place', () => {
   const p = newProgress(wolfVariant.abilities);
-  p.level = 5;
+  p.level = 9;
   p.xp = 40;
+  p.abilityPoints = 3;
   p.stage = 'adult';
   p.growth = 30;
-  assert.equal(applyDeathPenalty(p), 10);
-  assert.equal(p.xp, 30);
-  assert.equal(p.level, 5);
-  assert.equal(p.stage, 'adult');
-  assert.equal(p.growth, 30);
+  p.abilityRanks.wolf_howl = 2;
+  p.abilityRanks.wolf_pounce = 3;
+  const same = p;
+  resetProgress(p, wolfVariant.abilities);
+  assert.equal(p, same, 'the same object is kept, because the save and the systems hold on to it');
+  assert.deepEqual(p, newProgress(wolfVariant.abilities));
+  assert.deepEqual(p.abilityRanks, { wolf_pounce: 1 }, 'only the free signature ability is left, at rank 1');
+  assert.equal(summarizePassives(p, wolfVariant.abilities).lowHealthBonus, null);
 });
 
 test('progression: passives scale with rank', () => {
@@ -203,4 +209,37 @@ test('terrain: no cliffs inside the playable area (walkable everywhere)', () => 
     }
   }
   assert.ok(worst < 0.6, `steepest 0.5 m step was ${worst.toFixed(2)} m`);
+});
+
+test('day and night: noon is bright, midnight is dark, the horizon glows in between', () => {
+  const bias = TUNING.dayNight.dayBias;
+  const noon = dayState(0.5, bias);
+  assert.equal(noon.phase, 'day');
+  assert.ok(Math.abs(noon.elevation - 1) < 1e-9 && noon.daylight === 1 && noon.twilight === 0);
+  const midnight = dayState(0, bias);
+  assert.equal(midnight.phase, 'night');
+  assert.ok(midnight.elevation < 0 && midnight.daylight === 0 && midnight.twilight === 0);
+
+  // One full day passes through dawn, day, dusk and night, in that order, exactly once each.
+  const order: string[] = [];
+  let sunUp = 0;
+  const steps = 2000;
+  for (let i = 0; i < steps; i++) {
+    const s = dayState(i / steps, bias);
+    if (order[order.length - 1] !== s.phase) order.push(s.phase);
+    if (s.elevation > 0) sunUp++;
+    assert.ok(s.daylight >= 0 && s.daylight <= 1 && s.twilight >= 0 && s.twilight <= 1);
+  }
+  assert.deepEqual(order, ['night', 'dawn', 'day', 'dusk', 'night']);
+  assert.ok(sunUp / steps > 0.5, 'the day is longer than the night');
+  // With this bias the sun crosses the horizon at about 0.21 and 0.79.
+  assert.ok(dayState(0.21, bias).twilight > 0.9 && dayState(0.79, bias).twilight > 0.9, 'sunrise and sunset glow');
+});
+
+test('day and night: time advances with the cycle length and wraps around', () => {
+  assert.ok(Math.abs(advanceDay(0.5, 120, 480) - 0.75) < 1e-9);
+  assert.ok(Math.abs(advanceDay(0.9, 96, 480) - 0.1) < 1e-9, 'wraps past midnight');
+  assert.ok(Math.abs(wrapDay(-0.25) - 0.75) < 1e-9);
+  assert.equal(dayState(1.5, 0).phase, dayState(0.5, 0).phase);
+  assert.equal(dayState(TUNING.dayNight.startAt, TUNING.dayNight.dayBias).phase, 'day', 'a session starts in daylight');
 });

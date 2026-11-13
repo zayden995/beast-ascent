@@ -5,7 +5,7 @@ import type { BossDef } from '../core/types.ts';
 
 const list: BossDef[] = [
   {
-    id: 'ancient_stag', biome: 'forest', title: 'Ancient Stag, Lord of the Forest', level: 10,
+    id: 'ancient_stag', biome: 'forest', title: 'Ancient Stag, Lord of the Forest', level: 10, repeatXp: 50,
     enemy: {
       id: 'ancient_stag', name: 'Ancient Stag',
       baseStats: {
@@ -21,7 +21,8 @@ const list: BossDef[] = [
       features: ['antlers', 'ruff', 'scar', 'tailTipLight'],
       behavior: {
         aggroRadius: 18, aggressive: true, fleeOnSight: false, fleeHealthPct: 0,
-        leashRadius: 22, wanderRadius: 6, fleeBurst: 0, windedSpeedMult: 1,
+        leashRadius: 22, wanderRadius: 6, fleeBurst: 0, windedSeconds: 0, windedSpeedMult: 1,
+        woundedSpeedMult: 1,
       },
       attacks: [
         {

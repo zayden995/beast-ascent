@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { FOREST_TITLE } from '../data/biomes.ts';
+import { TUNING } from '../data/tuning.ts';
+import { AmbientLife } from '../systems/ambient.ts';
 import { loadSave, clearSave } from '../systems/save.ts';
 import { ThirdPersonCamera } from '../systems/camera.ts';
 import { newProfile, profileFromSave } from '../systems/growth.ts';
@@ -40,7 +43,9 @@ export class App {
   private last = 0;
   private pausedAt = 0;
   private elapsed = 0;
-  private titleCentre = new THREE.Vector3();
+  private titleFocus = new THREE.Vector3();
+  /** Animals roaming behind the title screen. Gone while a game is running. */
+  titleLife: AmbientLife | null = null;
 
   constructor(canvas: HTMLCanvasElement, ui: HTMLElement) {
     this.canvas = canvas;
@@ -57,8 +62,8 @@ export class App {
     this.preview = new SpeciesPreview(aspect);
     this.input = new Input(canvas);
 
-    const spawn = this.world.layout.playerSpawn;
-    this.titleCentre.set(spawn.x, this.world.heightAt(spawn.x, spawn.z - 14), spawn.z - 14);
+    const at = FOREST_TITLE.view.lookAt;
+    this.titleFocus.set(at.x, this.world.heightAt(at.x, at.z), at.z);
 
     this.input.onKey = (code) => this.onKey(code);
     this.input.onLockLost = () => {
@@ -94,9 +99,12 @@ export class App {
       return;
     }
     if (this.screen === 'title') {
-      this.cam.orbit(this.elapsed, this.titleCentre, 34, 13);
+      this.cam.pan(this.elapsed, FOREST_TITLE.view, this.world.heightAt);
+      this.titleLife?.update(dt);
       this.world.update(this.elapsed, this.cam.camera.position);
-      this.sky.update(this.cam.camera.position, this.titleCentre);
+      this.sky.advance(dt);
+      this.world.setUnlitTint(this.sky.unlitTint);
+      this.sky.update(this.cam.camera.position, this.titleFocus);
     } else if (this.game) {
       if (this.screen === 'playing' && this.autoStep) this.game.update(dt);
       this.game.present();
@@ -141,6 +149,7 @@ export class App {
   showTitle(): void {
     this.clearOverlay();
     this.screen = 'title';
+    this.titleLife ??= new AmbientLife(this.scene, this.world, FOREST_TITLE.animals, FOREST_TITLE.shyDistance);
     this.overlay = createTitleScreen(this.ui, loadSave(), {
       newGame: () => this.showSelect(),
       continueGame: () => {
@@ -166,6 +175,11 @@ export class App {
   startGame(profile: Profile): void {
     this.clearOverlay();
     this.game?.dispose();
+    this.titleLife?.dispose();
+    this.titleLife = null;
+    // Every session starts in the morning; the time of day is not saved.
+    this.sky.setTime(TUNING.dayNight.startAt);
+    this.world.setUnlitTint(this.sky.unlitTint);
     this.game = new Game({ scene: this.scene, world: this.world, sky: this.sky, cam: this.cam, input: this.input, ui: this.ui }, profile);
     this.game.save();
     this.screen = 'playing';

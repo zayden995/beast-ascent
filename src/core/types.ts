@@ -215,9 +215,13 @@ export interface EnemyBehavior {
   /** Gives up the chase beyond this distance from home. */
   leashRadius: number;
   wanderRadius: number;
-  /** Seconds of full-speed fleeing before the animal is winded. */
+  /** Seconds of full-speed fleeing before the animal is winded (0 = never tires). */
   fleeBurst: number;
+  /** Seconds it stays winded before it can sprint again. */
+  windedSeconds: number;
   windedSpeedMult: number;
+  /** Flee speed multiplier at zero health; a wounded animal slows toward this as it loses health (1 = no effect). */
+  woundedSpeedMult: number;
 }
 
 export interface EnemyDef {
@@ -240,10 +244,38 @@ export interface BossDef {
   biome: BiomeId;
   title: string;
   level: number;
+  /** XP for beating it again once its biome is already ruled (the first win pays `enemy.xp`). */
+  repeatXp: number;
   enemy: EnemyDef;
 }
 
 // ---------- Biomes ----------
+
+/** A group of animals that roam peacefully behind the title screen. */
+export interface TitleAnimalDef {
+  /** Either a wild animal (enemy id) or a playable species, shown as an adult. */
+  enemyId?: string;
+  speciesId?: string;
+  variantId?: string;
+  count: number;
+  /** Centre and radius of the patch the group wanders in. */
+  x: number;
+  z: number;
+  radius: number;
+  /** Walks into water instead of avoiding it (a bear at the pond). */
+  wades?: boolean;
+}
+
+/** Title screen camera: a slow pan from `from` to `to` and back, always looking at `lookAt`. */
+export interface TitleViewDef {
+  from: { x: number; z: number };
+  to: { x: number; z: number };
+  /** Camera height above the ground. */
+  height: number;
+  lookAt: { x: number; z: number; height: number };
+  /** Seconds for one pan there and back. */
+  period: number;
+}
 
 export interface SpawnZoneDef {
   enemyId: string;
@@ -253,6 +285,10 @@ export interface SpawnZoneDef {
   radius: number;
   levelMin: number;
   levelMax: number;
+  /** A rival predator: this zone is left out when the player is this species. */
+  rivalOf?: string;
+  /** Seconds before a dead animal from this zone comes back (default: TUNING.enemies.respawnSeconds). */
+  respawnSeconds?: number;
 }
 
 export interface BiomePalette {

@@ -56,9 +56,30 @@ export const TUNING = {
     berryRespawnSeconds: 60,
   },
   death: {
-    /** Fraction of XP progress toward the next level lost on death. */
-    xpProgressLossPct: 0.25,
-    respawnSeconds: 2.5,
+    // Dying resets the animal to a level 1 Juvenile (see resetProgress); ruled biomes are kept.
+    respawnSeconds: 3.5,
+  },
+  dayNight: {
+    /** Real seconds for one full day and night. */
+    cycleSeconds: 360,
+    /** Time of day a play session starts at: 0 = midnight, 0.25 = around sunrise, 0.5 = noon. */
+    startAt: 0.34,
+    /** Above 0 makes the day longer than the night (0.25 = about 58% day). */
+    dayBias: 0.25,
+    sunIntensity: 2.6,
+    moonIntensity: 0.8,
+    dayAmbient: 1.7,
+    /** Night is dim and blue, but the world must stay readable enough to play. */
+    nightAmbient: 0.62,
+    colors: {
+      nightTop: 0x050818, nightHorizon: 0x18264a, nightFog: 0x131d38,
+      twilightTop: 0x2c3a78, twilightHorizon: 0xff9a55, twilightFog: 0xc9906c, twilightSun: 0xff8a4a,
+      moon: 0x9fb6ff,
+      dayAmbientSky: 0xdcefff, dayAmbientGround: 0x6a7a4a,
+      nightAmbientSky: 0x7088d0, nightAmbientGround: 0x2c3550,
+      /** Unlit things (grass blades, clouds) are multiplied by these at night. */
+      nightUnlit: 0x3a4670, nightCloud: 0x2a3350, twilightCloud: 0xffb48a,
+    },
   },
   save: {
     key: 'beastAscent.save.v1',

@@ -1,4 +1,4 @@
-import type { BiomeDef, BiomeId, SpawnZoneDef } from '../core/types.ts';
+import type { BiomeDef, BiomeId, SpawnZoneDef, TitleAnimalDef, TitleViewDef } from '../core/types.ts';
 
 /** Order in which biomes unlock (bible section 4.5, tunable). */
 export const BIOME_ORDER: BiomeId[] = ['forest', 'jungle', 'plains', 'winter'];
@@ -52,7 +52,8 @@ export function nextBiome(id: BiomeId): BiomeId | null {
 export const FOREST_LAYOUT = {
   seed: 1337,
   worldRadius: 108,
-  den: { x: 0, z: 52, radius: 8 },
+  // Wild animals never enter `refugeRadius`, and ignore a player who is inside it.
+  den: { x: 0, z: 52, radius: 8, refugeRadius: 18 },
   playerSpawn: { x: 0, z: 43, yaw: Math.PI },
   pond: { x: 46, z: 12, radius: 15, depth: 2.4, waterY: 0 },
   arena: { x: 0, z: -58, radius: 18 },
@@ -75,4 +76,35 @@ export const FOREST_SPAWNS: SpawnZoneDef[] = [
   { enemyId: 'fox', count: 2, x: -60, z: -30, radius: 20, levelMin: 2, levelMax: 4 },
   { enemyId: 'boar', count: 3, x: -32, z: -40, radius: 20, levelMin: 3, levelMax: 5 },
   { enemyId: 'boar', count: 2, x: 34, z: -14, radius: 16, levelMin: 4, levelMax: 6 },
+  // Rival predators: the playable species living wild, each in its own territory at the edge of
+  // the Forest. The player never meets their own kind, so there are always 2 or 3 of them.
+  { enemyId: 'rival_wolf', count: 2, x: -74, z: 40, radius: 12, levelMin: 4, levelMax: 5, rivalOf: 'wolf', respawnSeconds: 150 },
+  { enemyId: 'rival_lion', count: 1, x: 74, z: 10, radius: 10, levelMin: 5, levelMax: 6, rivalOf: 'lion', respawnSeconds: 150 },
+  { enemyId: 'rival_bear', count: 1, x: 56, z: 50, radius: 12, levelMin: 6, levelMax: 7, rivalOf: 'bear', respawnSeconds: 150 },
 ];
+
+/**
+ * Title screen: the clearing on the west shore of the pond, where the forest's animals gather.
+ * The camera sits low among them, like a wildlife film. Nobody fights here; prey just keeps its distance.
+ */
+export const FOREST_TITLE: { view: TitleViewDef; animals: TitleAnimalDef[]; shyDistance: number } = {
+  // The pan stays at least 4 m from every tree and rock, and aims a little left of the animals
+  // so that they sit to the right of the title lettering.
+  view: {
+    from: { x: 17, z: -4 },
+    to: { x: 17, z: 11 },
+    height: 2.2,
+    lookAt: { x: 32, z: -1, height: 1.0 },
+    period: 80,
+  },
+  animals: [
+    { enemyId: 'deer', count: 3, x: 31, z: 10, radius: 4.5 },
+    { enemyId: 'fox', count: 2, x: 24, z: 7, radius: 3.5 },
+    { enemyId: 'boar', count: 1, x: 29, z: 5, radius: 3 },
+    { speciesId: 'bear', variantId: 'brown', count: 1, x: 35, z: 15, radius: 4, wades: true },
+    { speciesId: 'wolf', count: 2, x: 35, z: -1, radius: 4 },
+    { speciesId: 'lion', count: 1, x: 30, z: 0, radius: 3 },
+  ],
+  /** Prey trots away when a predator comes closer than this. */
+  shyDistance: 3.5,
+};

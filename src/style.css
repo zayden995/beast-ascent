@@ -211,6 +211,7 @@ html, body {
 
 .hud-biome { position: absolute; top: 1rem; right: 1rem; padding: 0.6rem 0.9rem; text-align: right; }
 .hud-biome b { display: block; font-size: 1.25rem; font-stretch: 80%; }
+.hud-biome small { display: block; margin: 0.1rem 0 0.2rem; font-size: 0.78rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--dim); }
 .hud-biome span { font-size: 0.9rem; color: var(--dim); }
 .hud-biome span.buff { color: var(--lichen); }
 .hud-biome span.nerf { color: var(--ember); }

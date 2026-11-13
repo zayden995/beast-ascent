@@ -1,6 +1,7 @@
 import { STAGES } from '../data/stages.ts';
 import { TUNING } from '../data/tuning.ts';
 import { describeMod } from '../logic/biome.ts';
+import { PHASE_NAMES } from '../logic/dayNight.ts';
 import { evolveStatus, growthNeeded, xpToNext } from '../logic/progression.ts';
 import type { Game } from '../game/Game.ts';
 import { DomCache, el } from './dom.ts';
@@ -42,6 +43,7 @@ export class Hud {
   private xp = meter('xp');
   private growthMeter = meter('growth');
   private biomeMod = el('span');
+  private dayPhase = el('small');
   private boss = el('div', 'hud-boss');
   private bossName = el('b');
   private bossBar = meter('health');
@@ -67,7 +69,7 @@ export class Hud {
     growth.append(this.level, col);
 
     const biome = el('div', 'hud-biome plaque');
-    biome.append(el('b', '', game.world.biome.name), this.biomeMod);
+    biome.append(el('b', '', game.world.biome.name), this.dayPhase, this.biomeMod);
 
     this.boss.append(this.bossName, this.bossBar.root);
     this.boss.hidden = true;
@@ -96,7 +98,11 @@ export class Hud {
     this.prompt.hidden = true;
     this.death.hidden = true;
     const deathBox = el('div');
-    deathBox.append(el('h2', '', 'Defeated'), el('p', '', 'You will wake at your den.'));
+    deathBox.append(
+      el('h2', '', 'Defeated'),
+      el('p', '', 'Your level, abilities and growth are lost.'),
+      el('p', '', 'You will wake at your den as a Juvenile. Biomes you rule stay yours.'),
+    );
     this.death.append(deathBox);
 
     this.root.append(this.hurt, growth, biome, this.boss, vitals, abilities, this.prompt, hints, this.toasts, this.death);
@@ -111,7 +117,11 @@ export class Hud {
         this.hurt.classList.add('on');
         requestAnimationFrame(() => this.hurt.classList.remove('on'));
       }),
-      ev.on('playerDied', () => (this.death.hidden = false)),
+      ev.on('playerDied', () => {
+        // Nothing else should compete with the death screen.
+        this.banner?.remove();
+        this.death.hidden = false;
+      }),
       ev.on('playerRespawned', () => (this.death.hidden = true)),
     );
   }
@@ -163,6 +173,8 @@ export class Hud {
     }
     c.cls('grFull', this.growthMeter.root, 'full', evo.canEvolve);
 
+    c.text('phase', this.dayPhase, PHASE_NAMES[g.sky.state.phase]);
+
     const mods = g.player.activeMods;
     if (mods.length === 0) {
       c.text('mod', this.biomeMod, 'No modifier here');
@@ -178,6 +190,7 @@ export class Hud {
     c.width('st', this.stamina.fill, a.stamina / a.stats.stamina);
 
     const status: string[] = [];
+    if (g.world.inRefuge(a.pos.x, a.pos.z)) status.push('Safe at the den');
     for (const s of g.player.abilities.slots) {
       const t = a.buffTime(s.def.id);
       if (t > 0) status.push(`${s.def.name} ${Math.ceil(t)}s`);
