@@ -28,10 +28,10 @@ src/
     events.ts              tiny typed event bus
   data/                    pure data, no three.js imports
     tuning.ts              global and player tunables (stamina costs, dodge, camera ...)
-    stages.ts              life stages, XP curve, growth requirements, death penalty
+    stages.ts              life stages, XP curve, growth requirements
     species.ts             all 7 species and their variants (ONE file, as the bible requires)
     abilities.ts           ability definitions (effect kind + numbers)
-    biomes.ts              4 biomes (Forest complete, the rest palette/order stubs), forest layout
+    biomes.ts              4 biomes (Forest complete, the rest palette stubs), forest layout, spawn zones
     enemies.ts             forest wild animals
     bosses.ts              forest boss
     food.ts                food types and diet rules
@@ -40,27 +40,45 @@ src/
     progression.ts         XP/levels, ability points, growth meter, evolve rules, death penalty
     damage.ts              damage and defense formula
     biome.ts               which buff/nerf is active for a species in a biome
+    saveData.ts            validates and clamps whatever comes out of storage
+    heightfield.ts         forest terrain height function
   animals/
     AnimalModel.ts         interface gameplay code talks to (glTF can replace it later)
     ProceduralQuadruped.ts parametric rig + procedural animation
-    toon.ts                toon materials / gradient map
+    toon.ts                toon materials, rim light, faceted shading helper
   world/
-    terrain.ts             height function + terrain mesh
-    forest.ts              instanced trees/rocks/grass, pond, den, arena, gate
-    sky.ts                 sky dome, lights, fog
+    terrain.ts             terrain mesh from the height function
+    forest.ts              instanced trees/rocks/grass, pond, den, arena, gate, world queries
+    sky.ts                 sky dome, clouds, lights, fog
     colliders.ts           static circle colliders in a grid
   systems/
-    input.ts camera.ts actor.ts player.ts combat.ts abilities.ts
-    ai.ts spawner.ts food.ts growth.ts save.ts
+    input.ts               keyboard, mouse, pointer lock
+    camera.ts              third-person orbit camera
+    actor.ts               Actor (player, enemies, boss) + movement integration
+    player.ts              player controller
+    combat.ts              hit detection, damage, bleeds
+    abilities.ts           runs ability effects, cooldowns
+    ai.ts                  enemy state machine
+    spawner.ts             spawn zones, respawn, boss
+    food.ts                carcasses, fish, berries
+    growth.ts              profile + both growth tracks
+    fx.ts                  slashes, shockwaves, attack warnings
+    save.ts                localStorage wrapper
+    gameEvents.ts          event types shared by systems and UI
   ui/
-    hud.ts worldLabels.ts title.ts speciesSelect.ts pauseMenu.ts growthMenu.ts icons.ts dom.ts
+    hud.ts                 HUD
+    worldLabels.ts         enemy level tags, damage numbers
+    menus.ts               title screen, pause menu
+    speciesSelect.ts       species select + 3D turntable
+    growthMenu.ts          Tab menu
+    icons.ts, dom.ts       inline SVG icons, DOM helpers
   game/
-    App.ts                 screen flow: title -> species select -> game
-    Game.ts                owns the world, systems and the update loop
-    debug.ts               test hooks (dev / ?debug=1 only)
+    App.ts                 renderer, world, screen flow: title -> species select -> game
+    Game.ts                one play session: owns the systems and the update loop
+    debug.ts               test hooks (dev / ?debug only)
 tests/
-  unit/*.test.ts           logic tests (node --test, no extra dependency)
-  e2e/smoke.mjs            Playwright: boots the game, plays the core loop, checks console, screenshots
+  unit/*.test.ts           26 logic and data tests (node --test, no extra dependency)
+  e2e/smoke.mjs            Playwright: plays the core loop for each species, checks console, screenshots
 ```
 
 ## Key decisions
@@ -82,29 +100,30 @@ Choices the bible leaves open (also recorded in its Decisions Log):
 - Each player level adds a small stat bonus so that visible enemy levels are a fair comparison.
 - Eating also heals a little; slow health regeneration out of combat.
 - Death penalty: lose 25% of the XP progress toward the next level.
+- `@types/three` (type definitions only) was added as a dev dependency.
 - Evolving is done from the Tab menu (no extra key).
 - Polar bear has two active abilities (Heavy Swipe, Ice Slam) and two passives, exactly as listed in the bible.
 - Alpha stage is data-defined but locked in M1 (marked TODO for M2).
 
 ## Milestone 1 task list
 
-Each task ends with a check that was actually run, then a commit.
+Status on 2026-11-13: all tasks built and verified (26 unit tests, 74 browser checks, production build). Waiting for the user's playtest.
 
-- [ ] **1. Scaffold** — Vite + TS project, scripts (`dev`, `build`, `test`, `test:e2e`), `.gitignore`. Check: `npm run build` succeeds.
-- [ ] **2. Data + logic** — all data files, pure logic, unit tests written first. Check: `npm test` passes.
-- [ ] **3. World** — terrain, sky/fog/lights, instanced trees/rocks/grass, pond, den, arena, gate, boundary. Check: screenshot.
-- [ ] **4. Animal rig** — `AnimalModel` + procedural quadruped for wolf, lion, bear (2 variants), deer, boar, fox, stag; walk/run, idle, attack, hit flash, death.
-- [ ] **5. Player** — input, third-person orbit camera, walk/sprint/jump/dodge, stamina, swimming in the pond, collisions.
-- [ ] **6. Combat** — basic attack arcs, damage/defense, knockback, i-frames, statuses (stun, slow, bleed, buffs).
-- [ ] **7. Abilities** — effect handlers, cooldowns, ranks, passives; signature + 3 unlockables per playable species.
-- [ ] **8. Enemies** — AI state machine, 3 enemy types, spawn zones, respawn, carcass drops.
-- [ ] **9. Growth** — XP/levels/ability points, food (carcass, fish, berries by diet), growth meter, Juvenile -> Adult evolution, Alpha stub.
-- [ ] **10. HUD** — health, stamina, XP/level, growth, ability icons with cooldowns, biome + modifier, prompts, damage numbers, level tags, boss bar.
-- [ ] **11. Boss + gate** — Ancient Stag in the arena, "Forest Ruled" banner, gate opens to the stubbed Jungle.
-- [ ] **12. Death + save** — respawn at den with penalty; save/load/continue.
-- [ ] **13. Menus** — title, species select with 3D turntable, pause, Tab growth/ability menu.
-- [ ] **14. Verification** — Playwright run of the whole loop for each species, zero console errors, screenshots reviewed, `npm run build` clean.
-- [ ] **15. Wrap-up** — update CLAUDE.md (Milestone Status, Decisions Log, Known Issues, notes for M2).
+- [x] **1. Scaffold** — Vite + TS project, scripts (`dev`, `build`, `test`, `test:e2e`), `.gitignore`. Check: `npm run build` succeeds.
+- [x] **2. Data + logic** — all data files, pure logic, unit tests written first. Check: `npm test` passes.
+- [x] **3. World** — terrain, sky/fog/lights, instanced trees/rocks/grass, pond, den, arena, gate, boundary. Check: screenshot.
+- [x] **4. Animal rig** — `AnimalModel` + procedural quadruped for wolf, lion, bear (2 variants), deer, boar, fox, stag; walk/run, idle, attack, hit flash, death.
+- [x] **5. Player** — input, third-person orbit camera, walk/sprint/jump/dodge, stamina, swimming in the pond, collisions.
+- [x] **6. Combat** — basic attack arcs, damage/defense, knockback, i-frames, statuses (stun, slow, bleed, buffs).
+- [x] **7. Abilities** — effect handlers, cooldowns, ranks, passives; signature + 3 unlockables per playable species.
+- [x] **8. Enemies** — AI state machine, 3 enemy types, spawn zones, respawn, carcass drops.
+- [x] **9. Growth** — XP/levels/ability points, food (carcass, fish, berries by diet), growth meter, Juvenile -> Adult evolution, Alpha stub.
+- [x] **10. HUD** — health, stamina, XP/level, growth, ability icons with cooldowns, biome + modifier, prompts, damage numbers, level tags, boss bar.
+- [x] **11. Boss + gate** — Ancient Stag in the arena, "Forest Ruled" banner, gate opens to the stubbed Jungle.
+- [x] **12. Death + save** — respawn at den with penalty; save/load/continue.
+- [x] **13. Menus** — title, species select with 3D turntable, pause, Tab growth/ability menu.
+- [x] **14. Verification** — Playwright run of the whole loop for each species, zero console errors, screenshots reviewed, `npm run build` clean.
+- [x] **15. Wrap-up** — update CLAUDE.md (Milestone Status, Decisions Log, Known Issues, notes for M2).
 
 ## Review focus (things the tests must not miss)
 

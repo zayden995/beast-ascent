@@ -212,7 +212,7 @@ Menus: Title screen -> Species select (3D turntable preview showing stats, diet,
 | After | Optional: multiplayer, touch controls, real animal art (Higgsfield or free glTF assets) |
 
 ### Milestone Status
-- M1: **CURRENT** (not started)
+- M1: **CURRENT**. Built on 2026-11-13; every automated check passes (see "Verification"). Waiting for the user's own playtest and sign-off. Do not start M2 until the user says M1 is accepted.
 - M2 to M5: not started
 
 (Update this list at the end of every session.)
@@ -252,6 +252,17 @@ Menus: Title screen -> Species select (3D turntable preview showing stats, diet,
 - Take screenshots of the species select screen and gameplay, look at them, and fix what looks wrong.
 - Never claim something works without running it. If a browser cannot be run, say so and list exactly what is untested.
 
+### Commands
+- `npm install`, then `npm run dev` to play (open the printed localhost address).
+- `npm test`: unit tests for the rules in `src/logic` and the data in `src/data` (Node's built-in test runner, no extra dependency).
+- `npm run test:e2e`: starts the dev server, opens the game in headless Chromium, plays the whole M1 loop with real key and mouse events for all three species, fails on any console error, and writes screenshots to `tests/e2e/screenshots/`. First time on a new machine: `npx playwright install chromium`.
+- `npm run build`: typecheck plus a static site in `dist/` (relative paths, so it works from any sub-folder).
+- Adding `?debug` to the URL (or running in dev) exposes `window.__beast` test hooks: step the simulation, teleport, grant XP. They are not present in a normal production page.
+
+### State at the end of the M1 session (2026-11-13)
+- Passing: 26 unit tests, 74 browser checks, production build, and a load of the built `dist/` from a sub-path.
+- Not verified: frame rate on a real graphics card (the test browser renders in software), and how the game feels to play. Balance numbers are a first pass that no human has tuned yet.
+
 ## 13. Things to Avoid
 
 - Building all four biomes or all seven species before their milestone.
@@ -273,7 +284,189 @@ Keep it short: what works, what is rough, how to run it, what was changed in thi
 - 2026-11-13: Growth is two separate tracks: XP unlocks abilities; food fills a growth meter that, with a level requirement, evolves the animal (Juvenile -> Adult -> Alpha).
 - 2026-11-13: Ruling a biome requires only defeating its boss; this unlocks the next biome and the player may keep exploring unlocked biomes.
 - 2026-11-13: Controls are keyboard + mouse first.
+- 2026-11-13 (M1 build): Added `@types/three` as a dev dependency. It is the type definitions for three.js, needed for TypeScript; it adds nothing to the shipped game. This is one package beyond the list in section 8 and was added without asking first.
+- 2026-11-13 (M1 build): Forest boss is the **Ancient Stag** (level 10): antler swing, a telegraphed charge and a ground stomp. Phases wait for M5.
+- 2026-11-13 (M1 build): Forest enemies are **deer** (flees on sight), **boar** (attacks on sight, charges) and **fox** (small and fast, nips, flees below 40% health and comes back once recovered). "Other predator species as wild animals" is not in M1.
+- 2026-11-13 (M1 build): Each player level above 1 adds +3% max health and damage, so that visible enemy levels are a fair comparison. Wild animals gain +12% health and +10% damage per level.
+- 2026-11-13 (M1 build): Key 1 is the signature ability (free at level 1). Every ability has 3 ranks; each rank after the first adds 20% to its effect. One ability point per level.
+- 2026-11-13 (M1 build): Polar bear has two active abilities (Heavy Swipe, Ice Slam) and two passives (Thick Hide, Arctic Swimmer), exactly as listed in section 6, so its key 3 is empty. Brown bear has Heavy Swipe, Maul, Ground Slam and Thick Hide.
+- 2026-11-13 (M1 build): Evolving is done with the button in the Tab menu; there is no separate evolve key. The HUD says when evolution is ready.
+- 2026-11-13 (M1 build): Eating also heals (carcass 20%, fish 12%, berries 8% of max health). Health regenerates slowly after 6 seconds without taking damage.
+- 2026-11-13 (M1 build): Death penalty is 25% of the XP progress toward the next level. Growth is not reduced.
+- 2026-11-13 (M1 build): Food in the Forest: carcasses from defeated animals (rot after 90 s), 4 fish in the pond, 8 berry bushes (bear only in M1). Fish and berries come back after a while.
+- 2026-11-13 (M1 build): Animals swim across the pond at 60% speed instead of walking on the bottom.
+- 2026-11-13 (M1 build): XP curve is 20 + 12 x (level - 1)^1.3 per level (about 525 XP to reach level 8). Growth needed: 100 for Adult, 250 for Alpha.
+- 2026-11-13 (M1 build): Attacks turn the animal toward the nearest enemy in front of the camera (light aim assist), so melee connects in third person.
+- 2026-11-13 (M1 build): The game pauses while the Tab menu is open.
+- 2026-11-13 (M1 build): UI style is a trailhead signpost: arrow-ended sign planks for menu choices, dark bark panels, cream lettering, one system signage typeface (Bahnschrift with fallbacks, no downloaded fonts). Open to change if the user prefers another direction.
 
 ## 16. Known Issues / TODO
 
-(Empty. Add items here as they come up.)
+### Stubs (marked `TODO` in code)
+- **Alpha stage** (M2): defined in `src/data/stages.ts` but locked by `TUNING.maxPlayableStage = 'adult'`. The Tab menu and HUD say it arrives in Milestone 2.
+- **Tiger, Elephant, Crocodile, Eagle** (M2): data only. Their stats and abilities are placeholders, and each placeholder ability has a `todo` note in `src/data/abilities.ts`. The rig cannot yet draw stripes, a trunk, a long crocodile jaw, or wings.
+- **Plants as food** (M2): defined in `src/data/food.ts`, no source in the world yet (no herbivore is playable).
+- **Gate to the Jungle** (M3): opens after the boss; pressing E only shows a message. Jungle, Plains and Winter are palette stubs in `src/data/biomes.ts`.
+- **Boss phases, audio, settings** (M5): not started.
+
+### Known rough edges in M1
+- The camera can pass through trees and rocks; nothing moves it out of the way.
+- Enemy level tags are visible through trees and hills.
+- Animals do not path around obstacles; they slide along them.
+- The player can walk around behind the gate (there is nothing there).
+- Animal models are simple shapes. They read as wolf, lion and bear, but they are placeholders for nicer art.
+- Balance is untuned by a human: fight length, XP pace and boss difficulty are first guesses in the data files.
+- Frame rate on real hardware is unmeasured. A typical frame is about 270 draw calls and 340k triangles, which should be comfortable for a mid-range laptop.
+- After pressing Esc, browsers refuse to re-lock the mouse for about a second. Resuming with the Resume button works; resuming by pressing Esc again may need one click on the game.
+- `node_modules` sits inside a OneDrive folder, which makes installs slow and syncs thousands of files. Consider excluding it from sync or moving the project out of OneDrive.
+
+### Notes for Milestone 2
+- Set `TUNING.maxPlayableStage` to `'alpha'` and `TUNING.currentMilestone` to `2` in `src/data/tuning.ts`. Species unlock from their `playableFrom` value, and the save validator follows both settings.
+- New rig features go in `src/animals/ProceduralQuadruped.ts` (see `FeatureId` in `src/core/types.ts`). The eagle needs a second class behind the same `AnimalModel` interface; `createAnimalModel` in `src/animals/AnimalModel.ts` is the one place that chooses a rig.
+- Flight needs changes in `integrate` (`src/systems/actor.ts`) and the jump handling in `src/systems/player.ts`.
+- Abilities are data. An existing effect kind (`leap`, `melee`, `aoe`, `buff`, `passive`) needs only a data entry; a new mechanic (hit from behind, grab, "unseen") needs a new field in `AbilityEffect` and its handling in `src/systems/abilities.ts`.
+- Extend `tests/e2e/smoke.mjs` with a section per new species, as done for the lion and the bears.
+
+# CLAUDE.md
+
+These are general working instructions for coding and non-coding projects. Apply each instruction where it is relevant to the task and project; interpret or omit rules that do not apply. Follow more specific user instructions for the current task when they differ.
+
+## 1. Documentation and Project Continuity
+
+### Keep documentation up to date
+
+When a project change affects existing documentation, update the relevant documentation as part of the same task, before reporting the work as complete. This may include changes to features or content, files or structure, data, dependencies or configuration, design, workflows, or significant decisions and issues.
+
+Update only the documentation affected by the change. Do not update documentation for minor edits that do not affect what it describes.
+
+### Documentation responsibilities
+
+- Keep the project’s user or developer guide accurate and useful where one exists.
+- Keep any handover or continuity notes accurate about the current state, decisions, issues, and next steps where such notes are used.
+- Correct outdated information in the relevant documentation.
+- Create or reorganise documentation only when the project needs it; do not add unnecessary paperwork.
+
+## 2. Working Preferences and Communication
+
+### Planning and clarification
+
+- For new projects and major changes, discuss requirements and the proposed approach first, clarify material uncertainties, and obtain approval before implementation.
+- For small tasks, fixes, and straightforward modifications, use reasonable judgment and proceed without unnecessary approval requests.
+- Avoid assumptions that could significantly affect the outcome. Ask when missing information could materially change the result.
+
+### Visual design and previews
+
+- When a task involves visual design, provide actual examples or previews when practical. Use interactive previews when they help evaluate visual behaviour.
+- Claude may make minor design decisions independently, such as small spacing, typography, or alignment adjustments.
+- Seek approval before making major visual decisions or implementing a substantially different visual direction.
+- Visual previews are needed only for tasks involving visual design.
+
+### Explain trade-offs and follow requirements
+
+- Explain material limitations, compromises, risks, and likely effects on functionality, performance, usability, or maintainability before implementation when they could affect the user's decision.
+- Present alternatives when useful; do not hide limitations or present materially different outcomes as equivalent.
+- Implement the user's requirements as described. Do not silently substitute an approximation or add unrelated features.
+- If an exact result is not feasible, explain why and offer practical alternatives.
+
+### Communication
+
+- Communicate clearly and directly, using accessible explanations and an appropriate level of detail.
+- When something goes wrong, explain the cause before proposing a solution.
+- Distinguish completed work from proposed changes and outstanding tasks.
+- Be honest about uncertainty, limitations, and what has or has not been done.
+
+## 3. Content, Data and Project Management
+
+### Use authentic information
+
+- Do not invent real-world facts, statistics, prices, company details, contact information, or other factual content.
+- Mark missing or unverified information clearly, for example with `[PLACEHOLDER]`, or ask for it when it materially affects the result.
+- Preserve user-provided content, assets, and files. Fictional or sample content is acceptable when the user explicitly requests or approves it and it follows their requirements.
+
+### Project organisation and existing work
+
+- Understand the existing structure and conventions before making changes.
+- Keep work organised in a way that suits the project; avoid unnecessary files, clutter, and changes outside the agreed scope.
+- Avoid overwriting or removing existing functionality without justification.
+- Do not discard the user's existing or uncommitted work.
+- When asked to undo a change, fully revert everything introduced by that change, including related modifications.
+
+### Dependencies and security
+
+- Avoid unnecessary dependencies. Before introducing a major dependency or changing the technology stack, explain the reason and material trade-offs.
+- Protect credentials and sensitive information. Never expose API keys, passwords, authentication tokens, private credentials, or sensitive user data.
+- Use appropriate secure configuration for sensitive values and do not commit secrets to version control.
+
+## 4. Development and Implementation
+
+### Approval before implementation
+
+- Obtain approval before starting a new project or making a major structural, architectural, or otherwise consequential change.
+- Proceed independently with small tasks, fixes, and straightforward modifications.
+- Ask before destructive or difficult-to-reverse operations, such as deleting files or removing existing work.
+- Do not commit, push, publish, or deploy without explicit permission. Do not infer permission from technical ability or from approval of a different action.
+
+### Work from approved direction
+
+- After the user approves a design or implementation direction, proceed with the work.
+- Avoid unnecessary planning documents and paperwork. Keep internal checklists internal unless requested.
+- If work is paused pending approval, explain what has already changed, if anything, and what approval would enable next.
+
+### Respect the working environment
+
+- Respect the user's existing environment, tools, and workflow. Use only relevant tools and instructions for the task.
+- Avoid unnecessary commands or background processes. Clean up resources started during the work when appropriate.
+
+## 5. Testing and Quality Assurance
+
+Before declaring work complete, verify the result in ways appropriate to the task:
+
+- Check that the requested outcome is present and behaves as expected.
+- Review relevant content, interactions, calculations, outputs, or other deliverables for errors and unexpected behaviour.
+- Check that existing functionality or work has not been unintentionally damaged.
+- For visual work, inspect the result at relevant sizes or in relevant contexts.
+- For software work, run appropriate checks or builds when applicable.
+
+A successful build or absence of obvious errors does not by itself establish that the work is complete. Do not claim to have tested something that was not tested. Clearly report what was checked, what passed or failed, known limitations, and remaining issues.
+
+## 6. Version Control and Git
+
+When Git or another version control system is used:
+
+- Never commit or push changes without explicit permission.
+- Before requesting approval to commit, show the complete proposed commit message and ensure it accurately describes the changes.
+- Explain significant changes before asking the user to approve a commit or push.
+- Do not add unnecessary AI attribution or co-author trailers to commit messages.
+- Do not discard uncommitted user changes.
+
+## 7. Session Handover and Continuity
+
+### When to initiate a handover
+
+Prepare a session handover only when the user explicitly says they are done or wants to wrap up the current working session. Do not interrupt normal work to repeatedly ask about the next session.
+
+### End-of-session procedure
+
+When the user indicates the session is ending:
+
+1. Ensure relevant project documentation reflects the latest state.
+2. Record significant decisions and changes where appropriate.
+3. Identify incomplete tasks, outstanding issues, and unresolved placeholders.
+4. Ask what the user would like to work on next, unless they have already given the next agenda.
+5. Suggest relevant unfinished tasks and update the appropriate handover notes to reflect agreed next steps, if such notes are used.
+6. Provide a concise, practical handover with the relevant project or working context, materials to review, next task, and any preparation needed.
+
+Keep handovers consistent with the actual state of the work.
+
+## 8. General Principles
+
+Always prioritise:
+
+1. **User control:** The user makes final decisions on significant changes.
+2. **Accuracy:** Do not invent information or misrepresent results.
+3. **Transparency:** Explain material limitations, trade-offs, and problems honestly.
+4. **Quality:** Check the actual result using methods appropriate to the task.
+5. **Consistency:** Respect existing conventions and keep affected documentation accurate.
+6. **Efficiency:** Avoid unnecessary complexity, paperwork, and unrelated changes.
+7. **Security:** Protect credentials, sensitive information, and user data.
+8. **Continuity:** Make work understandable and practical to continue.

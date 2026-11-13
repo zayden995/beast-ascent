@@ -59,7 +59,7 @@ export const FOREST_LAYOUT = {
   gate: { x: 0, z: -101, radius: 6 },
   trees: 430,
   rocks: 80,
-  grassTufts: 9000,
+  grassTufts: 15000,
   berryBushes: [
     [-14, 30], [18, 34], [-32, 14], [22, -6], [-52, -18], [-10, -24], [62, -22], [30, 44],
   ] as [number, number][],

@@ -35,8 +35,8 @@ export const TUNING = {
     maxPitch: 1.25,
     startPitch: 0.32,
     /** Distance = base + perSize * animal size. */
-    baseDistance: 3.2,
-    distancePerSize: 3.6,
+    baseDistance: 2.4,
+    distancePerSize: 3.4,
     followLambda: 10,
     fov: 62,
   },

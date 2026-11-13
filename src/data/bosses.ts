@@ -25,7 +25,7 @@ const list: BossDef[] = [
       },
       attacks: [
         {
-          id: 'antler_swing', kind: 'melee', range: 1.6, windup: 0.7, recover: 0.9, damageMult: 1,
+          id: 'antler_swing', kind: 'melee', range: 1.8, windup: 0.7, recover: 0.9, damageMult: 1,
           arcDeg: 140, knockback: 9, cooldown: 2.0,
         },
         {
@@ -33,7 +33,7 @@ const list: BossDef[] = [
           damageMult: 1.7, knockback: 14, cooldown: 8, speed: 17, duration: 1.1,
         },
         {
-          id: 'stomp', kind: 'aoe', range: 3.5, radius: 6, windup: 0.9, recover: 1.0,
+          id: 'stomp', kind: 'aoe', range: 2.5, radius: 6, windup: 0.9, recover: 1.0,
           damageMult: 1.2, knockback: 8, cooldown: 11,
         },
       ],

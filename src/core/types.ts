@@ -187,7 +187,7 @@ export interface SpeciesDef {
 export interface EnemyAttackDef {
   id: string;
   kind: 'melee' | 'charge' | 'aoe';
-  /** Melee/aoe: reach beyond body radii. Charge: maximum start distance. */
+  /** Melee/aoe: reach in metres beyond both body radii. Charge: maximum start distance. */
   range: number;
   windup: number;
   recover: number;
