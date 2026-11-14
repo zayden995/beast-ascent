@@ -91,7 +91,7 @@ export function installDebug(app: App): void {
           x: a.pos.x, y: a.pos.y, z: a.pos.z, yaw: a.yaw,
           hp: a.hp, maxHp: a.stats.maxHealth, stamina: a.stamina, maxStamina: a.stats.stamina,
           damage: a.stats.damage, moveSpeed: a.stats.moveSpeed, defense: a.stats.defense, size: a.stats.size,
-          alive: a.alive, dead: g.player.dead, safe: g.world.inRefuge(a.pos.x, a.pos.z), grounded: a.grounded, swimming: a.swimming, wet: a.wet, flying: a.flying, altitude: a.altitude, vy: a.vy, invuln: a.invuln,
+          speed: Math.hypot(a.vx, a.vz), alive: a.alive, dead: g.player.dead, safe: g.world.inRefuge(a.pos.x, a.pos.z), grounded: a.grounded, swimming: a.swimming, wet: a.wet, flying: a.flying, altitude: a.altitude, vy: a.vy, invuln: a.invuln,
           level: p.level, xp: p.xp, abilityPoints: p.abilityPoints, stage: p.stage, growth: p.growth,
           ranks: { ...p.abilityRanks },
           mods: g.player.activeMods.map((m) => `${m.stat}:${m.pct}`),

@@ -19,7 +19,7 @@ import {
   summarizePassives, threatLevel, upgradeAbility, xpToNext,
 } from '../../src/logic/progression.ts';
 import { advanceDay, dayState, wrapDay } from '../../src/logic/dayNight.ts';
-import { computeStats, swimSpeedFactor } from '../../src/logic/stats.ts';
+import { computeStats, groundSprintSpeed, groundWalkSpeed, swimSpeedFactor } from '../../src/logic/stats.ts';
 
 const wolf = getSpecies('wolf');
 const wolfVariant = getVariant(wolf, 'default');
@@ -489,4 +489,14 @@ test('swimming: an animal swims at the standard fraction of its pace unless its 
   assert.equal(swimSpeedFactor(1.8, 0), 1.8, 'a species can swim faster than it walks');
   assert.ok(Math.abs(swimSpeedFactor(undefined, 0.5) - TUNING.player.swimSpeedMult * 1.5) < 1e-9, 'a passive adds to the standard fraction');
   assert.ok(Math.abs(swimSpeedFactor(1.8, 0.25) - 1.8 * 1.25) < 1e-9);
+});
+
+test('running on foot: a species sprints at its sprint speed unless it has a slower foot pace', () => {
+  assert.equal(groundSprintSpeed({ baseStats: { sprintSpeed: 10 } }), 10);
+  assert.equal(groundSprintSpeed({ baseStats: { sprintSpeed: 12 }, groundSprintMult: 0.5 }), 6);
+});
+
+test('walking on foot: a species walks at its walking pace unless it has a slower foot pace', () => {
+  assert.equal(groundWalkSpeed({ baseStats: { moveSpeed: 6 } }), 6);
+  assert.equal(groundWalkSpeed({ baseStats: { moveSpeed: 6.5 }, groundWalkMult: 0.5 }), 3.25);
 });

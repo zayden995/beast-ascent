@@ -54,3 +54,19 @@ export function computeStats(input: StatInputs): Stats {
 export function swimSpeedFactor(speciesMult: number | undefined, passivePct: number): number {
   return (speciesMult ?? TUNING.player.swimSpeedMult) * (1 + passivePct);
 }
+
+/**
+ * The speed a species sprints at on foot: its sprint speed, unless it has a slower pace on the ground.
+ * (The Eagle's sprint speed is for flying; on foot it runs much slower.)
+ */
+export function groundSprintSpeed(species: { baseStats: { sprintSpeed: number }; groundSprintMult?: number }): number {
+  return species.baseStats.sprintSpeed * (species.groundSprintMult ?? 1);
+}
+
+/**
+ * The speed a species walks at on foot: its walking pace, unless it has a slower pace on the ground.
+ * (The Eagle's walking pace is for flying; on foot it hops along slowly.)
+ */
+export function groundWalkSpeed(species: { baseStats: { moveSpeed: number }; groundWalkMult?: number }): number {
+  return species.baseStats.moveSpeed * (species.groundWalkMult ?? 1);
+}

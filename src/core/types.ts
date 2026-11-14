@@ -219,6 +219,10 @@ export interface SpeciesDef {
   rig: 'quadruped' | 'winged';
   /** Swim pace as a multiple of the walking pace. Left out: the standard fraction (`TUNING.player.swimSpeedMult`). */
   swimSpeedMult?: number;
+  /** Walking on foot is this fraction of the walking pace (flying is not affected). Left out: the full walking pace. */
+  groundWalkMult?: number;
+  /** Sprinting on foot is this fraction of the sprint speed (flying is not affected). Left out: the full sprint speed. */
+  groundSprintMult?: number;
   baseStats: Stats;
   body: BodyPlan;
   stageFeatures: Record<StageId, FeatureId[]>;

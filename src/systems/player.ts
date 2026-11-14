@@ -370,7 +370,11 @@ export class PlayerController {
           this.exhausted = true;
         }
       }
-      let speed = this.sprinting ? a.stats.sprintSpeed : a.stats.moveSpeed;
+      // A winged animal is slower on foot than in the air, both walking and sprinting (the Eagle).
+      const onFoot = !a.flying;
+      let speed = this.sprinting
+        ? a.stats.sprintSpeed * (onFoot ? growth.species.groundSprintMult ?? 1 : 1)
+        : a.stats.moveSpeed * (onFoot ? growth.species.groundWalkMult ?? 1 : 1);
       if (a.swimming) speed *= swimSpeedFactor(growth.species.swimSpeedMult, growth.getPassives().swimSpeedPct);
       if (this.swing) speed *= T.attackMoveMult;
       if (stunned || this.abilities.rooted) speed = 0;

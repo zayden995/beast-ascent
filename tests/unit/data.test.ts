@@ -11,7 +11,7 @@ import { TUNING } from '../../src/data/tuning.ts';
 import { withinEatingHeight } from '../../src/logic/flight.ts';
 import { parseSave, sanitizeSave } from '../../src/logic/saveData.ts';
 import { newProgress } from '../../src/logic/progression.ts';
-import { swimSpeedFactor } from '../../src/logic/stats.ts';
+import { groundSprintSpeed, groundWalkSpeed, swimSpeedFactor } from '../../src/logic/stats.ts';
 
 test('data: all seven species are defined; wolf, lion and bear are the ones playable in Milestone 1', () => {
   assert.deepEqual(
@@ -146,7 +146,7 @@ test('data: biome order, forest boss and spawn zones are consistent', () => {
 // it only bolts for a few seconds and then tires, so every playable species can still catch it.
 test('data: every animal that flees tires out, and a tired one can be walked down by every playable species', () => {
   const playable = SPECIES.filter((s) => isPlayable(s, TUNING.currentMilestone));
-  const slowestWalk = Math.min(...playable.map((s) => s.baseStats.moveSpeed));
+  const slowestWalk = Math.min(...playable.map((s) => groundWalkSpeed(s)));
   const runners = Object.values(ENEMIES).filter((e) => e.behavior.fleeOnSight || e.behavior.fleeHealthPct > 0);
   assert.ok(runners.length >= 2, 'deer and fox both flee');
   for (const e of runners) {
@@ -204,7 +204,8 @@ const MAX_RIVALS_MET = 5;
 
 test('data: rival predators: every playable species meets 1 to 5 of the others and can outrun them', () => {
   const playable = SPECIES.filter((s) => isPlayable(s, TUNING.currentMilestone));
-  const slowestSprint = Math.min(...playable.map((s) => s.baseStats.sprintSpeed));
+  // A fight against a rival can always be escaped: by running, or for a winged animal by flying (see the Eagle test).
+  const slowestSprint = Math.min(...playable.map((s) => (s.rig === 'winged' ? s.baseStats.sprintSpeed : groundSprintSpeed(s))));
   const rivalZones = FOREST_SPAWNS.filter((z) => z.rivalOf);
   assert.ok(rivalZones.length >= 2);
   for (const zone of rivalZones) {
@@ -338,4 +339,24 @@ test('save: out-of-range values are clamped instead of trusted', () => {
   assert.deepEqual(s.progress.abilityRanks, { bear_heavy_swipe: 1, bear_maul: 3 });
   assert.deepEqual(s.unlockedBiomes, ['forest', 'winter']);
   assert.deepEqual(s.ruledBiomes, []);
+});
+
+test('data: on foot the Eagle walks at about 4.2 m/s and sprints at 6, but still flies fast; everyone else is unchanged', () => {
+  const eagle = SPECIES.find((s) => s.id === 'eagle')!;
+  const elephant = SPECIES.find((s) => s.id === 'elephant')!;
+  assert.ok(Math.abs(groundSprintSpeed(eagle) - 6) < 0.05, `a sprint on foot is 6 m/s (it is ${groundSprintSpeed(eagle)})`);
+  assert.ok(groundWalkSpeed(eagle) >= elephant.baseStats.moveSpeed && groundWalkSpeed(eagle) < 4.3, 'on foot it walks about as slowly as the Elephant');
+  assert.ok(groundSprintSpeed(eagle) > groundWalkSpeed(eagle) * 1.3, 'a sprint on foot is clearly faster than a walk');
+  assert.ok(eagle.baseStats.sprintSpeed >= 12 && eagle.baseStats.moveSpeed >= 6.5, 'its flight is as fast as it was');
+  for (const s of SPECIES.filter((sp) => sp.id !== 'eagle')) {
+    assert.equal(groundSprintSpeed(s), s.baseStats.sprintSpeed, `${s.id} runs at its sprint speed`);
+    assert.equal(groundWalkSpeed(s), s.baseStats.moveSpeed, `${s.id} walks at its walking speed`);
+  }
+});
+
+test('data: the Eagle escapes a rival by flying: it is faster in the air, and a rival cannot follow it up', () => {
+  const eagle = SPECIES.find((s) => s.id === 'eagle')!;
+  const rivals = Object.values(ENEMIES).filter((e) => e.id.startsWith('rival_'));
+  assert.ok(rivals.every((r) => eagle.baseStats.sprintSpeed > r.baseStats.sprintSpeed), 'it out-flies every rival');
+  assert.ok(TUNING.flight.giveUpAltitude < TUNING.flight.ceiling, 'there is height to climb above the point where a chase is given up');
 });

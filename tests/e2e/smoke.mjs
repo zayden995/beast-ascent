@@ -132,8 +132,12 @@ async function fight(kind, { maxSeconds = 40, keepAlive = false } = {}) {
   return { killed: !alive, hurt, seconds: t, target, states };
 }
 
-/** Hunt prey the way a player does: sprint at it and attack when in reach. */
-async function hunt(kind, maxSeconds = 45) {
+/**
+ * Hunt prey the way a player does: sprint at it and attack when in reach. With `flying` the hunter flies
+ * low over the ground by tapping Space (an eagle on foot is too slow to hunt, so it hunts from the air).
+ */
+async function hunt(kind, maxSeconds = 45, { flying = false } = {}) {
+  let spaceDown = false;
   let s = await B.state();
   const target = s.enemies
     .filter((e) => e.alive && e.kind === kind && ['idle', 'wander'].includes(e.state))
@@ -157,6 +161,12 @@ async function hunt(kind, maxSeconds = 45) {
     if (!alive) break;
     if (now.state === 'flee') fled = true;
     await B.lookAt(now.x, now.z);
+    if (flying) {
+      // Stay about a metre above the ground: a flier can only bite what is within its height plus 1.2 m.
+      const wantUp = !s.player.flying || s.player.altitude < 0.8;
+      if (wantUp && !spaceDown) { await page.keyboard.down('Space'); spaceDown = true; }
+      if (!wantUp && spaceDown) { await page.keyboard.up('Space'); spaceDown = false; }
+    }
     // This checks that prey can be caught, not that the hunter survives whatever else it runs into.
     if (s.player.hp < s.player.maxHp * 0.6) await B.call('setHp', s.player.maxHp);
     const inReach = now.dist < 2.6;
@@ -167,6 +177,7 @@ async function hunt(kind, maxSeconds = 45) {
     t += 0.1;
   }
   if (attacking) await page.mouse.up();
+  if (spaceDown) await page.keyboard.up('Space');
   await page.keyboard.up('ShiftLeft');
   await page.keyboard.up('KeyW');
   return { killed: !alive, fled, seconds: Math.round(t * 10) / 10, level: target.level };
@@ -770,6 +781,12 @@ try {
   s = await B.state();
   check('polar bear: no Forest buff, Ice Slam on key 2', s.player.mods.length === 0 && s.player.abilities.join() === 'bear_heavy_swipe,bear_ice_slam');
   await shot('16-polar-bear');
+  // Leafy plants grow in random places. If one grew beside this bush the bear would be offered the plant
+  // (the nearest food) instead of the berries, so clear any plant near the bush first.
+  await page.evaluate(() => {
+    const food = window.__beast.app.game.food;
+    for (const item of [...food.items]) if (item.kind === 'plant' && Math.hypot(item.pos.x + 14, item.pos.z - 31.5) < 8) food.consume(item);
+  });
   await B.teleport(-14, 31.5);
   await B.advance(0.1);
   s = await B.state();
@@ -1289,6 +1306,39 @@ try {
   await B.advance(0.5);
   await B.call('setHp', (await B.state()).player.maxHp);
 
+  // On foot the eagle walks at about 4.2 m/s and sprints at 6; in the air it is as fast as ever (6.5 and 12 m/s).
+  const paceNow = async (sprint) => {
+    await page.evaluate(() => { const a = window.__beast.app.game.player.actor; a.stamina = a.stats.stamina; });
+    await B.lookAt(0, 20);
+    await page.keyboard.down('KeyW');
+    if (sprint) await page.keyboard.down('ShiftLeft');
+    await B.advance(0.8);
+    const speed = (await B.state()).player.speed;
+    if (sprint) await page.keyboard.up('ShiftLeft');
+    await page.keyboard.up('KeyW');
+    return speed;
+  };
+  const footWalk = await paceNow(false);
+  const footSpeed = await paceNow(true);
+  check('on foot an eagle walks at only about 4.2 m/s', footWalk > 3.9 && footWalk < 4.5, `${footWalk.toFixed(2)} m/s`);
+  check('and sprints at only 6 m/s, clearly faster than its walk', footSpeed > 5.7 && footSpeed < 6.3, `${footSpeed.toFixed(2)} m/s`);
+  await B.teleport(0, 43, Math.PI);
+  await page.evaluate(() => {
+    const g = window.__beast.app.game;
+    const a = g.player.actor;
+    a.flying = true;
+    a.grounded = false;
+    a.pos.y = g.world.heightAt(a.pos.x, a.pos.z) + 12;
+    a.vy = 0;
+  });
+  await B.advance(0.05);
+  const airSpeed = await paceNow(true);
+  check('in the air its sprint is as fast as ever, about 12 m/s', (await B.state()).player.flying && airSpeed > 11 && airSpeed < 12.6, `${airSpeed.toFixed(2)} m/s`);
+  await page.evaluate(() => { const a = window.__beast.app.game.player.actor; a.flying = false; a.vy = 0; });
+  await B.teleport(0, 43, Math.PI);
+  await B.advance(0.5);
+  await B.call('setHp', (await B.state()).player.maxHp);
+
   // Hold Space to take off and climb; let go to glide down; landing is automatic.
   await B.teleport(0, 43, Math.PI);
   await B.advance(0.2);
@@ -1435,8 +1485,10 @@ try {
   check('Gust blows an animal away', s.enemies.find((e) => e.id === line.ids[0]).z < line.az - 3 - 0.8, `${(line.az - 3 - s.enemies.find((e) => e.id === line.ids[0]).z).toFixed(2)} m further`);
   await B.teleport(0, 40, Math.PI);
   await B.advance(25);
-  const eagleDeer = await hunt('deer', 60);
-  check('juvenile eagle can run down and kill a fleeing deer on the ground', eagleDeer.killed && eagleDeer.fled, JSON.stringify(eagleDeer));
+  // On foot (walk 4.2, sprint 6) an eagle can no longer reliably catch a deer: it hunts by flying low over it.
+  const eagleDeer = await hunt('deer', 60, { flying: true });
+  check('juvenile eagle can fly low over a fleeing deer and kill it', eagleDeer.killed && eagleDeer.fled, JSON.stringify(eagleDeer));
+  await page.evaluate(() => { const a = window.__beast.app.game.player.actor; a.flying = false; a.vy = 0; });
 
   // ---------- Large time steps must not break the world ----------
   await B.teleport(96, 0, Math.PI / 2);

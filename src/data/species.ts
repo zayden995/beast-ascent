@@ -194,6 +194,11 @@ export const SPECIES: SpeciesDef[] = [
   {
     id: 'eagle', name: 'Eagle', role: 'Flying, dive attacks, fragile', diet: 'carnivore',
     playableFrom: 2, rig: 'winged',
+    // Slow on foot, quick in the air: on the ground it walks at 0.65 of its flying pace (about 4.2 m/s, the
+    // Elephant's walk) and sprints at half its flying sprint (6 m/s). Flying is 6.5 and 12 as before. A rival
+    // can outrun it on foot (7.0), so it escapes by flying (see the data tests).
+    groundWalkMult: 0.65,
+    groundSprintMult: 0.5,
     // Fragile on purpose: the least health of any animal, in exchange for flight and a long reach.
     baseStats: {
       maxHealth: 50, stamina: 130, staminaRegen: 24, damage: 12, moveSpeed: 6.5, sprintSpeed: 12,
