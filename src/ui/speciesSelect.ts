@@ -184,7 +184,7 @@ export class SpeciesSelect {
 
     const facts = el('dl');
     const diet = s.diet[0].toUpperCase() + s.diet.slice(1);
-    const eats = s.diet === 'carnivore' ? 'carcasses and fish' : s.diet === 'herbivore' ? 'fruit and plants' : 'carcasses, fish and berries';
+    const eats = s.diet === 'carnivore' ? 'carcasses and fish' : s.diet === 'herbivore' ? 'fruit, plants, leaves and nuts' : 'carcasses, fish, fruit, plants, leaves and nuts';
     facts.append(el('dt', '', 'Diet'), el('dd', '', `${diet}: ${eats}`));
     const { favored, disfavored } = favoredAndDisfavored(variant.biomeMods);
     const fav = el('dd', 'good', favored.map((m) => `${BIOMES[m.biome].name} ${describeMod(m)}`).join(', ') || 'None');

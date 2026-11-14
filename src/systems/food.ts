@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { toonMaterial } from '../animals/toon.ts';
 import type { FoodKind, WaterBody } from '../core/types.ts';
-import { FOODS } from '../data/food.ts';
+import { FOODS, RESERVE_PRODUCE, TREE_FOOD } from '../data/food.ts';
 import { TUNING } from '../data/tuning.ts';
 import { newFish, stepFish } from '../logic/fish.ts';
 import type { FishState } from '../logic/fish.ts';
@@ -18,6 +18,10 @@ export interface FoodItem {
   /** Bushes and fish come back this long after being eaten; 0 = never. */
   respawnSeconds: number;
   respawnAt: number;
+  /** What to call it when it is not the usual name of its kind (a reserve's carrots and apples). */
+  label?: string;
+  /** The fox food reserve it belongs to (an index into `FOREST_LAYOUT.foxReserves`), if any: eating it angers the foxes. */
+  reserve?: number;
   /**
    * Fish only: the circle they swim around, a clock for it (it stops while the fish flees), how far a wading
    * animal has pushed the fish off its circle, and the pond it lives in.
@@ -44,7 +48,16 @@ export class FoodSystem {
     fishBody: new THREE.SphereGeometry(1, 10, 8),
     fishTail: new THREE.ConeGeometry(0.16, 0.3, 4),
     leaf: new THREE.ConeGeometry(0.1, 0.8, 5),
+    soil: new THREE.CylinderGeometry(1.9, 1.9, 0.08, 20),
+    stone: new THREE.IcosahedronGeometry(0.22, 0),
   };
+  private soil = toonMaterial({ color: 0x4a3524 });
+  private stone = toonMaterial({ color: 0xa9a59b });
+  private green = toonMaterial({ color: 0x3f8f3c });
+  /** Models and materials made for the fox reserves' produce, and the soil and stones around them. */
+  private produceGeos: THREE.BufferGeometry[] = [];
+  private produceMats = new Map<number, THREE.Material>();
+  private reserveDecor: THREE.Object3D[] = [];
 
   constructor(scene: THREE.Scene, world: ForestWorld, rand: () => number, clock: { time: number }) {
     this.scene = scene;
@@ -64,6 +77,7 @@ export class FoodSystem {
     }
 
     this.growPlants(rand);
+    this.buildReserves();
 
     // Fish swim in every pond, in circles around spots spread across it.
     for (const water of world.layout.waters) {
@@ -82,6 +96,75 @@ export class FoodSystem {
         item.swim = { cx: water.x + Math.cos(a) * d, cz: water.z + Math.sin(a) * d, radius: 1.6 + rand() * 1.4, phase: rand() * 6, clock: 0, fish: newFish(), water };
       }
     }
+  }
+
+  /** The fox food reserves: a patch of dark earth with a ring of stones and one of each fruit and vegetable on it. */
+  private buildReserves(): void {
+    this.world.layout.foxReserves.forEach((reserve, index) => {
+      const ground = this.world.heightAt(reserve.x, reserve.z);
+      const patch = new THREE.Mesh(this.geos.soil, this.soil);
+      patch.position.set(reserve.x, ground + 0.04, reserve.z);
+      patch.receiveShadow = true;
+      this.scene.add(patch);
+      this.reserveDecor.push(patch);
+      for (let k = 0; k < 10; k++) {
+        const a = (k / 10) * Math.PI * 2;
+        const rock = new THREE.Mesh(this.geos.stone, this.stone);
+        rock.position.set(reserve.x + Math.cos(a) * 2.05, ground + 0.1, reserve.z + Math.sin(a) * 2.05);
+        rock.scale.set(1, 0.8 + (k % 3) * 0.25, 1);
+        this.scene.add(rock);
+        this.reserveDecor.push(rock);
+      }
+      RESERVE_PRODUCE.forEach((produce, k) => {
+        const a = (k / RESERVE_PRODUCE.length) * Math.PI * 2 + 0.3;
+        const g = this.produceMesh(produce);
+        g.position.set(reserve.x + Math.cos(a) * 1.1, ground + 0.16, reserve.z + Math.sin(a) * 1.1);
+        g.rotation.y = a * 2;
+        const item = this.add({ kind: produce.kind, growth: TREE_FOOD.reserveGrowth, mesh: g, respawnSeconds: TREE_FOOD.reserveRespawnSeconds });
+        item.label = produce.name;
+        item.reserve = index;
+      });
+    });
+  }
+
+  /** A small model of one reserve fruit or vegetable. */
+  private produceMesh(p: (typeof RESERVE_PRODUCE)[number]): THREE.Group {
+    const g = new THREE.Group();
+    let mat = this.produceMats.get(p.color);
+    if (!mat) {
+      mat = toonMaterial({ color: p.color });
+      this.produceMats.set(p.color, mat);
+    }
+    const add = (geo: THREE.BufferGeometry, material: THREE.Material, x: number, y: number, z: number, rx = 0, sx = 1, sy = 1, sz = 1): void => {
+      const m = new THREE.Mesh(geo, material);
+      m.position.set(x, y, z);
+      m.rotation.x = rx;
+      m.scale.set(sx, sy, sz);
+      g.add(m);
+      this.produceGeos.push(geo);
+    };
+    switch (p.shape) {
+      case 'cone':
+        add(new THREE.ConeGeometry(0.1, 0.42, 7), mat, 0, 0.1, 0, Math.PI / 2);
+        add(new THREE.ConeGeometry(0.07, 0.16, 5), this.green, 0, 0.1, -0.27, -Math.PI / 2);
+        break;
+      case 'long':
+        add(new THREE.IcosahedronGeometry(0.13, 1), mat, 0, 0.1, 0, 0, 1, 0.8, 2.2);
+        break;
+      case 'cob':
+        add(new THREE.CylinderGeometry(0.075, 0.07, 0.34, 8), mat, 0, 0.09, 0, Math.PI / 2);
+        add(new THREE.CylinderGeometry(0.085, 0.07, 0.18, 8), this.green, 0, 0.09, -0.2, Math.PI / 2);
+        break;
+      case 'ball':
+        add(new THREE.IcosahedronGeometry(0.15, 1), mat, 0, 0.14, 0);
+        break;
+      case 'cluster':
+        for (const [x, z] of [[0, 0], [0.11, 0.05], [-0.06, 0.1]]) add(new THREE.IcosahedronGeometry(0.08, 1), mat, x, 0.09, z);
+        break;
+      default:
+        add(new THREE.IcosahedronGeometry(0.09, 1), mat, 0, 0.1, 0);
+    }
+    return g;
   }
 
   /** Leafy plants for herbivores: a few inside the den's refuge, the rest scattered through the Forest. */
@@ -214,6 +297,10 @@ export class FoodSystem {
     for (const item of this.items) item.mesh.removeFromParent();
     this.items = [];
     for (const g of Object.values(this.geos)) g.dispose();
-    for (const m of [this.meat, this.bone, this.berry, this.fishMat, this.leaf, this.leafDark]) m.dispose();
+    for (const m of [this.meat, this.bone, this.berry, this.fishMat, this.leaf, this.leafDark, this.soil, this.stone, this.green]) m.dispose();
+    for (const decor of this.reserveDecor) decor.removeFromParent();
+    this.reserveDecor = [];
+    for (const g of this.produceGeos) g.dispose();
+    for (const m of this.produceMats.values()) m.dispose();
   }
 }

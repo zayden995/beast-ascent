@@ -27,7 +27,7 @@ export interface StatMod {
 export type StageId = 'juvenile' | 'adult' | 'alpha';
 export type BiomeId = 'forest' | 'jungle' | 'plains' | 'winter';
 export type Diet = 'carnivore' | 'herbivore' | 'omnivore';
-export type FoodKind = 'carcass' | 'fish' | 'fruit' | 'plant';
+export type FoodKind = 'carcass' | 'fish' | 'fruit' | 'plant' | 'leaf' | 'nut';
 
 export interface StageDef {
   id: StageId;
@@ -347,6 +347,8 @@ export interface SpawnZoneDef {
   rivalOf?: string;
   /** Seconds before a dead animal from this zone comes back (default: TUNING.enemies.respawnSeconds). */
   respawnSeconds?: number;
+  /** Guards the fox food reserve with this index (`FOREST_LAYOUT.foxReserves`): calm until the reserve is raided. */
+  guardOf?: number;
 }
 
 export interface BiomePalette {

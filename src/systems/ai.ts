@@ -2,6 +2,7 @@ import type { AnimalModel } from '../animals/AnimalModel.ts';
 import { dampAngle, lerp } from '../core/math.ts';
 import type { EnemyAttackDef, EnemyDef, SpawnZoneDef } from '../core/types.ts';
 import { TUNING } from '../data/tuning.ts';
+import { guardWanderRadius } from '../logic/foxReserve.ts';
 import { noticeMultiplier } from '../logic/senses.ts';
 import { shoreStandPoint } from '../logic/water.ts';
 import type { StatInputs } from '../logic/stats.ts';
@@ -30,6 +31,8 @@ export class EnemyActor extends Actor {
   cooldowns: Record<string, number> = {};
   /** Was attacked: fights back even if it is not aggressive by nature. */
   provoked = false;
+  /** A guard of a fox food reserve: ignores the player until the reserve is raided (or it is attacked). */
+  calm = false;
   fleeTime = 0;
   chargeHit = false;
   chargeX = 0;
@@ -96,8 +99,9 @@ function moveToward(e: EnemyActor, x: number, z: number, speed: number, dt: numb
 
 function pickWanderTarget(e: EnemyActor, ctx: AiContext): void {
   e.drinkYaw = null;
-  // Now and then the walk is to the nearest pond, to drink (never for a boss, and never far from home).
-  if (!e.isBoss && ctx.rand() < TUNING.drink.chance) {
+  // Now and then the walk is to the nearest pond, to drink (never for a boss or a guard of a fox food reserve,
+  // which stays with its food, and never far from home).
+  if (!e.isBoss && e.zone?.guardOf === undefined && ctx.rand() < TUNING.drink.chance) {
     const spot = shoreStandPoint(ctx.world.layout.waters, e.pos.x, e.pos.z, TUNING.drink.reach);
     if (
       spot
@@ -113,7 +117,8 @@ function pickWanderTarget(e: EnemyActor, ctx: AiContext): void {
       return;
     }
   }
-  const r = e.def.behavior.wanderRadius;
+  // A guard of a fox food reserve stays near its food, so that a raid angers all of them.
+  const r = e.zone?.guardOf !== undefined ? guardWanderRadius(e.def.behavior.wanderRadius, e.zone.radius) : e.def.behavior.wanderRadius;
   for (let i = 0; i < 6; i++) {
     const a = ctx.rand() * Math.PI * 2;
     const d = Math.sqrt(ctx.rand()) * r;
@@ -227,7 +232,7 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
           e.startFlee();
           break;
         }
-        if (!hurt && ((sees && b.aggressive) || (e.provoked && p.alive && !refuge && dist < b.aggroRadius * 2))) {
+        if (!hurt && ((sees && b.aggressive && !e.calm) || (e.provoked && p.alive && !refuge && dist < b.aggroRadius * 2))) {
           e.state = 'chase';
           break;
         }
@@ -364,7 +369,7 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
           e.startFlee();
           break;
         }
-        if (!hurt && sees && b.aggressive && (e.isBoss || distHome < b.leashRadius * 0.5)) {
+        if (!hurt && sees && b.aggressive && !e.calm && (e.isBoss || distHome < b.leashRadius * 0.5)) {
           e.state = 'chase';
           break;
         }

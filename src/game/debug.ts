@@ -50,6 +50,10 @@ export function installDebug(app: App): void {
       addGrowth(g.growth.progress, amount);
       g.events.emit('progress', null);
     },
+    /** The trees that bear fruit or nuts, with their positions. */
+    treatTrees() {
+      return app.game?.trees.treatTrees() ?? [];
+    },
     /** The animals behind the title screen, or null while a game is running. */
     titleAnimals() {
       return app.titleLife?.snapshot() ?? null;
@@ -101,10 +105,10 @@ export function installDebug(app: App): void {
         },
         enemies: g.spawner.enemies.map((e) => ({
           id: e.id, kind: e.def.id, level: e.level, x: e.pos.x, z: e.pos.z, hp: e.hp, maxHp: e.stats.maxHealth,
-          state: e.state, drinking: e.drinking, alive: e.alive, boss: e.isBoss, stun: e.stun, slow: e.slowTime, bleeds: e.bleeds.length,
+          state: e.state, drinking: e.drinking, calm: e.calm, provoked: e.provoked, alive: e.alive, boss: e.isBoss, stun: e.stun, slow: e.slowTime, bleeds: e.bleeds.length,
           dist: e.distanceTo(a),
         })),
-        food: g.food.items.map((f) => ({ kind: f.kind, x: f.pos.x, z: f.pos.z, available: f.available })),
+        food: g.food.items.map((f) => ({ kind: f.kind, x: f.pos.x, z: f.pos.z, available: f.available, label: f.label, reserve: f.reserve })),
       };
     },
   };

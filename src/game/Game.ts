@@ -1,12 +1,13 @@
 import type * as THREE from 'three';
 import { EventBus } from '../core/events.ts';
-import type { BossDef } from '../core/types.ts';
+import type { BossDef, FoodKind } from '../core/types.ts';
 import { mulberry32 } from '../core/math.ts';
 import { BIOMES, FOREST_SPAWNS, nextBiome } from '../data/biomes.ts';
 import { getBoss } from '../data/bosses.ts';
-import { FOODS, canEat } from '../data/food.ts';
+import { FOODS, TREE_FOOD, canEat } from '../data/food.ts';
 import { TUNING } from '../data/tuning.ts';
 import { withinEatingHeight } from '../logic/flight.ts';
+import { foxesToProvoke } from '../logic/foxReserve.ts';
 import { nightVisionFactor } from '../logic/vision.ts';
 import { enemyXp, growthNeeded } from '../logic/progression.ts';
 import { playerIsUnseen } from '../logic/stealth.ts';
@@ -25,10 +26,14 @@ import type { Input } from '../systems/input.ts';
 import { PlayerController } from '../systems/player.ts';
 import { writeSave } from '../systems/save.ts';
 import { Spawner } from '../systems/spawner.ts';
+import { TreeFoodSystem } from '../systems/treeFood.ts';
 import { Hud } from '../ui/hud.ts';
 import { WorldLabels } from '../ui/worldLabels.ts';
 import type { ForestWorld } from '../world/forest.ts';
 import type { Sky } from '../world/sky.ts';
+
+/** What the E prompt calls each kind of tree food. */
+const TREE_LABELS = { leaf: 'leaves', fruit: 'fruit', nut: 'nuts' } as const;
 
 export interface GameContext {
   scene: THREE.Scene;
@@ -54,6 +59,8 @@ export class Game {
   readonly player: PlayerController;
   readonly spawner: Spawner;
   readonly food: FoodSystem;
+  /** Leaves, fruit and nuts on the trees. */
+  readonly trees: TreeFoodSystem;
   readonly combat: Combat;
   readonly fx: Fx;
   readonly hud: Hud;
@@ -90,6 +97,7 @@ export class Game {
     // Rival predators of the player's own species are left out.
     this.spawner.spawnZones(FOREST_SPAWNS.filter((zone) => zone.rivalOf !== profile.speciesId));
     this.food = new FoodSystem(scene, world, this.rand, this.clock);
+    this.trees = new TreeFoodSystem(scene, world, this.clock);
 
     // The boss is back every time the player enters the biome, even after it has been beaten.
     // A ruled biome stays ruled and its gate stays open.
@@ -195,6 +203,7 @@ export class Game {
     this.spawner.update(pa.pos);
     // A fish swims away from the player only when the player is wading or swimming (a flier skimming the pond does not scare it).
     this.food.update(dt, pa.wet && pa.alive && !pa.flying ? pa.pos : null);
+    this.trees.update();
     this.fx.update(dt);
     this.interact();
 
@@ -255,7 +264,7 @@ export class Game {
     const lowEnough = withinEatingHeight(pa.flying ? pa.altitude : 0, TUNING.flight.eatAltitude);
     const item = lowEnough ? this.food.nearest(pa.pos, TUNING.food.eatRange + pa.radius) : null;
     if (item) {
-      const name = FOODS[item.kind].name.toLowerCase();
+      const name = (item.label ?? FOODS[item.kind].name).toLowerCase();
       if (canEat(this.growth.species.diet, item.kind)) {
         this.prompt = { key: 'E', text: `Eat ${name}` };
         if (pressed) this.eat(item);
@@ -264,6 +273,21 @@ export class Game {
         this.prompt = { key: '', text: `${who[0].toUpperCase()}${who.slice(1)} cannot eat ${name}` };
       }
       return;
+    }
+
+    // Leaves, fruit and nuts on the trees: only for plant-eaters (a wolf walking past gets no prompt at every tree).
+    const tree = lowEnough ? this.trees.nearest(pa.pos, TUNING.food.eatRange + pa.radius) : -1;
+    if (tree >= 0) {
+      const pick = this.trees.pick(tree);
+      if (pick && canEat(this.growth.species.diet, pick)) {
+        const label = TREE_LABELS[pick];
+        this.prompt = { key: 'E', text: `Eat ${label}` };
+        if (pressed) {
+          this.trees.take(tree, pick);
+          this.eatKind(pick, TREE_FOOD[pick].growth, `${label[0].toUpperCase()}${label.slice(1)}`);
+        }
+        return;
+      }
     }
 
     const { gate } = this.world.layout;
@@ -283,18 +307,35 @@ export class Game {
   }
 
   private eat(item: FoodItem): void {
+    this.eatKind(item.kind, item.growth, item.label ?? FOODS[item.kind].name);
+    this.food.consume(item);
+    if (item.reserve !== undefined) this.raidReserve(item);
+  }
+
+  /** Eating from a fox food reserve angers every fox within range: they all attack. */
+  private raidReserve(item: FoodItem): void {
+    const foxes = this.spawner.enemies.filter((e) => e.def.id === 'fox').map((e) => ({ x: e.pos.x, z: e.pos.z, alive: e.alive, enemy: e }));
+    const angry = foxesToProvoke(foxes, item.pos, TREE_FOOD.provokeRange);
+    for (const { enemy } of angry) {
+      enemy.calm = false;
+      enemy.provoked = true;
+      if (enemy.state === 'idle' || enemy.state === 'wander' || enemy.state === 'return') enemy.state = 'chase';
+    }
+    if (angry.length > 0) this.events.emit('toast', { text: 'The foxes guarding the food are furious!', tone: 'bad' });
+  }
+
+  /** Feeds the growth meter, heals, and says what was eaten. */
+  private eatKind(kind: FoodKind, growth: number, name: string): void {
     const pa = this.player.actor;
     const before = this.growth.progress.growth;
-    const healPct = this.growth.eat(item.kind, item.growth);
+    const healPct = this.growth.eat(kind, growth);
     const gained = Math.round(this.growth.progress.growth - before);
-    this.food.consume(item);
 
     const heal = Math.round(Math.min(pa.stats.maxHealth - pa.hp, pa.stats.maxHealth * healPct));
     if (heal > 0) {
       pa.hp += heal;
       this.events.emit('heal', { target: pa, amount: heal });
     }
-    const name = FOODS[item.kind].name;
     let text = `${name}: +${gained} growth`;
     // An Alpha is fully grown and has no growth meter to fill.
     if (gained <= 0) text = growthNeeded(this.growth.progress.stage) === null ? `${name} eaten.` : `${name} eaten. Growth meter is full.`;
@@ -337,6 +378,7 @@ export class Game {
     this.player.dispose();
     this.spawner.dispose();
     this.food.dispose();
+    this.trees.dispose();
     this.fx.dispose();
   }
 }

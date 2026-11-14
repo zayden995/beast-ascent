@@ -43,6 +43,8 @@ export class Spawner {
         ];
     const enemy = new EnemyActor(def, model, () => ({ base: def.baseStats, sizeScale, powerMult: 1, levelBonus: 0, mods }), isBoss, zone);
     enemy.level = level;
+    // The guards of a fox food reserve ignore the player until the reserve is raided.
+    enemy.calm = zone?.guardOf !== undefined;
     this.scene.add(model.root);
     this.enemies.push(enemy);
     return enemy;
@@ -76,6 +78,11 @@ export class Spawner {
       if (!avoid || Math.hypot(cx - avoid.x, cz - avoid.z) > 28) break;
     }
     this.place(e, x, z);
+    // A guard of a fox food reserve calls the middle of the reserve home, not the spot it happened to appear at.
+    if (zone.guardOf !== undefined) {
+      e.homeX = zone.x;
+      e.homeZ = zone.z;
+    }
     return e;
   }
 

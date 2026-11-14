@@ -27,6 +27,8 @@ export class ForestWorld {
   readonly biome = BIOMES.forest;
   readonly heightAt: HeightFn;
   readonly colliders = new ColliderGrid();
+  /** Every tree (where it stands, how big it is, whether it is a pine, and the height of the ground at its foot). */
+  readonly treeSpots: { x: number; z: number; s: number; tall: number; pine: boolean; y: number }[] = [];
   /** Players and animals are kept inside this radius. */
   readonly boundary: number;
 
@@ -218,6 +220,7 @@ export class ForestWorld {
       const tall = t.s * (0.9 + this.rand() * 0.35);
       const matrix = new THREE.Matrix4().compose(new THREE.Vector3(t.x, y, t.z), _q, new THREE.Vector3(t.s, tall, t.s));
       const shade = 0.85 + this.rand() * 0.3;
+      this.treeSpots.push({ x: t.x, z: t.z, s: t.s, tall, pine: t.pine, y });
       if (t.pine) {
         pines.push({ matrix, color: new THREE.Color(0x2f7245).multiplyScalar(shade) });
       } else {

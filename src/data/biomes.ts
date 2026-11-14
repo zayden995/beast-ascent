@@ -77,6 +77,11 @@ export const FOREST_LAYOUT = {
   berryBushes: [
     [-14, 30], [18, 34], [-32, 14], [22, -6], [-52, -18], [-10, -24], [62, -22], [30, 44],
   ] as [number, number][],
+  /**
+   * Two fox food reserves (fruit and vegetables, guarded by foxes that stay calm until it is raided). On open
+   * ground found by scanning the Forest, clear of water, the den, the arena and the gate (a unit test checks).
+   */
+  foxReserves: [{ x: -24, z: 8 }, { x: 48, z: -32 }],
   /** Leafy plants for herbivores to eat (4 of them inside the den refuge). */
   plants: 30,
   plantsAtDen: 4,
@@ -89,6 +94,9 @@ export const FOREST_SPAWNS: SpawnZoneDef[] = [
   { enemyId: 'deer', count: 3, x: 44, z: -40, radius: 20, levelMin: 2, levelMax: 4 },
   { enemyId: 'fox', count: 3, x: 14, z: 14, radius: 26, levelMin: 1, levelMax: 2 },
   { enemyId: 'fox', count: 2, x: -60, z: -30, radius: 20, levelMin: 2, levelMax: 4 },
+  // The guards of the two fox food reserves: calm until the reserve is raided, then they all attack.
+  { enemyId: 'fox', count: 3, x: -24, z: 8, radius: 6, levelMin: 1, levelMax: 3, guardOf: 0 },
+  { enemyId: 'fox', count: 4, x: 48, z: -32, radius: 6, levelMin: 1, levelMax: 3, guardOf: 1 },
   { enemyId: 'boar', count: 3, x: -32, z: -40, radius: 20, levelMin: 3, levelMax: 5 },
   { enemyId: 'boar', count: 2, x: 34, z: -14, radius: 16, levelMin: 4, levelMax: 6 },
   // Rival predators: the playable species living wild, each in its own territory at the edge of

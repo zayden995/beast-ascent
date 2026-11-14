@@ -86,6 +86,20 @@ const hold = (id, yaw) => page.evaluate(([animal, facing]) => {
 }, [id, yaw]);
 
 /** From the title: New Game, pick a save slot (confirming a replace if it holds an animal), then the species. */
+/** A tree that bears this kind of food (fruit or nuts), with clear ground 2.6 m east of it to stand on. */
+const pickTree = (kind) => page.evaluate((k) => {
+  const w = window.__beast.app.world;
+  const g = window.__beast.app.game;
+  for (const t of g.trees.treatTrees().filter((x) => x.kind === k && Math.hypot(x.x, x.z) < 85)) {
+    const px = t.x + 2.6;
+    const pz = t.z;
+    const crowded = w.treeSpots.some((o, i) => i !== t.index && Math.hypot(o.x - px, o.z - pz) < 5)
+      || w.colliders.blocked(px, pz, 0.8) || w.waterDepth(px, pz) > 0 || w.inRefuge(px, pz, 2);
+    if (!crowded) return t;
+  }
+  return null;
+}, kind);
+
 async function newGame(speciesName, variantName, slot = 1) {
   await page.getByRole('button', { name: /New Game/ }).click();
   await page.locator(`.save-slot[data-slot="${slot}"]`).click();
@@ -772,6 +786,13 @@ try {
     `lion saved xp ${both[1].progress.xp} (live ${lionXp}), wolf level ${both[0].progress.level}`);
   await settle();
   check('lion HUD shows "No modifier here"', /No modifier here/.test(await page.locator('.hud-biome').innerText()));
+  const lionSpot = await pickTree('fruit');
+  await B.teleport(lionSpot.x + 2.6, lionSpot.z);
+  await B.advance(0.1);
+  const lionPrompt = (await B.state()).prompt?.text ?? '';
+  check('a lion gets no prompt at a fruit tree: it does not eat leaves or fruit', !/Eat|cannot/.test(lionPrompt), `prompt "${lionPrompt}"`);
+  await B.teleport(0, 43, Math.PI);
+  await B.advance(0.3);
   const lionTarget = nearest(s, 'boar');
   await B.teleport(lionTarget.x, lionTarget.z + 3);
   await B.lookAt(lionTarget.x, lionTarget.z);
@@ -1146,7 +1167,7 @@ try {
   check('an elephant meets all four rivals', elephantRivals.sort().join() === 'rival_bear,rival_lion,rival_wolf,rival_wolf', elephantRivals.join(' '));
   await shot('18e-elephant');
 
-  const plants = s.food.filter((f) => f.kind === 'plant');
+  const plants = s.food.filter((f) => f.kind === 'plant' && f.reserve === undefined);
   const plantsAtDen = plants.filter((f) => Math.hypot(f.x, f.z - 52) < 12).length;
   check('the Forest has plants for herbivores, a few of them inside the den refuge', plants.length >= 28 && plantsAtDen >= 3, `${plants.length} plants, ${plantsAtDen} at the den`);
   const nearestPlant = plants.sort((a, b) => Math.hypot(a.x - s.player.x, a.z - s.player.z) - Math.hypot(b.x - s.player.x, b.z - s.player.z))[0];
@@ -1156,12 +1177,76 @@ try {
   check('an elephant can eat plants', s.prompt?.key === 'E' && /Eat plants/.test(s.prompt.text), s.prompt?.text);
   await tap('KeyE');
   s = await B.state();
-  check('plants give growth, and grow back later', s.player.growth === 7 && s.food.filter((f) => f.kind === 'plant' && f.available).length === plants.length - 1, `growth ${s.player.growth}`);
+  check('plants give growth, and grow back later', s.player.growth === 7 && s.food.filter((f) => f.kind === 'plant' && f.reserve === undefined && f.available).length === plants.length - 1, `growth ${s.player.growth}`);
   const fishAt = s.food.find((f) => f.kind === 'fish');
   await B.teleport(fishAt.x, fishAt.z);
   await B.advance(0.1);
   s = await B.state();
   check('a herbivore is told it cannot eat fish, with the right article', /^An elephant cannot eat fish/.test(s.prompt?.text ?? ''), s.prompt?.text);
+
+  // Food on the trees: leaves on every tree, fruit on some broadleaf trees, nuts on some pines.
+  const treats = await page.evaluate(() => window.__beast.treatTrees());
+  const nFruit = treats.filter((t) => t.kind === 'fruit').length;
+  const nNuts = treats.filter((t) => t.kind === 'nut').length;
+  check('some trees bear fruit and some pines bear nuts', nFruit >= 15 && nNuts >= 15, `${nFruit} fruit trees, ${nNuts} nut trees`);
+  const treeFeast = async (kind, word, growth) => {
+    const tree = await pickTree(kind);
+    await B.teleport(tree.x + 2.6, tree.z);
+    await B.advance(0.1);
+    s = await B.state();
+    check(`an elephant is offered ${word} at a ${kind} tree`, new RegExp(`^Eat ${word}`).test(s.prompt?.text ?? ''), `prompt "${s.prompt?.text ?? ''}"`);
+    let before = s.player.growth;
+    await tap('KeyE');
+    await B.advance(0.1);
+    s = await B.state();
+    check(`${word} give ${growth} growth`, s.player.growth - before === growth, `+${s.player.growth - before}`);
+    check('the leaves are still there to eat afterwards', /^Eat leaves/.test(s.prompt?.text ?? ''), `prompt "${s.prompt?.text ?? ''}"`);
+    before = s.player.growth;
+    await tap('KeyE');
+    await B.advance(0.1);
+    s = await B.state();
+    check('leaves give only 3 growth, the least of any food', s.player.growth - before === 3, `+${s.player.growth - before}`);
+    check('and then the tree is bare', !/^Eat/.test(s.prompt?.text ?? ''), `prompt "${s.prompt?.text ?? ''}"`);
+    for (let minute = 0; minute < 3; minute++) {
+      await B.advance(21);
+      await B.call('setHp', s.player.maxHp); // a wandering rival must not end the test early
+    }
+    await B.teleport(tree.x + 2.6, tree.z);
+    await B.advance(0.2);
+    s = await B.state();
+    check(`${word} are back after a minute`, new RegExp(`^Eat ${word}`).test(s.prompt?.text ?? ''), `prompt "${s.prompt?.text ?? ''}"`);
+  };
+  await treeFeast('fruit', 'fruit', 8);
+  await treeFeast('nut', 'nuts', 10);
+
+  // The fox food reserves: calm guards, rich food, and a raid angers every fox nearby.
+  s = await B.state();
+  const guardFoxes = s.enemies.filter((e) => e.kind === 'fox' && e.calm);
+  const allFoxes = s.enemies.filter((e) => e.kind === 'fox');
+  check('seven calm foxes guard the two fox food reserves, besides the foxes elsewhere', guardFoxes.length === 7 && allFoxes.length >= 12, `${guardFoxes.length} guards, ${allFoxes.length} foxes`);
+  const produce = s.food.filter((f) => f.reserve !== undefined);
+  check('each reserve holds six different fruits and vegetables', [0, 1].every((r) => produce.filter((f) => f.reserve === r).length === 6) && new Set(produce.map((f) => f.label)).size === 6, [...new Set(produce.map((f) => f.label))].join(', '));
+  const firstProduce = produce.find((f) => f.reserve === 0);
+  await B.teleport(firstProduce.x + 1.6, firstProduce.z);
+  await B.call('setHp', s.player.maxHp);
+  await B.advance(2);
+  s = await B.state();
+  const nearGuards = s.enemies.filter((e) => e.kind === 'fox' && e.calm && Math.hypot(e.x - firstProduce.x, e.z - firstProduce.z) < 15);
+  check('the guards ignore an animal that stands among their food', nearGuards.length >= 3 && nearGuards.every((e) => ['idle', 'wander'].includes(e.state)), nearGuards.map((e) => e.state).join(','));
+  check('and the elephant is offered the produce', /^Eat (carrot|sweet potato|corn|apple|berries|cherry tomato)/.test(s.prompt?.text ?? ''), `prompt "${s.prompt?.text ?? ''}"`);
+  await shot('18j-fox-reserve');
+  const growthAtReserve = s.player.growth;
+  await tap('KeyE');
+  await B.advance(0.3);
+  s = await B.state();
+  check('reserve produce gives 12 growth, more than anything growing wild', s.player.growth - growthAtReserve === 12, `+${s.player.growth - growthAtReserve}`);
+  const furious = s.enemies.filter((e) => e.kind === 'fox' && Math.hypot(e.x - firstProduce.x, e.z - firstProduce.z) <= 15);
+  const faraway = s.enemies.filter((e) => e.kind === 'fox' && Math.hypot(e.x - firstProduce.x, e.z - firstProduce.z) > 20);
+  check('raiding the reserve sends every fox nearby after the raider', furious.length >= 3 && furious.every((e) => e.provoked && !e.calm), `${furious.length} foxes, states ${furious.map((e) => e.state).join(',')}`);
+  check('the foxes far away, and the guards of the other reserve, stay calm', faraway.length >= 6 && faraway.every((e) => !e.provoked), `${faraway.filter((e) => e.provoked).length} of ${faraway.length} far foxes angry`);
+  await B.teleport(0, 43, Math.PI);
+  await B.advance(0.5);
+  await B.call('setHp', s.player.maxHp);
 
   // Charge: a ground dash that hits everything on the way, once each.
   let line = await corridor([0, -3]);
