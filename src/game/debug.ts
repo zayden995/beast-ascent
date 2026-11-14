@@ -80,6 +80,8 @@ export function installDebug(app: App): void {
         time: g.clock.time,
         prompt: g.prompt,
         gateOpen: g.world.isGateOpen(),
+        // How much of its daytime sight the player has (1 = all), and the fog's far distance in metres.
+        vision: { sight: g.vision.sight, fog: g.vision.fog, fogFar: (app.scene.fog as { far?: number } | null)?.far ?? 0 },
         species: g.growth.profile.speciesId,
         variant: g.growth.profile.variantId,
         slot: g.slot,

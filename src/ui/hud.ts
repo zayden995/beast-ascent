@@ -3,6 +3,8 @@ import { TUNING } from '../data/tuning.ts';
 import { describeMod } from '../logic/biome.ts';
 import { describeDeath } from '../logic/deathText.ts';
 import { PHASE_NAMES } from '../logic/dayNight.ts';
+import { meterLabel } from '../logic/growthText.ts';
+import { visionLimited } from '../logic/vision.ts';
 import { evolveStatus, growthNeeded, xpToNext } from '../logic/progression.ts';
 import type { Game } from '../game/Game.ts';
 import { DomCache, el } from './dom.ts';
@@ -174,11 +176,8 @@ export class Hud {
       c.text('grT', this.growthMeter.label, 'Fully grown');
     } else {
       c.width('gr', this.growthMeter.fill, p.growth / growthNeed);
-      let label = `Growth ${Math.floor(p.growth)} / ${growthNeed}`;
-      if (evo.canEvolve) label = 'Ready to evolve (Tab)';
-      else if (evo.growthOk && evo.locked && evo.next) label = `Growth full. ${STAGES[evo.next].name} is not available yet`;
-      else if (evo.growthOk && evo.next) label = `Growth full. Reach level ${STAGES[evo.next].levelRequired}`;
-      c.text('grT', this.growthMeter.label, label);
+      // A full meter says which level is still missing and how much XP is left (the meter and the level are separate tracks).
+      c.text('grT', this.growthMeter.label, meterLabel(p));
     }
     c.cls('grFull', this.growthMeter.root, 'full', evo.canEvolve);
 
@@ -210,6 +209,7 @@ export class Hud {
     if (a.stun > 0) status.push('Stunned');
     if (a.slowTime > 0) status.push('Slowed');
     if (a.swimming) status.push('Swimming');
+    if (visionLimited(g.growth.variant.nightVision, g.sky.state.daylight)) status.push('Night: limited vision');
     c.text('status', this.status, status.join(', '));
 
     g.player.abilities.slots.forEach((s, i) => {

@@ -117,18 +117,18 @@ export class ProceduralBird implements AnimalModel {
     this.neck.position.set(0, r * 0.45, halfL - r * 0.3);
     this.body.add(this.neck);
     const nb = new PartBuilder();
-    nb.segment([0, 0, 0], [0, p.neckLength * 0.9, p.neckLength * 0.5], r * 0.7, hr * 0.85, c.body);
+    nb.segment([0, 0, 0], [0, p.neckLength * 0.9, p.neckLength * 0.5], r * 0.7, hr * 0.85, c.head ?? c.body);
     this.neck.add(nb.build(this.material));
 
     const head = new THREE.Group();
     head.position.set(0, p.neckLength * 0.9, p.neckLength * 0.5);
     this.neck.add(head);
     const hb = new PartBuilder();
-    hb.add(sphere(hr), c.body, [0, 0, 0], [0, 0, 0], [0.95, 0.95, 1.1]);
-    hb.add(sphere(hr * 0.8), c.belly, [0, hr * 0.15, -hr * 0.7], [0, 0, 0], [1, 0.9, 0.8]);
+    hb.add(sphere(hr), c.head ?? c.body, [0, 0, 0], [0, 0, 0], [0.95, 0.95, 1.1]);
+    hb.add(sphere(hr * 0.8), c.head ?? c.belly, [0, hr * 0.15, -hr * 0.7], [0, 0, 0], [1, 0.9, 0.8]);
     for (const s of [1, -1]) {
       // A heavy brow over a pale eye gives it the hard look of a raptor.
-      hb.add(new THREE.BoxGeometry(hr * 0.55, hr * 0.14, hr * 0.7), FEATHER, [s * hr * 0.5, hr * 0.4, hr * 0.5], [0.25, 0, 0]);
+      hb.add(new THREE.BoxGeometry(hr * 0.55, hr * 0.14, hr * 0.7), c.head ?? FEATHER, [s * hr * 0.5, hr * 0.4, hr * 0.5], [0.25, 0, 0]);
       hb.add(sphere(hr * 0.17), 0xe0b020, [s * hr * 0.62, hr * 0.2, hr * 0.55]);
       hb.add(sphere(hr * 0.09), DARK, [s * hr * 0.7, hr * 0.2, hr * 0.6]);
     }
@@ -185,8 +185,8 @@ export class ProceduralBird implements AnimalModel {
     const tb = new PartBuilder();
     // A fan of long feathers with a pale band near the tip.
     for (let k = -2; k <= 2; k++) {
-      tb.add(new THREE.BoxGeometry(0.075, 0.02, p.tailLength * 1.4), k % 2 ? c.body : FEATHER, [k * 0.045, 0, -p.tailLength * 0.7], [0, k * -0.1, 0]);
-      tb.add(new THREE.BoxGeometry(0.075, 0.022, 0.06), c.belly, [k * 0.055, 0, -p.tailLength * 1.2], [0, k * -0.1, 0]);
+      tb.add(new THREE.BoxGeometry(0.075, 0.02, p.tailLength * 1.4), c.tail ?? (k % 2 ? c.body : FEATHER), [k * 0.045, 0, -p.tailLength * 0.7], [0, k * -0.1, 0]);
+      tb.add(new THREE.BoxGeometry(0.075, 0.022, 0.06), c.tail ?? c.belly, [k * 0.055, 0, -p.tailLength * 1.2], [0, k * -0.1, 0]);
     }
     this.tail.add(tb.build(this.material));
     this.body.add(this.tail);

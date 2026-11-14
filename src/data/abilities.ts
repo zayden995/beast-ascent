@@ -188,9 +188,9 @@ const list: AbilityDef[] = [
   },
   {
     id: 'croc_water_ambush', name: 'Water Ambush', icon: 'wave', ...RANKS,
-    description: 'Passive. Swim faster, and strike 35% harder while you stand in water.',
+    description: 'Passive. Strike 35% harder while you stand in water. (The Crocodile already swims faster than it walks.)',
     cooldown: 0, staminaCost: 0,
-    effect: { kind: 'passive', swim: { speedPct: 0.6 }, waterDamage: 0.35 },
+    effect: { kind: 'passive', waterDamage: 0.35 },
   },
 
   // ---------- Eagle ----------
@@ -204,7 +204,7 @@ const list: AbilityDef[] = [
     id: 'eagle_talon_grab', name: 'Talon Grab', icon: 'claw', ...RANKS,
     description: 'Seize a target in your talons and hold it helpless.',
     cooldown: 9, staminaCost: 20,
-    effect: { kind: 'melee', windup: 0.15, damageMult: 1.5, range: 1.6, arcDeg: 80, knockback: 0, grab: 1.2 },
+    effect: { kind: 'melee', windup: 0.15, damageMult: 1.5, range: 2.2, arcDeg: 80, knockback: 0, grab: 1.2 },
   },
   {
     id: 'eagle_gust', name: 'Gust', icon: 'wave', ...RANKS,

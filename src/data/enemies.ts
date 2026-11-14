@@ -21,7 +21,7 @@ const list: EnemyDef[] = [
     features: ['antlersSmall', 'tailTipLight'],
     behavior: {
       aggroRadius: 11, aggressive: false, fleeOnSight: true, fleeHealthPct: 1,
-      leashRadius: 60, wanderRadius: 16, fleeBurst: 3.5, windedSeconds: 5, windedSpeedMult: 0.55,
+      leashRadius: 60, wanderRadius: 16, fleeBurst: 3.5, windedSeconds: 5, windedSpeedMult: 0.45,
       woundedSpeedMult: 0.65,
       // Prey watches for predators: a deer that faces a hunter sees it from about 15 m and bolts.
       senses: { front: 1.35 },
@@ -76,7 +76,7 @@ const list: EnemyDef[] = [
     features: ['tailTipLight'],
     behavior: {
       aggroRadius: 7, aggressive: true, fleeOnSight: false, fleeHealthPct: 0.4,
-      leashRadius: 30, wanderRadius: 14, fleeBurst: 2.5, windedSeconds: 4.5, windedSpeedMult: 0.6,
+      leashRadius: 30, wanderRadius: 14, fleeBurst: 2.5, windedSeconds: 4.5, windedSpeedMult: 0.45,
       woundedSpeedMult: 0.7,
     },
     attacks: [
@@ -106,7 +106,7 @@ list.push(
     // Quick bites and a short lunge. Lives in a pair.
     id: 'rival_wolf', name: 'Wolf',
     baseStats: {
-      maxHealth: 65, stamina: 100, staminaRegen: 10, damage: 8, moveSpeed: 2.8, sprintSpeed: 7.8,
+      maxHealth: 65, stamina: 100, staminaRegen: 10, damage: 8, moveSpeed: 2.8, sprintSpeed: 7.0,
       attackSpeed: 1, defense: 3, size: 1,
     },
     behavior: { ...stands, aggroRadius: 13, leashRadius: 42, wanderRadius: 16 },
@@ -126,7 +126,7 @@ list.push(
     // Wide claw swipes and a pounce from range.
     id: 'rival_lion', name: 'Lion',
     baseStats: {
-      maxHealth: 85, stamina: 100, staminaRegen: 10, damage: 10, moveSpeed: 2.6, sprintSpeed: 7.4,
+      maxHealth: 85, stamina: 100, staminaRegen: 10, damage: 10, moveSpeed: 2.6, sprintSpeed: 7.0,
       attackSpeed: 1, defense: 5, size: 1,
     },
     behavior: { ...stands, aggroRadius: 12, leashRadius: 40, wanderRadius: 14 },

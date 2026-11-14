@@ -1195,6 +1195,18 @@ try {
   await B.advance(0.4);
   const waterBite = await firstHit(line.ids[0]);
   check('Water Ambush: the same bite is about 35% harder in the water', !!landBite && !!waterBite && waterBite / landBite > 1.2 && waterBite / landBite < 1.5, `${landBite} on land, ${waterBite} in water; ${landNote}`);
+  // Faster in the water than on land: it swims at 1.8 times its walking pace, above its land sprint of 7.4.
+  await B.advance(2.5); // let the Death Roll finish: it roots the crocodile
+  await B.teleport(46, 22);
+  await B.lookAt(46, 0);
+  await page.keyboard.down('KeyW');
+  await B.advance(0.5);
+  const swimFrom = await B.state();
+  await B.advance(1);
+  const swimTo = await B.state();
+  await page.keyboard.up('KeyW');
+  const swimSpeed = Math.hypot(swimTo.player.x - swimFrom.player.x, swimTo.player.z - swimFrom.player.z);
+  check('a crocodile swims faster than it can sprint on land', swimTo.player.swimming && swimSpeed > 7.4 && swimSpeed < 9, `${swimSpeed.toFixed(2)} m/s in water (a land sprint is 7.4, a walk 4.4)`);
   await B.teleport(0, 40, Math.PI);
   await B.advance(25);
   const crocDeer = await hunt('deer', 90);
@@ -1204,6 +1216,9 @@ try {
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /return to title/ }).click();
   begin = await newGame('Eagle');
+  check('the Eagle is a Bald Eagle', /Bald Eagle/.test(await page.locator('.board').innerText()));
+  check('the species screen warns that it has limited vision at night', /At night\s*Limited vision/.test(await page.locator('.board').innerText()));
+  await shot('18g0-select-bald-eagle');
   await begin();
   await trackDamage();
   s = await B.state();
@@ -1212,6 +1227,67 @@ try {
   const eagleRivals = s.enemies.map((e) => e.kind).filter((k) => k.startsWith('rival'));
   check('an eagle meets all four rivals', eagleRivals.sort().join() === 'rival_bear,rival_lion,rival_wolf,rival_wolf', eagleRivals.join(' '));
   await shot('18g-eagle-perched');
+
+  // An eagle must come down to eat: it can take a fish by skimming the water, not from high above it.
+  const eagleFish = (await B.state()).food.find((f) => f.kind === 'fish' && f.available);
+  await B.teleport(eagleFish.x, eagleFish.z);
+  await B.call('setHp', (await B.state()).player.maxHp);
+  const eagleAt = (height) => page.evaluate((h) => {
+    const g = window.__beast.app.game;
+    const a = g.player.actor;
+    a.flying = true;
+    a.grounded = false;
+    a.swimming = false;
+    a.pos.y = h === 'high' ? g.world.layout.pond.waterY + 15 : g.world.layout.pond.waterY + 1.0;
+    a.vy = 0;
+  }, height);
+  await eagleAt('high');
+  await B.advance(0.05);
+  s = await B.state();
+  check('a fish below an eagle 15 m up is out of reach', s.player.altitude > 10 && !/Eat fish/.test(s.prompt?.text ?? ''), `altitude ${s.player.altitude.toFixed(1)} m, prompt "${s.prompt?.text ?? ''}"`);
+  const growthBefore = s.player.growth;
+  await page.keyboard.press('KeyE');
+  await B.advance(0.05);
+  check('pressing E that high eats nothing', (await B.state()).player.growth === growthBefore);
+  await eagleAt('low');
+  await B.advance(0.05);
+  s = await B.state();
+  check('an eagle skimming the water is offered the fish', s.player.altitude < 2.5 && /Eat fish/.test(s.prompt?.text ?? ''), `altitude ${s.player.altitude.toFixed(1)} m, prompt "${s.prompt?.text ?? ''}"`);
+  await page.keyboard.press('KeyE');
+  await B.advance(0.05);
+  check('and it takes the fish, which feeds its growth meter', (await B.state()).player.growth > growthBefore, `growth ${growthBefore} -> ${(await B.state()).player.growth}`);
+  await page.evaluate(() => { const a = window.__beast.app.game.player.actor; a.flying = false; a.vy = 0; });
+  await B.teleport(0, 43, Math.PI);
+  await B.advance(0.5);
+  await B.call('setHp', (await B.state()).player.maxHp);
+
+  // Limited vision at night: the fog closes in and the level tags reach half as far.
+  await B.call('setTimeOfDay', 0.5);
+  await B.advance(0.2);
+  const noonVision = (await B.state()).vision;
+  await settle();
+  check('by day the Bald Eagle sees as well as anyone and the HUD says nothing', Math.abs(noonVision.sight - 1) < 1e-9 && noonVision.fogFar > 150 && !/limited vision/.test(await page.locator('.hud-status').textContent()), JSON.stringify(noonVision));
+  const boarFar = (await B.state()).enemies.find((e) => e.kind === 'boar' && e.alive);
+  await B.teleport(boarFar.x, boarFar.z + 30);
+  await hold(boarFar.id, Math.PI); // facing away, so that it does not notice the eagle
+  await B.lookAt(boarFar.x, boarFar.z);
+  await B.advance(0.1);
+  await settle();
+  const dayTags = await page.locator('.tag', { hasText: 'Boar' }).count();
+  await B.call('setTimeOfDay', 0);
+  await B.advance(0.2);
+  await settle();
+  const midnight = (await B.state()).vision;
+  check('at midnight its sight halves and the fog closes in to 60%', Math.abs(midnight.sight - 0.5) < 0.02 && Math.abs(midnight.fogFar / noonVision.fogFar - 0.6) < 0.02, `${JSON.stringify(midnight)} against ${JSON.stringify(noonVision)}`);
+  check('the HUD says "Night: limited vision"', /Night: limited vision/.test(await page.locator('.hud-status').textContent()));
+  const nightTags = await page.locator('.tag', { hasText: 'Boar' }).count();
+  check('a level tag 30 m away is seen by day but not at night', dayTags >= 1 && nightTags < dayTags, `${dayTags} boar tags by day, ${nightTags} at night`);
+  await shot('18g1-eagle-night');
+  await B.call('setTimeOfDay', 0.5);
+  await B.advance(0.2);
+  await B.teleport(0, 43, Math.PI);
+  await B.advance(0.5);
+  await B.call('setHp', (await B.state()).player.maxHp);
 
   // Hold Space to take off and climb; let go to glide down; landing is automatic.
   await B.teleport(0, 43, Math.PI);
@@ -1427,9 +1503,21 @@ try {
   s = await B.state();
   check('the sandbox starts a level 1 Tiger that belongs to no save slot', s.screen === 'playing' && s.slot === null && s.species === 'tiger' && s.player.level === 1, `${s.species} level ${s.player.level} slot ${s.slot}`);
   check('a badge says that nothing is saved', /nothing is saved/.test(await page.locator('.admin-badge').innerText()));
+  await B.call('setTimeOfDay', 0);
+  await B.advance(0.2);
+  check('a Tiger sees as well at midnight as by day', (await B.state()).vision.sight === 1 && !/limited vision/.test(await page.locator('.hud-status').textContent()));
+  await B.call('setTimeOfDay', 0.5);
   await page.keyboard.press('KeyJ');
   await page.locator('.admin-card').waitFor();
   check('J opens the admin panel and the game waits', (await B.state()).screen === 'admin');
+
+  // A full growth meter does not mean the animal can evolve: the HUD says which level is still missing.
+  await page.locator('.admin-row', { hasText: 'Growth meter' }).getByRole('button', { name: 'Full' }).click();
+  await settle();
+  const fullLabel = (await page.locator('.hud-growth').innerText()).replace(/\n/g, ' ');
+  check('a full growth meter says which level is still needed and how much XP is left', /Fully fed, level 8 needed \(0\/525 XP\)/.test(fullLabel), fullLabel);
+  await shot('14f0-admin-meter-full');
+  await page.locator('.admin-row', { hasText: 'Growth meter' }).getByRole('button', { name: 'Empty' }).click();
 
   await page.getByRole('button', { name: 'Alpha', exact: true }).click();
   s = await B.state();

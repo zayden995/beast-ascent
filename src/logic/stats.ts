@@ -1,3 +1,4 @@
+import { TUNING } from '../data/tuning.ts';
 import type { StatKey, StatMod, Stats } from '../core/types.ts';
 
 export interface StatInputs {
@@ -44,4 +45,12 @@ export function computeStats(input: StatInputs): Stats {
     out[key] = Math.max(0, out[key] * scale + (flat[key] ?? 0));
   }
   return out;
+}
+
+/**
+ * How fast an animal moves in water compared with its walking pace: its species' own fraction if it has
+ * one (the Crocodile swims faster than it walks), otherwise the standard fraction, plus any passive bonus.
+ */
+export function swimSpeedFactor(speciesMult: number | undefined, passivePct: number): number {
+  return (speciesMult ?? TUNING.player.swimSpeedMult) * (1 + passivePct);
 }

@@ -190,6 +190,7 @@ export class SpeciesSelect {
     const fav = el('dd', 'good', favored.map((m) => `${BIOMES[m.biome].name} ${describeMod(m)}`).join(', ') || 'None');
     const dis = el('dd', 'bad', disfavored.map((m) => `${BIOMES[m.biome].name} ${describeMod(m)}`).join(', ') || 'None');
     facts.append(el('dt', '', 'Favored'), fav, el('dt', '', 'Disfavored'), dis);
+    if (variant.nightVision) facts.append(el('dt', '', 'At night'), el('dd', 'bad', 'Limited vision'));
     board.append(facts);
 
     const abilities = el('ul', 'abilities');

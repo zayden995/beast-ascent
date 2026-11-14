@@ -55,6 +55,11 @@ export const TUNING = {
      */
     senses: { frontHalfDeg: 60, rearHalfDeg: 30, front: 1, rear: 0.25 },
   },
+  /** Enemy level tags: how far away they can be seen, in metres. */
+  labels: {
+    range: 42,
+    bossRange: 80,
+  },
   food: {
     eatRange: 2.4,
     carcassSeconds: 90,
@@ -76,6 +81,8 @@ export const TUNING = {
     noticeAltitude: 5,
     /** A chasing animal gives up on a flier higher than this. */
     giveUpAltitude: 6,
+    /** A flier can eat only from this height above the ground or water (an eagle skimming the pond can take a fish). */
+    eatAltitude: 2.5,
     /** Dive Strike falls at this speed (m/s). */
     diveDrop: 16,
   },
@@ -91,6 +98,8 @@ export const TUNING = {
     startAt: 0.34,
     /** Above 0 makes the day longer than the night (0.25 = about 58% day). */
     dayBias: 0.25,
+    /** An animal with limited night vision is told so on the HUD while daylight is below this (0 = night, 1 = day). */
+    limitedBelowDaylight: 0.5,
     sunIntensity: 2.6,
     moonIntensity: 0.8,
     dayAmbient: 1.7,

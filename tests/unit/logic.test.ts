@@ -19,7 +19,7 @@ import {
   summarizePassives, threatLevel, upgradeAbility, xpToNext,
 } from '../../src/logic/progression.ts';
 import { advanceDay, dayState, wrapDay } from '../../src/logic/dayNight.ts';
-import { computeStats } from '../../src/logic/stats.ts';
+import { computeStats, swimSpeedFactor } from '../../src/logic/stats.ts';
 
 const wolf = getSpecies('wolf');
 const wolfVariant = getVariant(wolf, 'default');
@@ -482,4 +482,11 @@ test('day and night: time advances with the cycle length and wraps around', () =
   assert.ok(Math.abs(wrapDay(-0.25) - 0.75) < 1e-9);
   assert.equal(dayState(1.5, 0).phase, dayState(0.5, 0).phase);
   assert.equal(dayState(TUNING.dayNight.startAt, TUNING.dayNight.dayBias).phase, 'day', 'a session starts in daylight');
+});
+
+test('swimming: an animal swims at the standard fraction of its pace unless its species or a passive says otherwise', () => {
+  assert.equal(swimSpeedFactor(undefined, 0), TUNING.player.swimSpeedMult, 'the standard fraction, 60% for now');
+  assert.equal(swimSpeedFactor(1.8, 0), 1.8, 'a species can swim faster than it walks');
+  assert.ok(Math.abs(swimSpeedFactor(undefined, 0.5) - TUNING.player.swimSpeedMult * 1.5) < 1e-9, 'a passive adds to the standard fraction');
+  assert.ok(Math.abs(swimSpeedFactor(1.8, 0.25) - 1.8 * 1.25) < 1e-9);
 });

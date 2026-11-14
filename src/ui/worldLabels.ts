@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { threatLevel } from '../logic/progression.ts';
+import { tagRange } from '../logic/vision.ts';
 import type { Actor } from '../systems/actor.ts';
 import type { EnemyActor } from '../systems/ai.ts';
 import { el } from './dom.ts';
@@ -13,7 +14,6 @@ interface Tag {
 }
 
 const _v = new THREE.Vector3();
-const TAG_RANGE = 42;
 
 /** Enemy level tags and floating damage numbers: DOM elements positioned from 3D points. */
 export class WorldLabels {
@@ -35,9 +35,11 @@ export class WorldLabels {
     return true;
   }
 
-  /** `revealRange` (the Eagle's Eye) shows level tags farther away than the usual range. */
-  update(camera: THREE.Camera, enemies: EnemyActor[], player: Actor, playerLevel: number, revealRange = 0): void {
-    const range = Math.max(TAG_RANGE, revealRange);
+  /**
+   * `revealRange` (the Eagle's Eye) shows level tags farther away than the usual range. `sight` shrinks every
+   * range in the dark (1 = daytime sight): the Bald Eagle sees half as far at night.
+   */
+  update(camera: THREE.Camera, enemies: EnemyActor[], player: Actor, playerLevel: number, revealRange = 0, sight = 1): void {
     // Read the layout size once per frame, not once per label.
     this.width = this.root.clientWidth;
     this.height = this.root.clientHeight;
@@ -47,7 +49,7 @@ export class WorldLabels {
       // The boss bar at the top of the screen replaces the boss's tag during the fight.
       if (e.isBoss && (e.engaged || e.hp < e.stats.maxHealth)) continue;
       const dist = e.distanceTo(player);
-      if (dist > (e.isBoss ? 80 : range)) continue;
+      if (dist > tagRange(e.isBoss, revealRange, sight)) continue;
       if (!this.project(camera, e.pos.x, e.pos.y + e.model.height + 0.35, e.pos.z)) continue;
       seen.add(e.id);
 

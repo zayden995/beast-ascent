@@ -73,6 +73,10 @@ export interface BodyColors {
   body: number;
   belly: number;
   accent: number;
+  /** Head and neck, if different from the body (the Bald Eagle's white head). */
+  head?: number;
+  /** Tail feathers, if different from the body (the Bald Eagle's white tail). */
+  tail?: number;
 }
 
 /** Parametric quadruped proportions, in metres at size 1.0. */
@@ -184,11 +188,21 @@ export interface BasicAttackDef {
   knockback: number;
 }
 
+/** A debuff for the dark: how much of its daytime sight an animal keeps at full night (1 = all of it). */
+export interface NightVision {
+  /** Level-tag range, and Eagle Eye, as a fraction of the daytime range. */
+  sight: number;
+  /** Fog distance as a fraction of the daytime distance: the world fades out closer by. */
+  fog: number;
+}
+
 export interface SpeciesVariant {
   id: string;
   name: string;
   colors: BodyColors;
   biomeMods: BiomeModDef[];
+  /** Limited vision at night (the Bald Eagle). Left out: the animal sees as well at night as by day. */
+  nightVision?: NightVision;
   /** Ability ids in menu order. Active abilities map to keys 1, 2, 3 in this order. */
   abilities: string[];
 }
@@ -203,6 +217,8 @@ export interface SpeciesDef {
   /** Set while the species' own build step is not finished: it stays "Coming soon" even in its milestone. */
   unfinished?: boolean;
   rig: 'quadruped' | 'winged';
+  /** Swim pace as a multiple of the walking pace. Left out: the standard fraction (`TUNING.player.swimSpeedMult`). */
+  swimSpeedMult?: number;
   baseStats: Stats;
   body: BodyPlan;
   stageFeatures: Record<StageId, FeatureId[]>;

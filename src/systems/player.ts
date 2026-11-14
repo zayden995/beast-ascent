@@ -10,6 +10,7 @@ import { describeDeath } from '../logic/deathText.ts';
 import { stepVerticalSpeed } from '../logic/flight.ts';
 import { abilityRank } from '../logic/progression.ts';
 import type { DeathOutcome } from '../logic/progression.ts';
+import { swimSpeedFactor } from '../logic/stats.ts';
 import type { StatInputs } from '../logic/stats.ts';
 import type { ForestWorld } from '../world/forest.ts';
 import { AbilitySystem } from './abilities.ts';
@@ -370,7 +371,7 @@ export class PlayerController {
         }
       }
       let speed = this.sprinting ? a.stats.sprintSpeed : a.stats.moveSpeed;
-      if (a.swimming) speed *= T.swimSpeedMult * (1 + growth.getPassives().swimSpeedPct);
+      if (a.swimming) speed *= swimSpeedFactor(growth.species.swimSpeedMult, growth.getPassives().swimSpeedPct);
       if (this.swing) speed *= T.attackMoveMult;
       if (stunned || this.abilities.rooted) speed = 0;
       a.vx = damp(a.vx, mx * speed, T.accel, dt);

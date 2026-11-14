@@ -25,3 +25,8 @@ export function stepVerticalSpeed(vy: number, flapping: boolean, altitude: numbe
 export function clampAltitude(altitude: number, tuning: FlightTuning): number {
   return Math.min(tuning.ceiling, Math.max(0, altitude));
 }
+
+/** Food is within reach of a flier only when it is low enough: an eagle high over the pond cannot eat a fish. */
+export function withinEatingHeight(altitude: number, maxAltitude: number): boolean {
+  return altitude <= maxAltitude;
+}

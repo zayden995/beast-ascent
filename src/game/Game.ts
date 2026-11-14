@@ -6,6 +6,8 @@ import { BIOMES, FOREST_SPAWNS, nextBiome } from '../data/biomes.ts';
 import { getBoss } from '../data/bosses.ts';
 import { FOODS, canEat } from '../data/food.ts';
 import { TUNING } from '../data/tuning.ts';
+import { withinEatingHeight } from '../logic/flight.ts';
+import { nightVisionFactor } from '../logic/vision.ts';
 import { enemyXp, growthNeeded } from '../logic/progression.ts';
 import { playerIsUnseen } from '../logic/stealth.ts';
 import { withArticle } from '../logic/text.ts';
@@ -58,6 +60,8 @@ export class Game {
   readonly labels: WorldLabels;
   /** What the E key would do right now (shown on the HUD). */
   prompt: Prompt | null = null;
+  /** How much of its daytime sight the player has right now (1 = all of it): the tag range and the fog distance. */
+  readonly vision = { sight: 1, fog: 1 };
 
   private ctx: GameContext;
   private actors: Actor[] = [];
@@ -201,6 +205,12 @@ export class Game {
     sky.advance(dt);
     world.setUnlitTint(sky.unlitTint);
     sky.update(cam.camera.position, pa.pos);
+    // An animal with limited night vision (the Bald Eagle) sees less as it gets dark: the fog closes in
+    // and the level tags reach less far.
+    const nightVision = this.growth.variant.nightVision;
+    this.vision.sight = nightVision ? nightVisionFactor(nightVision.sight, sky.state.daylight) : 1;
+    this.vision.fog = nightVision ? nightVisionFactor(nightVision.fog, sky.state.daylight) : 1;
+    sky.setVisibility(this.vision.fog);
 
     if (this.dirty && this.clock.time - this.lastSave > 1) this.save();
     else if (this.clock.time - this.lastSave > TUNING.save.autosaveSeconds) this.save();
@@ -240,7 +250,9 @@ export class Game {
     if (this.player.dead) return;
     const pressed = this.ctx.input.consume('KeyE');
 
-    const item = this.food.nearest(pa.pos, TUNING.food.eatRange + pa.radius);
+    // A flier must come down to eat: an eagle can take a fish by skimming the water, not from 20 m up.
+    const lowEnough = withinEatingHeight(pa.flying ? pa.altitude : 0, TUNING.flight.eatAltitude);
+    const item = lowEnough ? this.food.nearest(pa.pos, TUNING.food.eatRange + pa.radius) : null;
     if (item) {
       const name = FOODS[item.kind].name.toLowerCase();
       if (canEat(this.growth.species.diet, item.kind)) {
@@ -291,7 +303,7 @@ export class Game {
   /** Updates HUD and labels. Runs every frame, even while paused. */
   present(): void {
     this.hud.update();
-    this.labels.update(this.ctx.cam.camera, this.spawner.enemies, this.player.actor, this.growth.progress.level, this.growth.getPassives().revealRange);
+    this.labels.update(this.ctx.cam.camera, this.spawner.enemies, this.player.actor, this.growth.progress.level, this.growth.getPassives().revealRange, this.vision.sight);
   }
 
   save(): boolean {
@@ -316,6 +328,8 @@ export class Game {
 
   dispose(): void {
     this.save();
+    // The sky is shared with the title screen and the next game: give it back its normal view distance.
+    this.sky.setVisibility(1);
     this.events.clear();
     this.hud.dispose();
     this.labels.dispose();

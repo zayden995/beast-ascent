@@ -127,10 +127,10 @@ export const SPECIES: SpeciesDef[] = [
   {
     id: 'elephant', name: 'Elephant', role: 'Huge health, slow, charges and stomps', diet: 'herbivore',
     playableFrom: 2, rig: 'quadruped',
-    // Walk 4.7 and sprint 8.0 (the placeholders were 4.2 and 7.2): a winded fox out-walks anything
-    // slower than 4.6, and a deer out-sprints 7.2, so prey must stay catchable (see the data tests).
+    // The slowest animal on land: walk 4.2, sprint 7.2. (M2 had raised it to 4.7 and 8.0 so that prey stayed
+    // catchable; instead, prey now tire sooner, see `windedSpeedMult` in enemies.ts and the data tests.)
     baseStats: {
-      maxHealth: 220, stamina: 80, staminaRegen: 12, damage: 18, moveSpeed: 4.7, sprintSpeed: 8.0,
+      maxHealth: 220, stamina: 80, staminaRegen: 12, damage: 18, moveSpeed: 4.2, sprintSpeed: 7.2,
       attackSpeed: 0.9, defense: 14, size: 1,
     },
     body: {
@@ -156,9 +156,11 @@ export const SPECIES: SpeciesDef[] = [
   {
     id: 'crocodile', name: 'Crocodile', role: 'Ambusher, strong near water, death roll', diet: 'carnivore',
     playableFrom: 2, rig: 'quadruped',
-    // Walk 4.7 and sprint 8.0 (placeholders 4.4 and 7.6), for the same reason as the Elephant.
+    // A little slow on land (walk 4.4, sprint 7.4) and fast in water: it swims at 1.8 times its walking
+    // pace, about 7.9 m/s, which is faster than its land sprint. Every other animal swims at 60%.
+    swimSpeedMult: 1.8,
     baseStats: {
-      maxHealth: 130, stamina: 90, staminaRegen: 14, damage: 17, moveSpeed: 4.7, sprintSpeed: 8.0,
+      maxHealth: 130, stamina: 90, staminaRegen: 14, damage: 17, moveSpeed: 4.4, sprintSpeed: 7.4,
       attackSpeed: 1.2, defense: 12, size: 1,
     },
     body: {
@@ -192,8 +194,9 @@ export const SPECIES: SpeciesDef[] = [
   {
     id: 'eagle', name: 'Eagle', role: 'Flying, dive attacks, fragile', diet: 'carnivore',
     playableFrom: 2, rig: 'winged',
+    // Fragile on purpose: the least health of any animal, in exchange for flight and a long reach.
     baseStats: {
-      maxHealth: 65, stamina: 130, staminaRegen: 24, damage: 12, moveSpeed: 6.5, sprintSpeed: 12,
+      maxHealth: 50, stamina: 130, staminaRegen: 24, damage: 12, moveSpeed: 6.5, sprintSpeed: 12,
       attackSpeed: 1.6, defense: 2, size: 1,
     },
     body: {
@@ -202,15 +205,19 @@ export const SPECIES: SpeciesDef[] = [
       ears: 'none', earSize: 0, tail: 'thin', tailLength: 0.3, chestBulk: 1.1,
     },
     stageFeatures: { juvenile: [], adult: [], alpha: [] },
-    attack: { range: 1.2, arcDeg: 90, knockback: 2 },
+    attack: { range: 2.0, arcDeg: 90, knockback: 2 },
     variants: [
       {
-        id: 'default', name: 'Golden Eagle',
-        colors: { body: 0x5a4028, belly: 0x8a6a45, accent: 0xf2c230 },
+        // The id stays 'default' so that saves made as the Golden Eagle still load.
+        id: 'default', name: 'Bald Eagle',
+        colors: { body: 0x4a3322, belly: 0x5e442b, accent: 0xf2c230, head: 0xf6f3ea, tail: 0xf6f3ea },
         biomeMods: [
-          { biome: 'plains', stat: 'speed', pct: 0.2 },
+          { biome: 'winter', stat: 'speed', pct: 0.2 },
           { biome: 'jungle', stat: 'speed', pct: -0.2 },
         ],
+        // A debuff in the dark: at full night the level tags (and Eagle Eye) reach half as far and the
+        // fog closes in to 60% of its daytime distance. It fades in and out through dusk and dawn.
+        nightVision: { sight: 0.5, fog: 0.6 },
         abilities: ['eagle_dive_strike', 'eagle_talon_grab', 'eagle_gust', 'eagle_eye'],
       },
     ],

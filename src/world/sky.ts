@@ -30,6 +30,9 @@ export class Sky {
   private sun: THREE.DirectionalLight;
   private hemi: THREE.HemisphereLight;
   private fog: THREE.Fog;
+  /** The biome's usual fog distances, which `setVisibility` scales. */
+  private fogNear: number;
+  private fogFar: number;
   private background: THREE.Color;
 
   private sunDir = new THREE.Vector3(0, 1, 0);
@@ -62,6 +65,8 @@ export class Sky {
     this.day = {
       top: new THREE.Color(p.skyTop), horizon: new THREE.Color(p.skyHorizon), fog: new THREE.Color(p.fog), sun: new THREE.Color(p.sun),
     };
+    this.fogNear = biome.fogNear;
+    this.fogFar = biome.fogFar;
     this.fog = new THREE.Fog(p.fog, biome.fogNear, biome.fogFar);
     this.background = new THREE.Color(p.skyHorizon);
     scene.fog = this.fog;
@@ -181,6 +186,15 @@ export class Sky {
 
     scene.add(this.group);
     this.setTime(this.time);
+  }
+
+  /**
+   * Scales how far the player can see: the fog starts and ends at this fraction of the biome's usual
+   * distances (1 = as normal). An animal with limited night vision sets it below 1 in the dark.
+   */
+  setVisibility(fraction: number): void {
+    this.fog.near = this.fogNear * fraction;
+    this.fog.far = this.fogFar * fraction;
   }
 
   /** Moves the clock forward. One full day takes `TUNING.dayNight.cycleSeconds`. */

@@ -8,8 +8,10 @@ import { FOODS, canEat } from '../../src/data/food.ts';
 import { SPECIES, isPlayable } from '../../src/data/species.ts';
 import { STAGES } from '../../src/data/stages.ts';
 import { TUNING } from '../../src/data/tuning.ts';
+import { withinEatingHeight } from '../../src/logic/flight.ts';
 import { parseSave, sanitizeSave } from '../../src/logic/saveData.ts';
 import { newProgress } from '../../src/logic/progression.ts';
+import { swimSpeedFactor } from '../../src/logic/stats.ts';
 
 test('data: all seven species are defined; wolf, lion and bear are the ones playable in Milestone 1', () => {
   assert.deepEqual(
@@ -77,7 +79,8 @@ test('data: the Crocodile has a jaw, splayed legs and a heavy tail, and its abil
   const roll = ABILITIES.croc_death_roll.effect;
   assert.ok(roll.kind === 'melee' && (roll.grab ?? 0) >= (roll.hits ?? 1) * (roll.hitInterval ?? 0), 'the grab lasts as long as the roll');
   const ambush = ABILITIES.croc_water_ambush.effect;
-  assert.ok(ambush.kind === 'passive' && (ambush.waterDamage ?? 0) > 0 && (ambush.swim?.speedPct ?? 0) > 0);
+  assert.ok(ambush.kind === 'passive' && (ambush.waterDamage ?? 0) > 0);
+  assert.equal(ambush.kind === 'passive' ? ambush.swim : undefined, undefined, 'the Crocodile swims fast by nature (swimSpeedMult), not by buying Water Ambush');
   const sweep = ABILITIES.croc_tail_sweep.effect;
   assert.ok(sweep.kind === 'melee' && sweep.arcDeg >= 360, 'the tail sweep is a full circle: no blind spot straight behind the animal');
 });
@@ -139,19 +142,61 @@ test('data: biome order, forest boss and spawn zones are consistent', () => {
   }
 });
 
-test('data: every playable species can run down every animal that flees', () => {
+// Prey may out-sprint the slowest predators (the Elephant and the Crocodile are slow on purpose), but
+// it only bolts for a few seconds and then tires, so every playable species can still catch it.
+test('data: every animal that flees tires out, and a tired one can be walked down by every playable species', () => {
   const playable = SPECIES.filter((s) => isPlayable(s, TUNING.currentMilestone));
-  const slowestSprint = Math.min(...playable.map((s) => s.baseStats.sprintSpeed));
   const slowestWalk = Math.min(...playable.map((s) => s.baseStats.moveSpeed));
   const runners = Object.values(ENEMIES).filter((e) => e.behavior.fleeOnSight || e.behavior.fleeHealthPct > 0);
   assert.ok(runners.length >= 2, 'deer and fox both flee');
   for (const e of runners) {
     const b = e.behavior;
-    assert.ok(e.baseStats.sprintSpeed < slowestSprint, `${e.id} out-sprints the slowest playable species`);
     assert.ok(b.fleeBurst > 0 && b.windedSeconds > 0, `${e.id} never tires`);
-    assert.ok(e.baseStats.sprintSpeed * b.windedSpeedMult < slowestWalk, `a winded ${e.id} out-walks the slowest playable species`);
+    const tired = e.baseStats.sprintSpeed * b.windedSpeedMult;
+    assert.ok(tired <= slowestWalk * 0.85, `a winded ${e.id} (${tired.toFixed(2)} m/s) must be clearly slower than the slowest walker (${slowestWalk} m/s)`);
     assert.ok(b.woundedSpeedMult > 0 && b.woundedSpeedMult <= 1);
   }
+});
+
+test('data: the heavy animals are the slow ones on land: the Elephant, then the Crocodile, then the Bear', () => {
+  const by = (id: string) => SPECIES.find((s) => s.id === id)!.baseStats;
+  assert.ok(by('elephant').moveSpeed < by('crocodile').moveSpeed && by('crocodile').moveSpeed < by('bear').moveSpeed, 'walking pace');
+  assert.ok(by('elephant').sprintSpeed < by('crocodile').sprintSpeed && by('crocodile').sprintSpeed < by('bear').sprintSpeed, 'sprinting pace');
+});
+
+test('data: the Crocodile swims faster than it sprints on land; every other animal swims slower than it walks', () => {
+  for (const s of SPECIES) {
+    const water = s.baseStats.moveSpeed * swimSpeedFactor(s.swimSpeedMult, 0);
+    if (s.id === 'crocodile') assert.ok(water > s.baseStats.sprintSpeed, `a Crocodile swims at ${water.toFixed(1)} m/s, a land sprint is ${s.baseStats.sprintSpeed}`);
+    else assert.ok(water < s.baseStats.moveSpeed, `a ${s.id} swims at ${water.toFixed(1)} m/s, a walk is ${s.baseStats.moveSpeed}`);
+  }
+});
+
+test('data: the Eagle is a bald eagle: the most fragile animal, with a longer reach and a white head and tail', () => {
+  const eagle = SPECIES.find((s) => s.id === 'eagle')!;
+  const others = SPECIES.filter((s) => s.id !== 'eagle');
+  assert.ok(others.every((s) => eagle.baseStats.maxHealth < s.baseStats.maxHealth * 0.6), 'the Eagle has at most 60% of anyone else\'s health');
+  assert.ok(eagle.attack.range >= 2, 'a basic attack reaches at least 2 m');
+  const grab = ABILITIES.eagle_talon_grab.effect;
+  assert.ok(grab.kind === 'melee' && grab.range >= eagle.attack.range, 'Talon Grab reaches at least as far as a basic attack');
+  const variant = eagle.variants[0];
+  assert.equal(eagle.variants.length, 1);
+  assert.equal(variant.name, 'Bald Eagle');
+  const pale = (c: number | undefined) => c !== undefined && [(c >> 16) & 255, (c >> 8) & 255, c & 255].every((ch) => ch >= 0xe0);
+  assert.ok(pale(variant.colors.head) && pale(variant.colors.tail), 'white head and white tail');
+  assert.ok(!pale(variant.colors.body), 'a dark body');
+  const buffs = variant.biomeMods.map((m) => `${m.biome}:${m.stat}:${m.pct}`);
+  assert.ok(buffs.includes('winter:speed:0.2'), 'faster in Winter');
+  assert.ok(buffs.includes('jungle:speed:-0.2'), 'slower in the dense Jungle');
+  assert.ok(!variant.biomeMods.some((m) => m.biome === 'plains'), 'no modifier on the Plains any more');
+});
+
+test('data: an animal can only eat from the air when it is low enough to reach the food', () => {
+  assert.ok(TUNING.flight.eatAltitude > 0 && TUNING.flight.eatAltitude < TUNING.flight.noticeAltitude);
+  assert.equal(withinEatingHeight(0, TUNING.flight.eatAltitude), true);
+  assert.equal(withinEatingHeight(TUNING.flight.eatAltitude, TUNING.flight.eatAltitude), true);
+  assert.equal(withinEatingHeight(TUNING.flight.eatAltitude + 0.1, TUNING.flight.eatAltitude), false);
+  assert.equal(withinEatingHeight(20, TUNING.flight.eatAltitude), false);
 });
 
 // The user raised the limit from 3 to 5 so that the four Milestone 2 species can meet every rival.

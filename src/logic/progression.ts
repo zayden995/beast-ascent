@@ -30,6 +30,18 @@ export function xpToNext(level: number): number {
   return Math.round(XP_CURVE.base + XP_CURVE.step * Math.pow(Math.max(0, level - 1), XP_CURVE.exponent));
 }
 
+/** All the XP an animal has earned by the moment it reaches `level` (525 for level 8, 3632 for level 18). */
+export function xpForLevel(level: number): number {
+  let total = 0;
+  for (let l = 1; l < level; l++) total += xpToNext(l);
+  return total;
+}
+
+/** All the XP the animal has earned so far: the steps behind its level plus its progress towards the next one. */
+export function totalXp(p: Progress): number {
+  return xpForLevel(p.level) + p.xp;
+}
+
 /** Adds XP and returns how many levels were gained. */
 export function addXp(p: Progress, amount: number): number {
   if (!(amount > 0)) return 0;
