@@ -66,6 +66,9 @@ export const FOREST_LAYOUT = {
     [-14, 30], [18, 34], [-32, 14], [22, -6], [-52, -18], [-10, -24], [62, -22], [30, 44],
   ] as [number, number][],
   fishSpots: 4,
+  /** Leafy plants for herbivores to eat (4 of them inside the den refuge). */
+  plants: 30,
+  plantsAtDen: 4,
   /** Distance from the pond centre that still counts as "near water". */
   nearWaterMargin: 8,
 };
@@ -85,7 +88,7 @@ export const FOREST_SPAWNS: SpawnZoneDef[] = [
 ];
 
 /**
- * Title screen: the clearing on the west shore of the pond, where the forest's animals gather.
+ * Title screen: the clearing on the west shore of the pond, where the forest's animals gather (and, from Milestone 2, a tiger, an elephant and a crocodile).
  * The camera sits low among them, like a wildlife film. Nobody fights here; prey just keeps its distance.
  */
 export const FOREST_TITLE: { view: TitleViewDef; animals: TitleAnimalDef[]; shyDistance: number } = {
@@ -105,6 +108,10 @@ export const FOREST_TITLE: { view: TitleViewDef; animals: TitleAnimalDef[]; shyD
     { speciesId: 'bear', variantId: 'brown', count: 1, x: 35, z: 15, radius: 4, wades: true },
     { speciesId: 'wolf', count: 2, x: 35, z: -1, radius: 4 },
     { speciesId: 'lion', count: 1, x: 30, z: 0, radius: 3 },
+    // Milestone 2: the new species join the clearing (the Eagle does not: the title scene has no flight).
+    { speciesId: 'tiger', count: 1, x: 26, z: -1.5, radius: 2.5 },
+    { speciesId: 'elephant', count: 1, x: 38, z: 4, radius: 2.5 },
+    { speciesId: 'crocodile', count: 1, x: 40, z: 11, radius: 3, wades: true },
   ],
   /** Prey trots away when a predator comes closer than this. */
   shyDistance: 3.5,

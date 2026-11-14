@@ -11,7 +11,7 @@ const IVORY = 0xf1ead2;
 const SCAR = 0x8a2f2a;
 
 /** Collects primitives for one rigid part and bakes them into a single vertex-coloured mesh. */
-class PartBuilder {
+export class PartBuilder {
   private geos: THREE.BufferGeometry[] = [];
   private static m = new THREE.Matrix4();
   private static q = new THREE.Quaternion();
@@ -87,6 +87,8 @@ export class ProceduralQuadruped implements AnimalModel {
   private legs: Leg[] = [];
   private tail: THREE.Group[] = [];
   private tailBase: number[] = [];
+  /** The Elephant's trunk: swings gently, and lifts when the animal attacks. */
+  private trunk: THREE.Group | null = null;
 
   private look: AnimalAppearance;
   private hip: number;
@@ -101,7 +103,9 @@ export class ProceduralQuadruped implements AnimalModel {
     this.look = look;
     const p = look.body;
     this.size = look.size;
-    this.hip = p.legLength + p.bodyHeight * 0.5;
+    // Reptiles sprawl: legs splayed out to the sides, and the body hangs low between them.
+    const low = (look.features as string[]).includes('sprawl') ? 0.45 : 1;
+    this.hip = p.legLength * low + p.bodyHeight * 0.5;
     this.material = toonMaterial({ vertexColors: true, rim: 0.3 });
 
     this.root.add(this.body);
@@ -164,8 +168,11 @@ export class ProceduralQuadruped implements AnimalModel {
     const t = p.legThickness;
     const pivotY = -r * 0.25;
     const total = this.hip + pivotY;
-    const upperLen = total * 0.5;
-    const lowerLen = total - upperLen;
+    // Splayed legs are longer along their own length, so the feet still reach the ground.
+    const sprawl = this.has('sprawl') ? 0.85 : 0;
+    const stretch = 1 / Math.cos(sprawl);
+    const upperLen = total * 0.5 * stretch;
+    const lowerLen = total * 0.5 * stretch;
 
     const defs: { x: number; front: boolean; trot: number; gallop: number }[] = [
       { x: 1, front: true, trot: 0, gallop: 0 },
@@ -176,6 +183,7 @@ export class ProceduralQuadruped implements AnimalModel {
     for (const d of defs) {
       const upper = new THREE.Group();
       upper.position.set(d.x * p.bodyWidth * 0.31, pivotY, d.front ? halfL - r * 0.8 : -halfL + r * 0.8);
+      upper.rotation.z = d.x * sprawl;
       const bulk = d.front ? 1.0 : 1.2;
       const ub = new PartBuilder();
       ub.add(sphere(t * 1.3 * bulk), c.body, [0, 0, 0], [0, 0, 0], [1, 1.25, 1.2]);
@@ -265,6 +273,24 @@ export class ProceduralQuadruped implements AnimalModel {
       }
     }
 
+    if (this.has('jaw')) {
+      // A long, flat snout: a broad upper jaw, a paler lower jaw, a row of teeth, raised eyes.
+      hb.add(new THREE.BoxGeometry(hr * 1.05, hr * 0.32, snout * 1.15), c.body, [0, -hr * 0.1, hr * 0.7 + snout * 0.52]);
+      hb.add(new THREE.BoxGeometry(hr * 0.95, hr * 0.22, snout * 1.05), c.belly, [0, -hr * 0.36, hr * 0.7 + snout * 0.5]);
+      for (let k = 0; k < 7; k++) {
+        const z = hr * 0.85 + (k / 6) * snout * 1.0;
+        for (const s of [1, -1]) {
+          hb.add(new THREE.ConeGeometry(hr * 0.045, hr * 0.2, 4), IVORY, [s * hr * 0.46, -hr * 0.27, z], [Math.PI, 0, 0]);
+          hb.add(new THREE.ConeGeometry(hr * 0.04, hr * 0.17, 4), IVORY, [s * hr * 0.42, -hr * 0.3, z + hr * 0.07]);
+        }
+      }
+      for (const s of [1, -1]) {
+        hb.add(sphere(hr * 0.24), c.body, [s * hr * 0.5, hr * 0.5, hr * 0.15], [0, 0, 0], [1, 0.8, 1]);
+        hb.add(sphere(hr * 0.1), 0xe8c53a, [s * hr * 0.55, hr * 0.6, hr * 0.28]);
+        hb.add(sphere(hr * 0.07), DARK, [s * hr * 0.14, -hr * 0.02, hr * 0.7 + snout * 1.09]);
+      }
+    }
+
     let top = hr;
     if (this.has('mane') || this.has('maneSmall')) {
       const k = this.has('mane') ? 1.8 : 1.35;
@@ -302,6 +328,26 @@ export class ProceduralQuadruped implements AnimalModel {
     }
     head.add(hb.build(this.material));
 
+    if (this.has('trunk')) {
+      // A long, thick trunk that hangs from the front of the face and curls forward at the tip.
+      const root = new THREE.Group();
+      root.position.set(0, -hr * 0.3, hr * 0.85);
+      head.add(root);
+      const tb = new PartBuilder();
+      const segs = 6;
+      const segLen = (p.headSize * this.look.headScale * 1.7) / segs;
+      let at: V3 = [0, 0, 0];
+      for (let i = 0; i < segs; i++) {
+        const curl = (i / segs) * 1.25;
+        const next: V3 = [0, at[1] - Math.cos(curl) * segLen, at[2] + Math.sin(curl) * segLen];
+        tb.segment(at, next, hr * lerp(0.36, 0.13, i / segs), hr * lerp(0.36, 0.13, (i + 1) / segs), c.body);
+        at = next;
+      }
+      tb.add(sphere(hr * 0.15), c.accent, at);
+      root.add(tb.build(this.material));
+      this.trunk = root;
+    }
+
     return this.hip + this.neck.position.y + head.position.y + top;
   }
 
@@ -328,7 +374,7 @@ export class ProceduralQuadruped implements AnimalModel {
 
     const segments = 3;
     const segLen = p.tailLength / segments;
-    const droop = p.tail === 'bushy' ? 0.55 : p.tail === 'tuft' ? 0.95 : 0.7;
+    const droop = p.tail === 'bushy' ? 0.55 : p.tail === 'tuft' ? 0.95 : p.tail === 'heavy' ? 0.12 : 0.7;
     const curl = p.tail === 'tuft' ? 0.32 : p.tail === 'bushy' ? -0.08 : 0.12;
     let parent: THREE.Object3D = this.body;
     for (let i = 0; i < segments; i++) {
@@ -344,8 +390,9 @@ export class ProceduralQuadruped implements AnimalModel {
         const rad = p.bodyHeight * [0.17, 0.24, 0.19][i];
         b.add(sphere(1), color, [0, segLen * 0.5, 0], [0, 0, 0], [rad, segLen * 0.72, rad]);
       } else {
-        const thick = p.legThickness * (p.tail === 'tuft' ? 0.3 : 0.42) * (1 - i * 0.22);
-        b.add(new THREE.CylinderGeometry(thick * 0.8, thick, segLen, 6), color, [0, segLen / 2, 0]);
+        // A heavy tail (the crocodile's) is as thick as the body at its root and tapers to the tip.
+        const thick = p.tail === 'heavy' ? p.bodyHeight * 0.5 * (1 - i * 0.3) : p.legThickness * (p.tail === 'tuft' ? 0.3 : 0.42) * (1 - i * 0.22);
+        b.add(new THREE.CylinderGeometry(thick * (p.tail === 'heavy' ? 0.7 : 0.8), thick, segLen, 7), color, [0, segLen / 2, 0]);
         if (this.has('stripes') && p.tail === 'thin' && !last) {
           for (const f of [0.3, 0.72]) b.add(new THREE.CylinderGeometry(thick * 1.12, thick * 1.12, segLen * 0.14, 6), c.accent, [0, segLen * f, 0]);
         }
@@ -404,6 +451,11 @@ export class ProceduralQuadruped implements AnimalModel {
 
     this.neck.rotation.x = Math.sin(this.phase * 2 + 0.6) * 0.05 * this.amp + attack * 0.45 - windup * 0.3 + death * 0.3;
     this.neck.rotation.z = s.stunned && !dead ? Math.sin(this.time * 13) * 0.2 : 0;
+
+    if (this.trunk) {
+      this.trunk.rotation.x = dead ? 0.3 : Math.sin(this.time * 1.5) * 0.07 + Math.sin(this.phase) * 0.06 * this.amp - attack * 1.1 + windup * 0.35;
+      this.trunk.rotation.z = Math.sin(this.time * 1.1 + 1) * 0.05;
+    }
 
     const wagSpeed = moving ? 7 : 2.2;
     const wag = dead ? 0 : moving ? 0.2 : 0.11;

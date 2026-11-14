@@ -63,6 +63,9 @@ export type FeatureId =
   | 'tusks'
   | 'ridge'
   | 'stripes'
+  | 'trunk'
+  | 'jaw'
+  | 'sprawl'
   | 'tailTipLight'
   | 'tailTipDark';
 
@@ -86,7 +89,7 @@ export interface BodyPlan {
   snoutLength: number;
   ears: 'pointed' | 'round' | 'long' | 'none';
   earSize: number;
-  tail: 'bushy' | 'tuft' | 'stub' | 'thin';
+  tail: 'bushy' | 'tuft' | 'stub' | 'thin' | 'heavy';
   tailLength: number;
   /** Front torso bulk multiplier (1 = same as the middle). */
   chestBulk: number;
@@ -97,6 +100,18 @@ export interface BodyPlan {
 export type AbilityEffect =
   | {
       kind: 'leap';
+      distance: number;
+      duration: number;
+      damageMult: number;
+      radius: number;
+      knockback: number;
+      stun?: number;
+      /** Flying animals dive from where they are: +`bonusPerMetre` damage for every metre of height. */
+      dive?: { bonusPerMetre: number };
+    }
+  | {
+      /** A run along the ground that hits everything on the way, once each (the Elephant's Charge). */
+      kind: 'charge';
       distance: number;
       duration: number;
       damageMult: number;
@@ -117,6 +132,8 @@ export type AbilityEffect =
       selfRoot?: boolean;
       /** Extra damage (0.75 = +75%) against a target that has its back to the attacker. */
       behindBonus?: number;
+      /** Seconds the first hit holds a target helpless (the Death Roll and the Talon Grab). */
+      grab?: number;
     }
   | {
       kind: 'aoe';
@@ -137,6 +154,10 @@ export type AbilityEffect =
       lowHealthBonus?: { threshold: number; pct: number };
       swim?: { speedPct: number };
       foodBonus?: { kind: FoodKind; pct: number };
+      /** Extra damage (0.35 = +35%) while the animal itself stands in water. */
+      waterDamage?: number;
+      /** Enemy level tags are shown this far away (metres). */
+      reveal?: number;
     };
 
 export interface AbilityDef {
@@ -229,6 +250,8 @@ export interface EnemyBehavior {
   windedSpeedMult: number;
   /** Flee speed multiplier at zero health; a wounded animal slows toward this as it loses health (1 = no effect). */
   woundedSpeedMult: number;
+  /** Overrides `TUNING.enemies.senses.front` / `.rear`: how far it notices the player ahead and behind (x aggro radius). */
+  senses?: { front?: number; rear?: number };
 }
 
 export interface EnemyDef {

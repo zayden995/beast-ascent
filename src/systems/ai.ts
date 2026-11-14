@@ -2,6 +2,7 @@ import type { AnimalModel } from '../animals/AnimalModel.ts';
 import { dampAngle, lerp } from '../core/math.ts';
 import type { EnemyAttackDef, EnemyDef, SpawnZoneDef } from '../core/types.ts';
 import { TUNING } from '../data/tuning.ts';
+import { noticeMultiplier } from '../logic/senses.ts';
 import type { StatInputs } from '../logic/stats.ts';
 import type { ForestWorld } from '../world/forest.ts';
 import { Actor, integrate } from './actor.ts';
@@ -173,7 +174,15 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
   const noticeDist = e.isBoss ? playerFromHome : dist;
   // The den is a refuge: a player inside it is left alone, and any chase ends at its edge.
   const refuge = ctx.world.inRefuge(p.pos.x, p.pos.z);
-  const sees = p.alive && !refuge && noticeDist < b.aggroRadius;
+  // Animals see best ahead and worst behind (bosses notice anyone in their arena), so a hunter can
+  // creep up from behind, and prey that faces a hunter bolts before the hunter is near.
+  const S = TUNING.enemies.senses;
+  const reach = e.isBoss
+    ? 1
+    : noticeMultiplier(e.yaw, dx, dz, { front: b.senses?.front ?? S.front, rear: b.senses?.rear ?? S.rear }, S);
+  // A flier high above the ground is out of sight, and a chase gives up on it (see TUNING.flight).
+  const aloft = p.flying ? p.altitude : 0;
+  const sees = p.alive && !refuge && aloft <= TUNING.flight.noticeAltitude && noticeDist < b.aggroRadius * reach;
   // A badly hurt animal stops picking fights and keeps its distance until it has recovered.
   const hurt = b.fleeHealthPct > 0 && e.hp / e.stats.maxHealth < b.fleeHealthPct;
   const walk = e.stats.moveSpeed;
@@ -219,7 +228,7 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
       }
       case 'chase': {
         const tooFar = e.isBoss ? playerFromHome > b.leashRadius + 6 : distHome > b.leashRadius;
-        if (!p.alive || tooFar || refuge) {
+        if (!p.alive || tooFar || refuge || aloft > TUNING.flight.giveUpAltitude) {
           e.state = 'return';
           e.provoked = false;
           break;
@@ -272,7 +281,7 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
         const speed = atk?.speed ?? 12;
         e.vx = e.chargeX * speed;
         e.vz = e.chargeZ * speed;
-        if (atk && !e.chargeHit && p.alive && !refuge && dist < e.radius + p.radius + 0.5) {
+        if (atk && !e.chargeHit && p.alive && !refuge && dist < e.radius + p.radius + 0.5 && Math.abs(p.pos.y - e.pos.y) < 2 + e.model.height) {
           e.chargeHit = true;
           ctx.combat.damage(e, p, { damage: e.stats.damage * atk.damageMult, knockback: atk.knockback });
         }

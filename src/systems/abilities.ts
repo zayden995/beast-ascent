@@ -19,6 +19,15 @@ interface Cast {
   hitsDone: number;
   dirX: number;
   dirZ: number;
+  /** How long a leap lasts (a dive from the air lasts as long as the fall). */
+  dur: number;
+  /** Leap: a dive from the air, with the damage bonus earned by the height it starts from. */
+  dive: boolean;
+  diveBonus: number;
+  /** Charge: the animals already hit, so that each is hit once. */
+  hitIds: Set<number>;
+  /** The animal rolls over while it holds its target (the Death Roll). */
+  spin: boolean;
 }
 
 const SWING = 0.3;
@@ -58,9 +67,10 @@ export class AbilitySystem {
     return this.cast !== null;
   }
 
-  /** The cast owns the actor's movement (mid-leap). */
+  /** The cast owns the actor's movement (mid-leap, mid-charge). */
   get leaping(): boolean {
-    return this.cast?.def.effect.kind === 'leap';
+    const kind = this.cast?.def.effect.kind;
+    return kind === 'leap' || kind === 'charge';
   }
 
   /** The actor cannot walk while this cast plays. */
@@ -95,23 +105,41 @@ export class AbilitySystem {
       this.fx.ring(o.pos, 3.5, 0xfff2b0, 0.6);
       return true;
     }
-    this.cast = { def, power, t: 0, hitsDone: 0, dirX: Math.sin(o.yaw), dirZ: Math.cos(o.yaw) };
+    const cast: Cast = {
+      def, power, t: 0, hitsDone: 0, dirX: Math.sin(o.yaw), dirZ: Math.cos(o.yaw), dur: 0, dive: false, diveBonus: 1,
+      hitIds: new Set(), spin: fx.kind === 'melee' && !!fx.grab && (fx.hits ?? 1) > 1,
+    };
     if (fx.kind === 'leap') {
-      // Launch so that gravity brings the actor back down when the leap ends.
-      o.vy = (TUNING.player.gravity * fx.duration) / 2;
-      o.grounded = false;
+      cast.dur = fx.duration;
+      if (fx.dive && o.flying) {
+        // A dive from the air: fall onto the target, harder from higher up.
+        cast.dive = true;
+        cast.dur = Math.max(fx.duration, Math.min(2, o.altitude / TUNING.flight.diveDrop));
+        cast.diveBonus = 1 + Math.min(o.altitude, 20) * fx.dive.bonusPerMetre;
+      } else {
+        // Launch so that gravity brings the actor back down when the leap ends.
+        o.vy = (TUNING.player.gravity * fx.duration) / 2;
+        o.grounded = false;
+      }
     }
+    this.cast = cast;
+    o.plowing = fx.kind === 'charge';
     return true;
   }
 
   cancel(): void {
-    this.cast = null;
+    this.endCast();
     this.owner.anim.attackT = -1;
     this.owner.anim.windupT = -1;
   }
 
   resetCooldowns(): void {
     for (const s of this.slots) s.cooldown = 0;
+  }
+
+  /** Damage multiplier from standing in water (the Crocodile's Water Ambush). */
+  private waterMult(): number {
+    return this.owner.wet ? 1 + this.getPassives().waterDamagePct : 1;
   }
 
   update(dt: number): void {
@@ -127,6 +155,7 @@ export class AbilitySystem {
     const fx = c.def.effect;
     const size = o.stats.size;
     const lowHealthBonus = this.getPassives().lowHealthBonus;
+    const water = this.waterMult();
     o.anim.attackPower = 1.5;
 
     if (fx.kind === 'melee') {
@@ -138,17 +167,21 @@ export class AbilitySystem {
       const swingIndex = Math.min(hits - 1, Math.max(0, Math.floor((c.t - (fx.windup - LEAD)) / Math.max(interval, 1e-3))));
       const swingStart = fx.windup + swingIndex * interval - LEAD;
       o.anim.attackT = c.t >= fx.windup - LEAD ? Math.min(1, Math.max(0, (c.t - swingStart) / SWING)) : -1;
+      // The Death Roll rolls the whole body over while it holds on.
+      if (c.spin) o.anim.dodgeT = Math.min(1, Math.max(0, (c.t - fx.windup) / ((hits - 1) * interval + SWING)));
 
       if (c.hitsDone < hits && c.t >= nextHit) {
         c.hitsDone++;
         const reach = fx.range * size;
         this.fx.slash(o.pos, o.yaw, reach + o.radius, fx.arcDeg, o.model.height * 0.5, 0xffffff);
         this.combat.hitArc(o, reach, fx.arcDeg, {
-          damage: o.stats.damage * fx.damageMult * c.power,
+          damage: o.stats.damage * fx.damageMult * c.power * water,
           knockback: fx.knockback,
           bleed: fx.bleed ? { dps: o.stats.damage * fx.bleed.dpsMult * c.power, duration: fx.bleed.duration } : undefined,
           lowHealthBonus,
           behindBonus: fx.behindBonus,
+          // The first hit takes hold: the target cannot act while the rest of the roll lands.
+          stun: c.hitsDone === 1 && fx.grab ? fx.grab : undefined,
         });
       }
       if (c.t >= fx.windup + (hits - 1) * interval + SWING - LEAD) this.finish();
@@ -158,7 +191,7 @@ export class AbilitySystem {
         c.hitsDone = 1;
         this.fx.ring(o.pos, fx.radius, 0xffe9a8, 0.5);
         this.combat.hitRadius(o, o.pos.x, o.pos.z, fx.radius, {
-          damage: o.stats.damage * fx.damageMult * c.power,
+          damage: o.stats.damage * fx.damageMult * c.power * water,
           knockback: fx.knockback,
           stun: fx.stun ? fx.stun * c.power : undefined,
           slow: fx.slow ? { pct: fx.slow.pct, duration: fx.slow.duration * c.power } : undefined,
@@ -168,28 +201,67 @@ export class AbilitySystem {
       if (c.hitsDone > 0) o.anim.attackT = Math.min(1, (c.t - fx.windup) / SWING);
       if (c.t >= fx.windup + SWING) this.finish();
     } else if (fx.kind === 'leap') {
-      const speed = fx.distance / fx.duration;
+      // A dive from the air takes as long as the fall, but still covers the same distance along the ground.
+      const speed = fx.distance / c.dur;
       o.vx = c.dirX * speed;
       o.vz = c.dirZ * speed;
-      o.anim.attackT = Math.min(1, c.t / fx.duration);
-      if (c.t >= fx.duration) {
+      o.anim.attackT = Math.min(1, c.t / c.dur);
+      if (c.dive) o.vy = -TUNING.flight.diveDrop;
+      // A dive ends the moment it reaches the ground (the move into the ground clears `flying`).
+      const grounded = c.dive && !o.flying && c.t > 0.05;
+      if (c.t >= c.dur || grounded) {
         o.vx = 0;
         o.vz = 0;
         const radius = fx.radius * Math.max(0.75, size);
         this.fx.ring(o.pos, radius, 0xffffff, 0.4);
         this.combat.hitRadius(o, o.pos.x, o.pos.z, radius, {
-          damage: o.stats.damage * fx.damageMult * c.power,
+          damage: o.stats.damage * fx.damageMult * c.power * c.diveBonus * water,
           knockback: fx.knockback,
           stun: fx.stun ? fx.stun * c.power : undefined,
           lowHealthBonus,
         });
+        // After the strike the bird pulls up and is flying again.
+        if (c.dive) {
+          o.flying = true;
+          o.grounded = false;
+          o.vy = 4;
+        }
+        this.finish();
+      }
+    } else if (fx.kind === 'charge') {
+      const speed = fx.distance / fx.duration;
+      o.vx = c.dirX * speed;
+      o.vz = c.dirZ * speed;
+      o.anim.attackT = Math.min(1, c.t / fx.duration);
+      // Everything the animal runs into is hit, once each.
+      const radius = fx.radius * Math.max(0.75, size);
+      for (const t of this.combat.targetsInRadius(o, o.pos.x, o.pos.z, radius)) {
+        if (c.hitIds.has(t.id)) continue;
+        c.hitIds.add(t.id);
+        this.combat.damage(o, t, {
+          damage: o.stats.damage * fx.damageMult * c.power * water,
+          knockback: fx.knockback,
+          stun: fx.stun ? fx.stun * c.power : undefined,
+          lowHealthBonus,
+        }, o.pos.x, o.pos.z);
+      }
+      if (c.t >= fx.duration) {
+        o.vx = 0;
+        o.vz = 0;
+        this.fx.ring(o.pos, radius, 0xffffff, 0.4);
         this.finish();
       }
     }
   }
 
-  private finish(): void {
+  private endCast(): void {
+    if (this.cast?.spin) this.owner.anim.dodgeT = -1;
     this.cast = null;
+    this.owner.plowing = false;
+  }
+
+  private finish(): void {
+    this.endCast();
     this.owner.anim.attackT = -1;
     this.owner.anim.windupT = -1;
     this.owner.anim.attackPower = 1;

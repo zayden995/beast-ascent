@@ -8,6 +8,7 @@ import { FOODS, canEat } from '../data/food.ts';
 import { TUNING } from '../data/tuning.ts';
 import { enemyXp, growthNeeded } from '../logic/progression.ts';
 import { playerIsUnseen } from '../logic/stealth.ts';
+import { withArticle } from '../logic/text.ts';
 import type { Actor } from '../systems/actor.ts';
 import { EnemyActor, updateEnemy } from '../systems/ai.ts';
 import type { ThirdPersonCamera } from '../systems/camera.ts';
@@ -218,7 +219,8 @@ export class Game {
         if (d2 >= min * min || d2 < 1e-8) continue;
         const d = Math.sqrt(d2);
         const push = (min - d) / d;
-        const wa = a.heavy ? 0 : b.heavy ? 1 : 0.5;
+        // Bosses, and animals in the middle of a charge, are not pushed by what they run into.
+        const wa = a.heavy || a.plowing ? 0 : b.heavy || b.plowing ? 1 : 0.5;
         a.pos.x -= dx * push * wa;
         a.pos.z -= dz * push * wa;
         b.pos.x += dx * push * (1 - wa);
@@ -241,7 +243,8 @@ export class Game {
         this.prompt = { key: 'E', text: `Eat ${name}` };
         if (pressed) this.eat(item);
       } else {
-        this.prompt = { key: '', text: `A ${this.growth.species.name.toLowerCase()} cannot eat ${name}` };
+        const who = withArticle(this.growth.species.name.toLowerCase());
+        this.prompt = { key: '', text: `${who[0].toUpperCase()}${who.slice(1)} cannot eat ${name}` };
       }
       return;
     }
@@ -284,7 +287,7 @@ export class Game {
   /** Updates HUD and labels. Runs every frame, even while paused. */
   present(): void {
     this.hud.update();
-    this.labels.update(this.ctx.cam.camera, this.spawner.enemies, this.player.actor, this.growth.progress.level);
+    this.labels.update(this.ctx.cam.camera, this.spawner.enemies, this.player.actor, this.growth.progress.level, this.growth.getPassives().revealRange);
   }
 
   save(): boolean {

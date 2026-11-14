@@ -56,6 +56,28 @@ const tap = async (key, hold = 0.05) => {
 };
 const nearest = (s, kind) =>
   s.enemies.filter((e) => e.alive && (kind ? e.kind === kind : !e.boss)).sort((a, b) => a.dist - b.dist)[0];
+/** Ids of live animals of one kind that have open ground (no tree or rock) at each offset south of them. */
+const withClearSpots = (kind, offsets, excludeIds = []) => page.evaluate(([k, offs, ex]) => {
+  const g = window.__beast.app.game;
+  const w = g.world;
+  return g.spawner.enemies
+    .filter((e) => e.def.id === k && e.alive && !ex.includes(e.id)
+      && offs.every((d) => !w.colliders.blocked(e.pos.x, e.pos.z + d, 0.9) && Math.hypot(e.pos.x, e.pos.z + d) < w.boundary - 2))
+    .map((e) => e.id);
+}, [kind, offsets, excludeIds]);
+/** Holds a wild animal still and idle, facing `yaw` (0 faces +z, PI faces -z), so its sight can be tested. */
+const hold = (id, yaw) => page.evaluate(([animal, facing]) => {
+  const e = window.__beast.app.game.spawner.enemies.find((x) => x.id === animal);
+  e.state = 'idle';
+  e.timer = 99;
+  e.yaw = facing;
+  e.vx = e.vz = 0;
+  e.provoked = false;
+  e.stun = 0;
+  // Where it stands is its home now: an animal beyond its leash would give up a chase at once.
+  e.homeX = e.pos.x;
+  e.homeZ = e.pos.z;
+}, [id, yaw]);
 
 async function newGame(speciesName, variantName) {
   await page.getByRole('button', { name: /New game/ }).click();
@@ -76,7 +98,10 @@ async function fight(kind, { maxSeconds = 40, keepAlive = false } = {}) {
   let s = await B.state();
   const target = kind === 'boss' ? s.enemies.find((e) => e.boss) : nearest(s, kind);
   if (!target) return { killed: false, reason: `no ${kind}` };
-  if (kind !== 'boss') await B.teleport(target.x, target.z + 2.2);
+  if (kind !== 'boss') {
+    await B.teleport(target.x, target.z + 2.2);
+    await hold(target.id, 0); // facing the player (south of it), so that it notices and fights
+  }
   await B.lookAt(target.x, target.z);
   await page.mouse.move(640, 360);
   await page.mouse.down();
@@ -161,9 +186,7 @@ try {
   let begin = await newGame('Lion');
   await shot('02-select-lion');
   const locked = await page.locator('.signpost .plank:disabled').allInnerTexts();
-  // Update as each Milestone 2 species is finished (see PLAN.md): the Tiger is playable now.
-  check('3 species are locked as "Coming soon": Elephant, Crocodile, Eagle',
-    locked.length === 3 && locked.every((t) => /Coming soon/.test(t)) && ['Elephant', 'Crocodile', 'Eagle'].every((n) => locked.some((t) => t.includes(n))), locked.join(' | ').replace(/\n/g, ' '));
+  check('all seven species can be picked: none is locked as "Coming soon"', locked.length === 0, locked.join(' | ').replace(/\n/g, ' '));
   await page.locator('.signpost .plank', { hasText: 'Bear' }).click();
   await page.locator('.variants .chip', { hasText: 'Polar' }).click();
   await page.locator('.stage-row .chip', { hasText: 'Adult' }).click();
@@ -233,6 +256,7 @@ try {
     boar.homeZ = z;
     boar.state = 'idle';
     boar.timer = 99;
+    boar.yaw = Math.PI; // faces -z, toward the player who will stand north of it
     return keep;
   }, boarZ);
   const guard = async () => (await B.state()).enemies.find((e) => e.id === moved.id);
@@ -313,11 +337,39 @@ try {
 
   // Prey flees.
   const deer = nearest(s, 'deer');
+  await hold(deer.id, 0); // facing +z, toward the player 8 m south of it
   await B.teleport(deer.x, deer.z + 8);
   await B.advance(1.5);
   s = await B.state();
   const deerNow = s.enemies.find((e) => e.id === deer.id);
   check('deer flees on sight', deerNow.state === 'flee' && deerNow.dist > 8, `${deerNow.state}, ${deerNow.dist.toFixed(1)} m`);
+
+  // Sight: animals see best ahead and worst behind. Prey that faces a hunter bolts from farther away,
+  // and a hunter can creep up on an animal that has its back turned.
+  const deerAt = async (id) => (await B.state()).enemies.find((e) => e.id === id);
+  const watcherId = (await withClearSpots('deer', [13], [deer.id]))[0];
+  await hold(watcherId, 0);
+  const wPos = await deerAt(watcherId); // read after the animal is held: it may have moved since the last look
+  await B.teleport(wPos.x, wPos.z + 13);
+  await B.advance(0.4);
+  let seen = await deerAt(watcherId);
+  check('a deer that faces the hunter bolts from 13 m, beyond its old 11 m range', seen.state === 'flee', `${seen.state}, ${seen.dist.toFixed(1)} m`);
+  const dozerId = (await withClearSpots('deer', [2, 4, 8], [deer.id, watcherId]))[0];
+  await hold(dozerId, Math.PI); // faces -z, away from the player who stands south of it
+  const dPos = await deerAt(dozerId);
+  await B.teleport(dPos.x, dPos.z + 8);
+  await B.advance(1.5);
+  seen = await deerAt(dozerId);
+  check('a deer with its back turned does not notice a hunter 8 m behind it', seen.state === 'idle', `${seen.state}, ${seen.dist.toFixed(1)} m`);
+  await B.teleport(dPos.x, dPos.z + 4);
+  await B.advance(1);
+  seen = await deerAt(dozerId);
+  check('nor a hunter 4 m behind it', seen.state === 'idle', `${seen.state}, ${seen.dist.toFixed(1)} m`);
+  await B.teleport(dPos.x, dPos.z + 2);
+  await B.advance(0.4);
+  seen = await deerAt(dozerId);
+  check('but it notices a hunter 2 m behind it, and bolts', seen.state === 'flee', `${seen.state}, ${seen.dist.toFixed(1)} m`);
+  await B.call('setHp', s.player.maxHp);
 
   // A fox bolts once it is hurt.
   const foxFight = await fight('fox', { maxSeconds: 6 });
@@ -341,7 +393,10 @@ try {
 
   // Signature ability.
   const prey = nearest(s, 'boar') ?? nearest(s);
-  await B.teleport(prey.x, prey.z + 5);
+  // Held still and stunned, so that where it faces or whether it notices the wolf cannot change the result.
+  await hold(prey.id, 0);
+  await page.evaluate((id) => { window.__beast.app.game.spawner.enemies.find((e) => e.id === id).stun = 3; }, prey.id);
+  await B.teleport(prey.x, prey.z + 6);
   await B.lookAt(prey.x, prey.z);
   const preyHp = prey.hp;
   await tap('Digit1');
@@ -647,6 +702,7 @@ try {
   const lionRivals = s.enemies.map((e) => e.kind).filter((k) => k.startsWith('rival'));
   check('a lion meets a pair of wolves and a bear, never another lion', lionRivals.sort().join() === 'rival_bear,rival_wolf,rival_wolf', lionRivals.join(' '));
   const rivalWolf = nearest(s, 'rival_wolf');
+  await hold(rivalWolf.id, 0); // facing the player, who stands 9 m south of it
   await B.teleport(rivalWolf.x, rivalWolf.z + 9);
   await B.advance(1.2);
   const wolfNow = (await B.state()).enemies.find((e) => e.id === rivalWolf.id);
@@ -737,7 +793,10 @@ try {
     const g = window.__beast.app.game;
     window.__dmg = [];
     g.events.on('damage', (e) => {
-      if (e.attacker === g.player.actor) window.__dmg.push({ target: e.target.id, amount: e.amount, kind: e.kind, ambush: !!e.ambush });
+      if (e.attacker === g.player.actor) window.__dmg.push({
+        target: e.target.id, amount: e.amount, kind: e.kind, ambush: !!e.ambush,
+        dist: Math.hypot(e.target.pos.x - g.player.actor.pos.x, e.target.pos.z - g.player.actor.pos.z), yaw: g.player.actor.yaw,
+      });
     });
   });
   const prepBoar = () => page.evaluate(() => {
@@ -750,6 +809,10 @@ try {
     boar.yaw = 0;
     boar.vx = boar.vz = 0;
     boar.knock.set(0, 0, 0);
+    // Nobody else may knock the tiger away, or steal its aim, during the test.
+    for (const o of g.spawner.enemies) {
+      if (o !== boar && o.alive && Math.hypot(o.pos.x - boar.pos.x, o.pos.z - boar.pos.z) < 14) o.stun = 6;
+    }
     g.player.abilities.resetCooldowns();
     g.player.actor.stamina = g.player.actor.stats.stamina;
     return { id: boar.id, x: boar.pos.x, z: boar.pos.z };
@@ -759,19 +822,55 @@ try {
     await B.teleport(t.x, t.z + (behind ? -1.5 : 1.5));
     await B.lookAt(t.x, t.z);
     await page.evaluate(() => { window.__dmg = []; });
+    const before = await B.state();
     await tap(key);
     await B.advance(0.9);
     // Only count hits on the boar being tested: another animal may be standing inside the arc.
     const log = (await page.evaluate(() => window.__dmg)).filter((d) => d.target === t.id);
-    return { log, boar: (await B.state()).enemies.find((e) => e.id === t.id) };
+    const after = await B.state();
+    const boar = after.enemies.find((e) => e.id === t.id);
+    const near = after.enemies.filter((e) => e.alive && e.id !== t.id && e.dist < 8).map((e) => `${e.kind}:${e.dist.toFixed(1)}:${e.state}`);
+    const wanted = Math.atan2(boar.x - after.player.x, boar.z - after.player.z);
+    const diag = `boar#${t.id} ${boar.state} stun ${boar.stun.toFixed(1)} at (${boar.x.toFixed(2)}, ${boar.z.toFixed(2)}) dist ${boar.dist.toFixed(2)}; `
+      + `tiger (${before.player.x.toFixed(2)}, ${before.player.z.toFixed(2)}) -> (${after.player.x.toFixed(2)}, ${after.player.z.toFixed(2)}) yaw ${after.player.yaw.toFixed(2)} wanted ${wanted.toFixed(2)} `
+      + `hp ${after.player.hp.toFixed(0)} dead ${after.player.dead} screen ${after.screen} grounded ${before.player.grounded}; `
+      + `hit distances ${JSON.stringify(log.filter((d) => d.kind === 'hit').map((d) => +d.dist.toFixed(2)))}; near ${near.join(' ') || 'none'}`;
+    return { log, boar, diag };
   };
   const front = await strike('Digit1', false);
   const behind = await strike('Digit1', true);
-  check('Ambush Strike from the front is an ordinary hit', front.log.length === 1 && !front.log[0].ambush, JSON.stringify(front.log));
+  check('Ambush Strike from the front is an ordinary hit', front.log.length === 1 && !front.log[0].ambush, `${JSON.stringify(front.log)} ${front.diag}`);
   check('Ambush Strike from behind is flagged as an ambush and hits about 75% harder',
-    behind.log.length === 1 && behind.log[0].ambush && behind.log[0].amount > front.log[0].amount * 1.5, `${front.log[0]?.amount} from the front, ${behind.log[0]?.amount} from behind`);
+    behind.log.length === 1 && !!front.log[0] && behind.log[0].ambush && behind.log[0].amount > front.log[0].amount * 1.5, `${front.log[0]?.amount} from the front, ${behind.log[0]?.amount} from behind; ${behind.diag}`);
   await settle();
   check('the damage number of an ambush is marked', (await page.locator('.dmg.ambush').count()) > 0);
+
+  // Sneaking: a boar with its back turned does not notice a tiger creeping up behind it.
+  const sneak = await page.evaluate(() => {
+    const g = window.__beast.app.game;
+    const w = g.world;
+    const boar = g.spawner.enemies.find((e) => e.def.id === 'boar' && e.alive && Math.hypot(e.pos.x, e.pos.z) < 90
+      && !w.colliders.blocked(e.pos.x, e.pos.z - 6, 0.9) && !w.colliders.blocked(e.pos.x, e.pos.z - 3.5, 0.9)
+      && !w.colliders.blocked(e.pos.x, e.pos.z - 1.5, 0.9));
+    return { id: boar.id, x: boar.pos.x, z: boar.pos.z };
+  });
+  const boarAt = async () => (await B.state()).enemies.find((e) => e.id === sneak.id);
+  await hold(sneak.id, 0); // faces +z, so the tiger at -z is behind it
+  await B.teleport(sneak.x, sneak.z - 6);
+  await B.advance(1);
+  let sneakNow = await boarAt();
+  check('a boar with its back turned does not notice a tiger 6 m behind it', sneakNow.state === 'idle', `${sneakNow.state}, ${sneakNow.dist.toFixed(1)} m`);
+  await B.teleport(sneak.x, sneak.z - 3.5);
+  await B.advance(1);
+  sneakNow = await boarAt();
+  check('nor a tiger 3.5 m behind it', sneakNow.state === 'idle', `${sneakNow.state}, ${sneakNow.dist.toFixed(1)} m`);
+  await B.teleport(sneak.x, sneak.z - 1.5);
+  await B.advance(0.3);
+  sneakNow = await boarAt();
+  check('but it notices a tiger 1.5 m behind it', ['chase', 'windup', 'charging', 'recover'].includes(sneakNow.state), `${sneakNow.state}, ${sneakNow.dist.toFixed(1)} m`);
+  await B.teleport(0, 43, Math.PI);
+  await B.advance(6);
+  await B.call('setHp', (await B.state()).player.maxHp);
 
   // Unlock the other three abilities.
   await B.call('grantXp', 200);
@@ -783,9 +882,9 @@ try {
   check('tiger: Rend, Double Claw and Stalk can be unlocked',
     s.player.ranks.tiger_rend === 1 && s.player.ranks.tiger_double_claw === 1 && s.player.ranks.tiger_stalk === 1 && s.player.abilities.join() === 'tiger_ambush_strike,tiger_rend,tiger_double_claw', JSON.stringify(s.player.ranks));
   const rend = await strike('Digit2', false);
-  check('Rend leaves the target bleeding', rend.boar.bleeds > 0 && rend.log.some((d) => d.kind === 'hit'), `bleeds ${rend.boar.bleeds}`);
+  check('Rend leaves the target bleeding', rend.boar.bleeds > 0 && rend.log.some((d) => d.kind === 'hit'), `bleeds ${rend.boar.bleeds}; ${rend.diag}`);
   const claws = await strike('Digit3', false);
-  check('Double Claw lands two hits', claws.log.filter((d) => d.kind === 'hit').length === 2, JSON.stringify(claws.log));
+  check('Double Claw lands two hits', claws.log.filter((d) => d.kind === 'hit').length === 2, `${claws.log.filter((d) => d.kind === 'hit').length} hits; ${claws.diag}`);
 
   // Stalk: faster while no animal has noticed the tiger. After a fight an animal that is stunned or
   // mid-attack still counts as having noticed it, so wait (at the den, where chases are called off)
@@ -810,6 +909,7 @@ try {
     Math.abs(s.player.moveSpeed - stalkSpeed) < 0.02 && /Unseen/.test(await page.locator('.hud-status').textContent()),
     `speed ${s.player.moveSpeed.toFixed(2)} after ${atDen.waited}s${atDen.alerts.length ? `, still alert: ${atDen.alerts.join(' ')}` : ''}`);
   const noticer = nearest(s, 'boar');
+  await hold(noticer.id, 0); // facing the tiger, who stands 5 m south of it
   await B.teleport(noticer.x, noticer.z + 5);
   await B.advance(0.4);
   await settle();
@@ -826,6 +926,390 @@ try {
   await B.advance(20);
   const tigerDeer = await hunt('deer');
   check('tiger can run down and kill a fleeing deer', tigerDeer.killed && tigerDeer.fled, JSON.stringify(tigerDeer));
+
+  // ---------- Elephant, Crocodile and Eagle ----------
+  /** Records every hit the player lands, with where it came from. Install once per game. */
+  const trackDamage = () => page.evaluate(() => {
+    const g = window.__beast.app.game;
+    window.__dmg = [];
+    g.events.on('damage', (e) => {
+      if (e.attacker === g.player.actor) {
+        window.__dmg.push({ target: e.target.id, amount: e.amount, kind: e.kind, ambush: !!e.ambush });
+      }
+    });
+  });
+  /**
+   * Finds open ground with a clear run (8 m south, 14 m north) and puts still boars on it, `offsets`
+   * metres north (negative) or south (positive) of the anchor. They face south, stunned for `stunFor`
+   * seconds. Every other animal within 25 m is stunned so that nobody interferes.
+   */
+  const corridor = (offsets, stunFor = 6) => page.evaluate(([offs, stun]) => {
+    const g = window.__beast.app.game;
+    const w = g.world;
+    const boars = g.spawner.enemies.filter((e) => e.alive && !e.isBoss && e.def.id === 'boar');
+    const anchor = boars.find((b) => {
+      for (let dz = -14; dz <= 8; dz++) if (w.colliders.blocked(b.pos.x, b.pos.z + dz, 1.6)) return false;
+      return Math.hypot(b.pos.x, b.pos.z) < 85;
+    }) ?? boars[0];
+    const ax = anchor.pos.x;
+    const az = anchor.pos.z;
+    const ids = [];
+    offs.forEach((dz, i) => {
+      const b = boars[i];
+      b.pos.set(ax, w.heightAt(ax, az + dz), az + dz);
+      b.hp = b.stats.maxHealth;
+      b.state = 'idle';
+      b.timer = 99;
+      b.yaw = 0;
+      b.vx = b.vz = 0;
+      b.knock.set(0, 0, 0);
+      b.stun = stun;
+      b.provoked = false;
+      // Where it is placed is its home now: far from its own, it would give up a chase at once.
+      b.homeX = b.pos.x;
+      b.homeZ = b.pos.z;
+      ids.push(b.id);
+    });
+    for (const o of g.spawner.enemies) {
+      if (!o.alive || ids.includes(o.id)) continue;
+      const d = Math.hypot(o.pos.x - ax, o.pos.z - az);
+      // Animals that are not part of the test move out of the way (aim assist would turn toward them),
+      // and the others nearby are stunned so that nobody interferes.
+      if (d < 14) o.pos.set(o.pos.x + 30, g.world.heightAt(o.pos.x + 30, o.pos.z), o.pos.z);
+      if (d < 25) o.stun = 6;
+    }
+    g.player.abilities.resetCooldowns();
+    g.player.actor.stamina = g.player.actor.stats.stamina;
+    return { ax, az, ids };
+  }, [offsets, stunFor]);
+  const duelNote = async (id) => {
+    const st = await B.state();
+    const b = st.enemies.find((e) => e.id === id);
+    return `player (${st.player.x.toFixed(1)}, ${st.player.z.toFixed(1)}) yaw ${st.player.yaw.toFixed(2)} hp ${st.player.hp.toFixed(0)}; boar ${b.state} (${b.x.toFixed(1)}, ${b.z.toFixed(1)}) stun ${b.stun.toFixed(2)} dist ${b.dist.toFixed(2)}`;
+  };
+  const hitsOn = async (id) => (await page.evaluate(() => window.__dmg)).filter((d) => d.target === id && d.kind === 'hit');
+  const clearDamage = () => page.evaluate(() => { window.__dmg = []; });
+  const unlockThree = async () => {
+    await B.call('grantXp', 200);
+    await page.keyboard.press('Tab');
+    await page.locator('.growth-card').waitFor();
+    for (let i = 0; i < 3; i++) await page.locator('.ability-row .chip:not(:disabled)', { hasText: 'Unlock' }).first().click();
+    await page.keyboard.press('Tab');
+  };
+
+  // ---------- Elephant ----------
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: /return to title/ }).click();
+  begin = await newGame('Elephant');
+  await begin();
+  await trackDamage();
+  s = await B.state();
+  check('elephant: a level 1 Juvenile with Charge on key 1 and no Forest modifier',
+    s.player.stage === 'juvenile' && s.player.mods.length === 0 && s.player.abilities[0] === 'elephant_charge' && Math.abs(s.player.size - 0.6) < 1e-6, s.player.abilities.join());
+  const elephantRivals = s.enemies.map((e) => e.kind).filter((k) => k.startsWith('rival'));
+  check('an elephant meets all four rivals', elephantRivals.sort().join() === 'rival_bear,rival_lion,rival_wolf,rival_wolf', elephantRivals.join(' '));
+  await shot('18e-elephant');
+
+  const plants = s.food.filter((f) => f.kind === 'plant');
+  const plantsAtDen = plants.filter((f) => Math.hypot(f.x, f.z - 52) < 12).length;
+  check('the Forest has plants for herbivores, a few of them inside the den refuge', plants.length >= 28 && plantsAtDen >= 3, `${plants.length} plants, ${plantsAtDen} at the den`);
+  const nearestPlant = plants.sort((a, b) => Math.hypot(a.x - s.player.x, a.z - s.player.z) - Math.hypot(b.x - s.player.x, b.z - s.player.z))[0];
+  await B.teleport(nearestPlant.x, nearestPlant.z + 0.5);
+  await B.advance(0.1);
+  s = await B.state();
+  check('an elephant can eat plants', s.prompt?.key === 'E' && /Eat plants/.test(s.prompt.text), s.prompt?.text);
+  await tap('KeyE');
+  s = await B.state();
+  check('plants give growth, and grow back later', s.player.growth === 7 && s.food.filter((f) => f.kind === 'plant' && f.available).length === plants.length - 1, `growth ${s.player.growth}`);
+  const fishAt = s.food.find((f) => f.kind === 'fish');
+  await B.teleport(fishAt.x, fishAt.z);
+  await B.advance(0.1);
+  s = await B.state();
+  check('a herbivore is told it cannot eat fish, with the right article', /^An elephant cannot eat fish/.test(s.prompt?.text ?? ''), s.prompt?.text);
+
+  // Charge: a ground dash that hits everything on the way, once each.
+  let line = await corridor([0, -3]);
+  await B.teleport(line.ax, line.az + 4);
+  await B.lookAt(line.ax, line.az);
+  await clearDamage();
+  const chargeFrom = (await B.state()).player;
+  await tap('Digit1');
+  await B.advance(1.2);
+  s = await B.state();
+  const moved1 = Math.hypot(s.player.x - chargeFrom.x, s.player.z - chargeFrom.z);
+  const hitCounts = await Promise.all(line.ids.map(async (id) => (await hitsOn(id)).length));
+  check('Charge hits everything in its path, once each', hitCounts.every((n) => n === 1), `hits ${hitCounts.join(',')}; ${await duelNote(line.ids[1])}`);
+  check('Charge carries the elephant forward and knocks them aside', moved1 > 6 && s.enemies.find((e) => e.id === line.ids[0]).z < line.az - 0.8, `moved ${moved1.toFixed(1)} m`);
+
+  await unlockThree();
+  s = await B.state();
+  check('elephant: Stomp, Trunk Whip and Thick Skin unlock, and Thick Skin adds 10 defense',
+    s.player.ranks.elephant_stomp === 1 && s.player.ranks.elephant_trunk_whip === 1 && s.player.ranks.elephant_thick_skin === 1 && s.player.defense === 24, `defense ${s.player.defense}`);
+  line = await corridor([-2.5], 0);
+  await B.teleport(line.ax, line.az);
+  await B.lookAt(line.ax, line.az - 2.5);
+  await clearDamage();
+  await tap('Digit2');
+  await B.advance(0.65);
+  s = await B.state();
+  check('Stomp hurts and staggers a nearby animal', (await hitsOn(line.ids[0])).length === 1 && s.enemies.find((e) => e.id === line.ids[0]).stun > 0);
+  await B.advance(0.6); // the Stomp is still playing out: another ability would be refused as busy
+  line = await corridor([-2.8], 6);
+  await B.teleport(line.ax, line.az);
+  await B.lookAt(line.ax, line.az - 2.8);
+  await clearDamage();
+  await tap('Digit3');
+  await B.advance(0.7);
+  check('Trunk Whip reaches an animal almost 3 m away', (await hitsOn(line.ids[0])).length >= 1, await duelNote(line.ids[0]));
+  await B.teleport(0, 40, Math.PI);
+  await B.advance(25);
+  const elephantDeer = await hunt('deer', 90);
+  check('juvenile elephant can run down and kill a fleeing deer', elephantDeer.killed && elephantDeer.fled, JSON.stringify(elephantDeer));
+
+  // ---------- Crocodile ----------
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: /return to title/ }).click();
+  begin = await newGame('Crocodile', 'Alligator');
+  await begin();
+  await trackDamage();
+  s = await B.state();
+  await settle();
+  check('crocodile (alligator skin): a level 1 Juvenile with Death Roll on key 1, named in the HUD',
+    s.player.stage === 'juvenile' && s.player.abilities[0] === 'croc_death_roll' && /Juvenile Alligator/.test(await page.locator('.hud-growth .who').innerText()), s.player.abilities.join());
+  const crocRivals = s.enemies.map((e) => e.kind).filter((k) => k.startsWith('rival'));
+  check('a crocodile meets all four rivals', crocRivals.sort().join() === 'rival_bear,rival_lion,rival_wolf,rival_wolf', crocRivals.join(' '));
+  await shot('18f-alligator');
+
+  // Death Roll: the first hit takes hold, and the target cannot get away while the roll lands four hits.
+  line = await corridor([-1.5], 0);
+  await B.teleport(line.ax, line.az);
+  await B.lookAt(line.ax, line.az - 1.5);
+  await clearDamage();
+  await tap('Digit1');
+  await B.advance(0.4);
+  s = await B.state();
+  const heldBoar = s.enemies.find((e) => e.id === line.ids[0]);
+  check('Death Roll takes hold: the target is helpless during the roll', heldBoar.stun > 0.3, `stun ${heldBoar.stun.toFixed(2)} s; ${await duelNote(line.ids[0])}`);
+  await B.advance(1.2);
+  check('Death Roll lands four hits', (await hitsOn(line.ids[0])).length === 4, `${(await hitsOn(line.ids[0])).length} hits; ${await duelNote(line.ids[0])}`);
+
+  await unlockThree();
+  s = await B.state();
+  check('crocodile: Lunge, Tail Sweep and Water Ambush unlock', s.player.ranks.croc_lunge === 1 && s.player.ranks.croc_tail_sweep === 1 && s.player.ranks.croc_water_ambush === 1, JSON.stringify(s.player.ranks));
+  line = await corridor([-20]);
+  await B.teleport(line.ax, line.az + 3);
+  await B.lookAt(line.ax, line.az - 10);
+  const crocBefore = (await B.state()).player;
+  await tap('Digit2');
+  await B.advance(0.8);
+  s = await B.state();
+  check('Lunge bursts forward', Math.hypot(s.player.x - crocBefore.x, s.player.z - crocBefore.z) > 4, `${Math.hypot(s.player.x - crocBefore.x, s.player.z - crocBefore.z).toFixed(1)} m`);
+  line = await corridor([2], 0);
+  await B.teleport(line.ax, line.az);
+  await B.lookAt(line.ax, line.az - 6); // facing away from the boar
+  await clearDamage();
+  await tap('Digit3');
+  await B.advance(0.8);
+  check('Tail Sweep hits an animal behind the crocodile', (await hitsOn(line.ids[0])).length >= 1, await duelNote(line.ids[0]));
+
+  // Water Ambush: the same bite hurts about 35% more from the water.
+  const firstHit = async (id) => (await hitsOn(id))[0]?.amount;
+  line = await corridor([-1.5], 6);
+  await B.teleport(line.ax, line.az);
+  await B.lookAt(line.ax, line.az - 1.5);
+  await clearDamage();
+  await tap('Digit1');
+  await B.advance(0.4);
+  const landBite = await firstHit(line.ids[0]);
+  const landNote = await duelNote(line.ids[0]);
+  await B.advance(1.5);
+  await page.evaluate((id) => {
+    const g = window.__beast.app.game;
+    const b = g.spawner.enemies.find((e) => e.id === id);
+    b.pos.set(48, g.world.heightAt(48, 12), 12);
+    b.hp = b.stats.maxHealth;
+    b.stun = 6;
+    b.vx = b.vz = 0;
+    b.knock.set(0, 0, 0);
+    g.player.abilities.resetCooldowns();
+    g.player.actor.stamina = g.player.actor.stats.stamina;
+  }, line.ids[0]);
+  await B.teleport(48, 13.5);
+  await B.advance(0.3);
+  await B.lookAt(48, 12);
+  s = await B.state();
+  check('a crocodile in the pond is wet and swims', s.player.wet && s.player.swimming, `wet ${s.player.wet}, swimming ${s.player.swimming}`);
+  await clearDamage();
+  await tap('Digit1');
+  await B.advance(0.4);
+  const waterBite = await firstHit(line.ids[0]);
+  check('Water Ambush: the same bite is about 35% harder in the water', !!landBite && !!waterBite && waterBite / landBite > 1.2 && waterBite / landBite < 1.5, `${landBite} on land, ${waterBite} in water; ${landNote}`);
+  await B.teleport(0, 40, Math.PI);
+  await B.advance(25);
+  const crocDeer = await hunt('deer', 90);
+  check('juvenile crocodile can run down and kill a fleeing deer', crocDeer.killed && crocDeer.fled, JSON.stringify(crocDeer));
+
+  // ---------- Eagle ----------
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: /return to title/ }).click();
+  begin = await newGame('Eagle');
+  await begin();
+  await trackDamage();
+  s = await B.state();
+  check('eagle: a level 1 Juvenile on the ground with Dive Strike on key 1',
+    s.player.stage === 'juvenile' && !s.player.flying && s.player.abilities[0] === 'eagle_dive_strike' && Math.abs(s.player.size - 0.6) < 1e-6, s.player.abilities.join());
+  const eagleRivals = s.enemies.map((e) => e.kind).filter((k) => k.startsWith('rival'));
+  check('an eagle meets all four rivals', eagleRivals.sort().join() === 'rival_bear,rival_lion,rival_wolf,rival_wolf', eagleRivals.join(' '));
+  await shot('18g-eagle-perched');
+
+  // Hold Space to take off and climb; let go to glide down; landing is automatic.
+  await B.teleport(0, 43, Math.PI);
+  await B.advance(0.2);
+  const stamina0 = (await B.state()).player.stamina;
+  await page.keyboard.down('Space');
+  await B.advance(1.5);
+  await settle();
+  s = await B.state();
+  check('holding Space takes off and climbs, and costs stamina', s.player.flying && s.player.altitude > 4 && s.player.stamina < stamina0, `altitude ${s.player.altitude.toFixed(1)} m`);
+  check('the HUD says the eagle is flying', /Flying/.test(await page.locator('.hud-status').textContent()));
+  await shot('18h-eagle-flying');
+  await page.evaluate(() => { const g = window.__beast.app.game; g.player.actor.stamina = g.player.actor.stats.stamina; });
+  await B.advance(8);
+  s = await B.state();
+  check('the eagle cannot climb above the 25 m ceiling', s.player.altitude <= 25.01 && s.player.altitude > 18, `altitude ${s.player.altitude.toFixed(1)} m`);
+  await page.keyboard.up('Space');
+  await B.advance(1.2);
+  s = await B.state();
+  check('letting go of Space glides down gently', s.player.flying && s.player.vy < -1 && s.player.vy > -2.7, `vy ${s.player.vy.toFixed(2)} m/s`);
+  let glided = 0;
+  while ((await B.state()).player.flying && glided < 20) {
+    await B.advance(0.5);
+    glided += 0.5;
+  }
+  s = await B.state();
+  check('touching the ground lands the eagle automatically', !s.player.flying && s.player.grounded, `landed after ${glided + 1.2} s of gliding`);
+  await page.evaluate(() => { window.__beast.app.game.player.actor.stamina = 0; });
+  await page.keyboard.down('Space');
+  await B.advance(0.2);
+  s = await B.state();
+  check('with no stamina left the eagle cannot take off', !s.player.flying, `stamina ${s.player.stamina.toFixed(1)}`);
+  await page.keyboard.up('Space');
+
+  // A flier passes over tree trunks.
+  const tree = await page.evaluate(() => {
+    const w = window.__beast.app.world;
+    for (let x = -60; x <= 60; x += 1) {
+      for (let z = -30; z <= 30; z += 1) {
+        if (w.colliders.blocked(x, z, 0.1, 0) && !w.colliders.blocked(x, z, 0.1, 10) && !w.colliders.blocked(x - 5, z, 2, 0)) return { x, z };
+      }
+    }
+    return null;
+  });
+  check('the Forest has trunks that stop at a height (the eagle can fly over them)', !!tree);
+  if (tree) {
+    await B.teleport(tree.x - 5, tree.z, Math.PI / 2);
+    await B.lookAt(tree.x + 12, tree.z);
+    await page.evaluate(() => {
+      const g = window.__beast.app.game;
+      const a = g.player.actor;
+      a.flying = true;
+      a.grounded = false;
+      a.pos.y = g.world.heightAt(a.pos.x, a.pos.z) + 14;
+      a.vy = 0;
+    });
+    await page.keyboard.down('Space');
+    await page.keyboard.down('KeyW');
+    await B.advance(1.6);
+    await page.keyboard.up('KeyW');
+    await page.keyboard.up('Space');
+    s = await B.state();
+    check('an eagle in the air flies straight through the trunk of a tree', s.player.x > tree.x + 1.5 && s.player.flying, `x ${s.player.x.toFixed(1)} past the tree at ${tree.x}`);
+    // Back to the den: a juvenile eagle left alone in the forest would not last long.
+    await page.evaluate(() => { const a = window.__beast.app.game.player.actor; a.flying = false; a.vy = 0; });
+    await B.teleport(0, 43, Math.PI);
+    await B.advance(0.5);
+    await B.call('setHp', (await B.state()).player.maxHp);
+  }
+
+  // A fair fight: a boar cannot hit an eagle high above it, and gives up on one that is higher still.
+  line = await corridor([0], 0);
+  await B.teleport(line.ax, line.az + 3, Math.PI);
+  await B.lookAt(line.ax, line.az);
+  const holdAloft = async (altitude, seconds) => {
+    for (let i = 0; i < seconds * 10; i++) {
+      await page.evaluate((alt) => {
+        const g = window.__beast.app.game;
+        const a = g.player.actor;
+        a.flying = true;
+        a.grounded = false;
+        a.pos.y = g.world.heightAt(a.pos.x, a.pos.z) + alt;
+        a.vy = 0;
+      }, altitude);
+      await B.advance(0.1);
+    }
+  };
+  const hpBefore = (await B.state()).player.hp;
+  await holdAloft(4, 4);
+  s = await B.state();
+  const boarBelow = s.enemies.find((e) => e.id === line.ids[0]);
+  check('a boar chasing an eagle 4 m above it cannot hit it', s.player.hp === hpBefore && ['chase', 'windup', 'charging', 'recover'].includes(boarBelow.state), `hp ${s.player.hp}/${hpBefore}, boar ${boarBelow.state}`);
+  await holdAloft(8, 3);
+  s = await B.state();
+  check('and gives up once the eagle is higher than 6 m', ['return', 'idle', 'wander'].includes(s.enemies.find((e) => e.id === line.ids[0]).state), s.enemies.find((e) => e.id === line.ids[0]).state);
+  await B.advance(0.5);
+
+  // Dive Strike: from the air it hits much harder than the same move from the ground.
+  line = await corridor([-10], 6);
+  await B.teleport(line.ax, line.az);
+  await B.lookAt(line.ax, line.az - 10);
+  await clearDamage();
+  await tap('Digit1');
+  await B.advance(1.2);
+  const poundHit = await firstHit(line.ids[0]);
+  line = await corridor([-10], 6);
+  await B.teleport(line.ax, line.az);
+  await B.lookAt(line.ax, line.az - 10);
+  await page.evaluate(() => {
+    const g = window.__beast.app.game;
+    const a = g.player.actor;
+    a.flying = true;
+    a.grounded = false;
+    a.pos.y = g.world.heightAt(a.pos.x, a.pos.z) + 15;
+    a.vy = 0;
+  });
+  await B.advance(0.1); // one step, so that the game knows the eagle's new altitude
+  await clearDamage();
+  await tap('Digit1');
+  await B.advance(1.6);
+  s = await B.state();
+  const diveHit = await firstHit(line.ids[0]);
+  check('Dive Strike from 15 m hits about 60% harder than from the ground, and the eagle pulls up',
+    !!poundHit && !!diveHit && diveHit / poundHit > 1.35 && diveHit / poundHit < 1.85, `${poundHit} from the ground, ${diveHit} from 15 m; flying ${s.player.flying}`);
+
+  await unlockThree();
+  s = await B.state();
+  check('eagle: Talon Grab, Gust and Eagle Eye unlock', s.player.ranks.eagle_talon_grab === 1 && s.player.ranks.eagle_gust === 1 && s.player.ranks.eagle_eye === 1, JSON.stringify(s.player.ranks));
+  await page.evaluate(() => { const a = window.__beast.app.game.player.actor; a.flying = false; a.pos.y = window.__beast.app.world.heightAt(a.pos.x, a.pos.z); a.vy = 0; });
+  line = await corridor([-1.4], 0);
+  await B.teleport(line.ax, line.az);
+  await B.lookAt(line.ax, line.az - 1.4);
+  await clearDamage();
+  await tap('Digit2');
+  await B.advance(0.4);
+  s = await B.state();
+  check('Talon Grab holds the target helpless', (await hitsOn(line.ids[0])).length === 1 && s.enemies.find((e) => e.id === line.ids[0]).stun > 0.5, `stun ${s.enemies.find((e) => e.id === line.ids[0]).stun.toFixed(2)} s`);
+  await B.advance(0.6);
+  line = await corridor([-3], 6);
+  await B.teleport(line.ax, line.az);
+  await B.lookAt(line.ax, line.az - 3);
+  await tap('Digit3');
+  await B.advance(0.8);
+  s = await B.state();
+  check('Gust blows an animal away', s.enemies.find((e) => e.id === line.ids[0]).z < line.az - 3 - 0.8, `${(line.az - 3 - s.enemies.find((e) => e.id === line.ids[0]).z).toFixed(2)} m further`);
+  await B.teleport(0, 40, Math.PI);
+  await B.advance(25);
+  const eagleDeer = await hunt('deer', 60);
+  check('juvenile eagle can run down and kill a fleeing deer on the ground', eagleDeer.killed && eagleDeer.fled, JSON.stringify(eagleDeer));
 
   // ---------- Large time steps must not break the world ----------
   await B.teleport(96, 0, Math.PI / 2);

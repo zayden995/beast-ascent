@@ -92,7 +92,9 @@ export class Hud {
     });
 
     const hints = el('div', 'hud-hints');
-    for (const [key, text] of [['Tab', 'Growth and abilities'], ['Esc', 'Pause']]) {
+    const hintRows = [['Tab', 'Growth and abilities'], ['Esc', 'Pause']];
+    if (game.growth.species.rig === 'winged') hintRows.unshift(['Space', 'Hold to fly, release to glide']);
+    for (const [key, text] of hintRows) {
       const row = el('div');
       row.append(el('span', 'key', key), ` ${text}`);
       hints.append(row);
@@ -200,6 +202,7 @@ export class Hud {
     if (g.world.inRefuge(a.pos.x, a.pos.z)) status.push('Safe at the den');
     if (p.wounded) status.push('Wounded');
     if (g.player.stalking) status.push('Unseen');
+    if (a.flying) status.push(`Flying ${Math.round(a.altitude)} m`);
     for (const s of g.player.abilities.slots) {
       const t = a.buffTime(s.def.id);
       if (t > 0) status.push(`${s.def.name} ${Math.ceil(t)}s`);

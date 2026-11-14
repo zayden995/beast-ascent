@@ -45,7 +45,7 @@ export function createTitleScreen(
     );
   }
   planks.append(button(save ? 'plank' : 'plank primary', 'New game', on.newGame, save ? 'Replaces your saved animal' : ''));
-  const note = el('p', 'note', 'Keyboard and mouse. Milestone 1: the Forest.');
+  const note = el('p', 'note', 'Keyboard and mouse. Milestone 2: the Forest, with seven animals to play.');
   root.append(h1, lede, planks, note);
   parent.append(root);
   return root;

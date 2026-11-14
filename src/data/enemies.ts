@@ -23,6 +23,8 @@ const list: EnemyDef[] = [
       aggroRadius: 11, aggressive: false, fleeOnSight: true, fleeHealthPct: 1,
       leashRadius: 60, wanderRadius: 16, fleeBurst: 3.5, windedSeconds: 5, windedSpeedMult: 0.55,
       woundedSpeedMult: 0.65,
+      // Prey watches for predators: a deer that faces a hunter sees it from about 15 m and bolts.
+      senses: { front: 1.35 },
     },
     attacks: [],
     xp: 12, carcassGrowth: 14,

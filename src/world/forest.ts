@@ -89,8 +89,8 @@ export class ForestWorld {
   }
 
   /** Pushes a position out of trees/rocks and back inside the world boundary. */
-  constrain(pos: { x: number; z: number }, radius: number): void {
-    this.colliders.resolve(pos, radius);
+  constrain(pos: { x: number; z: number }, radius: number, height = 0): void {
+    this.colliders.resolve(pos, radius, height);
     const r = Math.hypot(pos.x, pos.z);
     const max = this.boundary - radius;
     if (r > max) {
@@ -222,7 +222,8 @@ export class ForestWorld {
         leaves.push({ matrix, color });
       }
       trunks.push({ matrix, color: new THREE.Color(p.trunk).multiplyScalar(0.85 + this.rand() * 0.3) });
-      this.colliders.add(t.x, t.z, 0.4 * t.s);
+      // The trunk blocks up to its top; a flier passes through the foliage above it.
+      this.colliders.add(t.x, t.z, 0.4 * t.s, 3.4 * tall);
     }
     this.instanced(leafGeo, toonMaterial(), leaves, true);
     this.instanced(pineGeo, toonMaterial(), pines, true);
@@ -240,7 +241,7 @@ export class ForestWorld {
         matrix: new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), _q, new THREE.Vector3(sx, sy, sz)),
         color: new THREE.Color(p.rock).multiplyScalar(0.8 + this.rand() * 0.35),
       });
-      if (collide) this.colliders.add(x, z, Math.max(sx, sz) * 0.8);
+      if (collide) this.colliders.add(x, z, Math.max(sx, sz) * 0.8, sy * 1.3 + 0.3);
     };
 
     for (let placed = 0, attempts = 0; placed < rocks && attempts < rocks * 12; attempts++) {
@@ -397,9 +398,9 @@ export class ForestWorld {
     }
     this.instanced(rockGeo, toonMaterial(), stones, true);
 
-    this.colliders.add(den.x - 2.6, den.z + 0.2, 2.3);
-    this.colliders.add(den.x + 2.6, den.z + 0.2, 2.3);
-    this.colliders.add(den.x, den.z + 2.4, 3.2);
+    this.colliders.add(den.x - 2.6, den.z + 0.2, 2.3, 6);
+    this.colliders.add(den.x + 2.6, den.z + 0.2, 2.3, 6);
+    this.colliders.add(den.x, den.z + 2.4, 3.2, 6);
   }
 
   private buildGate(): void {

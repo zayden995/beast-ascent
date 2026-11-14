@@ -48,12 +48,36 @@ export const TUNING = {
     levelDamagePct: 0.1,
     levelXpPct: 0.2,
     regenPctPerSec: 0.08,
+    /**
+     * How far an animal notices the player, as a multiple of its aggro radius, by where the player
+     * is compared with where it faces (see `noticeMultiplier`). Straight behind, an animal only
+     * notices a hunter at a quarter of its range, so a hunter can creep up. Bosses ignore this.
+     */
+    senses: { frontHalfDeg: 60, rearHalfDeg: 30, front: 1, rear: 0.25 },
   },
   food: {
     eatRange: 2.4,
     carcassSeconds: 90,
     fishRespawnSeconds: 40,
     berryRespawnSeconds: 60,
+    plantRespawnSeconds: 45,
+  },
+  /** Flight (the Eagle). Hold Space to flap and climb, release to glide down; landing is automatic. */
+  flight: {
+    climbSpeed: 5.5,
+    verticalLambda: 5,
+    glideSink: 2.4,
+    /** Highest altitude above the ground, in metres. */
+    ceiling: 25,
+    takeoffSpeed: 6,
+    takeoffStaminaCost: 8,
+    flapStaminaPerSec: 11,
+    /** Wild animals notice a flier only below this height above the ground (never above the give-up height). */
+    noticeAltitude: 5,
+    /** A chasing animal gives up on a flier higher than this. */
+    giveUpAltitude: 6,
+    /** Dive Strike falls at this speed (m/s). */
+    diveDrop: 16,
   },
   death: {
     // Dying drops the animal to the first level of its stage; a second death before it gains a

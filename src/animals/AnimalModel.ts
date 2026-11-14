@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import type { BodyColors, BodyPlan, FeatureId } from '../core/types.ts';
+import { ProceduralBird } from './ProceduralBird.ts';
 import { ProceduralQuadruped } from './ProceduralQuadruped.ts';
 
 /** What gameplay tells a model each frame. Models never read game state directly. */
@@ -24,12 +25,16 @@ export interface AnimState {
   hitFlash: number;
   /** 0..1 red warning glow. */
   warn: number;
+  /** In flight (a winged animal that has left the ground). */
+  flying: boolean;
+  /** -1..1: how fast it is climbing (1) or sinking (-1) in flight. */
+  climb: number;
 }
 
 export function createAnimState(): AnimState {
   return {
     speed: 0, sprinting: false, grounded: true, swimming: false, attackT: -1, attackPower: 1,
-    windupT: -1, dodgeT: -1, stunned: false, deathT: -1, hitFlash: 0, warn: 0,
+    windupT: -1, dodgeT: -1, stunned: false, deathT: -1, hitFlash: 0, warn: 0, flying: false, climb: 0,
   };
 }
 
@@ -56,9 +61,11 @@ export interface AnimalAppearance {
   size: number;
   /** Relative head size; juveniles have bigger heads. */
   headScale: number;
+  /** Which rig draws the animal (default: the four-legged one). */
+  rig?: 'quadruped' | 'winged';
 }
 
 export function createAnimalModel(appearance: AnimalAppearance): AnimalModel {
-  // TODO(M2): winged rig for the eagle. TODO(M5): optional glTF models.
-  return new ProceduralQuadruped(appearance);
+  // TODO(M5): optional glTF models.
+  return appearance.rig === 'winged' ? new ProceduralBird(appearance) : new ProceduralQuadruped(appearance);
 }

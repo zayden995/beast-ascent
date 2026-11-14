@@ -35,7 +35,9 @@ export class WorldLabels {
     return true;
   }
 
-  update(camera: THREE.Camera, enemies: EnemyActor[], player: Actor, playerLevel: number): void {
+  /** `revealRange` (the Eagle's Eye) shows level tags farther away than the usual range. */
+  update(camera: THREE.Camera, enemies: EnemyActor[], player: Actor, playerLevel: number, revealRange = 0): void {
+    const range = Math.max(TAG_RANGE, revealRange);
     // Read the layout size once per frame, not once per label.
     this.width = this.root.clientWidth;
     this.height = this.root.clientHeight;
@@ -45,7 +47,7 @@ export class WorldLabels {
       // The boss bar at the top of the screen replaces the boss's tag during the fight.
       if (e.isBoss && (e.engaged || e.hp < e.stats.maxHealth)) continue;
       const dist = e.distanceTo(player);
-      if (dist > (e.isBoss ? 80 : TAG_RANGE)) continue;
+      if (dist > (e.isBoss ? 80 : range)) continue;
       if (!this.project(camera, e.pos.x, e.pos.y + e.model.height + 0.35, e.pos.z)) continue;
       seen.add(e.id);
 

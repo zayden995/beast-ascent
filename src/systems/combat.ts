@@ -1,7 +1,7 @@
 import type { EventBus } from '../core/events.ts';
 import { angleDelta } from '../core/math.ts';
 import { TUNING } from '../data/tuning.ts';
-import { isBehind, lowHealthMultiplier, mitigate } from '../logic/damage.ts';
+import { isBehind, lowHealthMultiplier, mitigate, withinVerticalReach } from '../logic/damage.ts';
 import type { Actor } from './actor.ts';
 import type { GameEvents } from './gameEvents.ts';
 
@@ -40,7 +40,7 @@ export class Combat {
       const dz = t.pos.z - attacker.pos.z;
       const dist = Math.hypot(dx, dz);
       if (dist > reach + attacker.radius + t.radius) return false;
-      if (Math.abs(t.pos.y - attacker.pos.y) > 3 + attacker.model.height) return false;
+      if (!withinVerticalReach(t.pos.y - attacker.pos.y, attacker.model.height, attacker.flying || t.flying)) return false;
       // A target standing on top of the attacker is always "in front".
       if (dist < attacker.radius + t.radius * 0.5) return true;
       return Math.abs(angleDelta(attacker.yaw, Math.atan2(dx, dz))) <= half;
@@ -53,10 +53,17 @@ export class Combat {
     return hit;
   }
 
-  hitRadius(attacker: Actor, x: number, z: number, radius: number, opts: HitOptions): Actor[] {
-    const hit = this.actors().filter(
-      (t) => t !== attacker && t.alive && t.team !== attacker.team && Math.hypot(t.pos.x - x, t.pos.z - z) <= radius + t.radius,
+  /** Hostile, living actors within `radius` of a point (beyond their own body radius). */
+  targetsInRadius(attacker: Actor, x: number, z: number, radius: number): Actor[] {
+    return this.actors().filter(
+      (t) => t !== attacker && t.alive && t.team !== attacker.team && Math.hypot(t.pos.x - x, t.pos.z - z) <= radius + t.radius
+        // Out of reach above or below, when either one is in the air.
+        && ((!attacker.flying && !t.flying) || withinVerticalReach(t.pos.y - attacker.pos.y, attacker.model.height, true)),
     );
+  }
+
+  hitRadius(attacker: Actor, x: number, z: number, radius: number, opts: HitOptions): Actor[] {
+    const hit = this.targetsInRadius(attacker, x, z, radius);
     for (const t of hit) this.damage(attacker, t, opts, x, z);
     return hit;
   }

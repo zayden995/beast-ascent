@@ -54,6 +54,7 @@ export class SpeciesPreview {
       features: species.stageFeatures[stage],
       size: def.sizeScale * species.baseStats.size,
       headScale: def.headScale,
+      rig: species.rig,
     });
     this.scene.add(this.model.root);
     // Frame for the Alpha size so that switching stage visibly changes how big the animal is.

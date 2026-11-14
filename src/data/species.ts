@@ -100,8 +100,8 @@ export const SPECIES: SpeciesDef[] = [
   },
 
   // ---------- Milestone 2 ----------
-  // Tiger is finished (M2 step 2). Elephant, Crocodile and Eagle are `unfinished`: placeholder
-  // numbers, locked as "Coming soon" until their own steps are built (see PLAN.md).
+  // All four Milestone 2 species are finished. A species with `unfinished: true` would stay "Coming soon"
+  // even in its milestone; none uses it now.
   {
     id: 'tiger', name: 'Tiger', role: 'High damage, stealthy ambusher', diet: 'carnivore',
     playableFrom: 2, rig: 'quadruped',
@@ -126,17 +126,19 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'elephant', name: 'Elephant', role: 'Huge health, slow, charges and stomps', diet: 'herbivore',
-    playableFrom: 2, unfinished: true, rig: 'quadruped', // TODO(M2 step 3)
+    playableFrom: 2, rig: 'quadruped',
+    // Walk 4.7 and sprint 8.0 (the placeholders were 4.2 and 7.2): a winded fox out-walks anything
+    // slower than 4.6, and a deer out-sprints 7.2, so prey must stay catchable (see the data tests).
     baseStats: {
-      maxHealth: 220, stamina: 80, staminaRegen: 12, damage: 18, moveSpeed: 4.2, sprintSpeed: 7.2,
+      maxHealth: 220, stamina: 80, staminaRegen: 12, damage: 18, moveSpeed: 4.7, sprintSpeed: 8.0,
       attackSpeed: 0.9, defense: 14, size: 1,
     },
     body: {
       bodyLength: 2.6, bodyHeight: 1.6, bodyWidth: 1.3, legLength: 1.45, legThickness: 0.36,
-      neckLength: 0.3, neckAngle: 0.3, headSize: 0.95, snoutLength: 0.3,
+      neckLength: 0.3, neckAngle: 0.3, headSize: 0.95, snoutLength: 0.12,
       ears: 'round', earSize: 0.45, tail: 'tuft', tailLength: 0.9, chestBulk: 1.05,
-    }, // TODO(M2): trunk and tusks on the rig
-    stageFeatures: { juvenile: [], adult: ['tusks'], alpha: ['tusks', 'scar'] },
+    },
+    stageFeatures: { juvenile: ['trunk'], adult: ['trunk', 'tusks'], alpha: ['trunk', 'tusks', 'scar'] },
     attack: { range: 2.6, arcDeg: 120, knockback: 7 },
     variants: [
       {
@@ -153,17 +155,18 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'crocodile', name: 'Crocodile', role: 'Ambusher, strong near water, death roll', diet: 'carnivore',
-    playableFrom: 2, unfinished: true, rig: 'quadruped', // TODO(M2 step 4)
+    playableFrom: 2, rig: 'quadruped',
+    // Walk 4.7 and sprint 8.0 (placeholders 4.4 and 7.6), for the same reason as the Elephant.
     baseStats: {
-      maxHealth: 130, stamina: 90, staminaRegen: 14, damage: 17, moveSpeed: 4.4, sprintSpeed: 7.6,
+      maxHealth: 130, stamina: 90, staminaRegen: 14, damage: 17, moveSpeed: 4.7, sprintSpeed: 8.0,
       attackSpeed: 1.2, defense: 12, size: 1,
     },
     body: {
       bodyLength: 2.3, bodyHeight: 0.42, bodyWidth: 0.62, legLength: 0.24, legThickness: 0.11,
       neckLength: 0.15, neckAngle: 0.05, headSize: 0.36, snoutLength: 0.6,
-      ears: 'none', earSize: 0, tail: 'thin', tailLength: 1.8, chestBulk: 1.0,
-    }, // TODO(M2): long jaw and heavy tail on the rig
-    stageFeatures: { juvenile: [], adult: ['ridge'], alpha: ['ridge', 'scar'] },
+      ears: 'none', earSize: 0, tail: 'heavy', tailLength: 1.8, chestBulk: 1.0,
+    },
+    stageFeatures: { juvenile: ['jaw', 'sprawl'], adult: ['jaw', 'sprawl', 'ridge'], alpha: ['jaw', 'sprawl', 'ridge', 'scar'] },
     attack: { range: 1.8, arcDeg: 90, knockback: 4 },
     variants: [
       {
@@ -188,7 +191,7 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'eagle', name: 'Eagle', role: 'Flying, dive attacks, fragile', diet: 'carnivore',
-    playableFrom: 2, unfinished: true, rig: 'winged', // TODO(M2 step 5): winged rig and flight
+    playableFrom: 2, rig: 'winged',
     baseStats: {
       maxHealth: 65, stamina: 130, staminaRegen: 24, damage: 12, moveSpeed: 6.5, sprintSpeed: 12,
       attackSpeed: 1.6, defense: 2, size: 1,

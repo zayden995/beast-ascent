@@ -38,6 +38,12 @@ export class Actor {
   readonly knock = new THREE.Vector3();
   grounded = true;
   swimming = false;
+  /** In flight (winged animals only): gravity is off and `vy` is set by the flight controls. */
+  flying = false;
+  /** Standing in water of any depth (the Crocodile's Water Ambush). */
+  wet = false;
+  /** Height above the ground (or the water) while flying, 0 otherwise. */
+  altitude = 0;
 
   stats: Stats;
   hp: number;
@@ -56,6 +62,8 @@ export class Actor {
   lastHitTime = -999;
   /** Bosses: barely knocked back, shorter stuns, not pushed around. */
   heavy = false;
+  /** Mid-charge: shoves other animals aside without being slowed by them (the Elephant's Charge). */
+  plowing = false;
 
   model: AnimalModel;
   readonly anim: AnimState = createAnimState();
@@ -161,6 +169,8 @@ export class Actor {
     this.model.root.rotation.y = this.yaw;
     this.anim.grounded = this.grounded;
     this.anim.swimming = this.swimming;
+    this.anim.flying = this.flying;
+    this.anim.climb = this.flying ? Math.max(-1, Math.min(1, this.vy / TUNING.flight.climbSpeed)) : 0;
     this.model.update(dt, this.anim);
   }
 }
@@ -173,17 +183,40 @@ export function integrate(a: Actor, dt: number, world: ForestWorld): void {
   const mx = (a.vx + a.knock.x) * dt;
   const mz = (a.vz + a.knock.z) * dt;
   const steps = Math.min(6, Math.max(1, Math.ceil(Math.hypot(mx, mz) / 0.35)));
+  // A flier passes over every trunk and rock that is lower than it is.
+  const height = a.flying ? a.pos.y - world.heightAt(a.pos.x, a.pos.z) : 0;
   for (let i = 0; i < steps; i++) {
     a.pos.x += mx / steps;
     a.pos.z += mz / steps;
-    world.constrain(a.pos, a.radius);
+    world.constrain(a.pos, a.radius, height);
   }
   a.knock.multiplyScalar(Math.exp(-TUNING.combat.knockbackDecay * dt));
 
   const ground = world.heightAt(a.pos.x, a.pos.z);
   const floatY = world.layout.pond.waterY - a.model.height * 0.5;
-  const canFloat = world.waterDepth(a.pos.x, a.pos.z) > 0 && ground < floatY;
+  const depth = world.waterDepth(a.pos.x, a.pos.z);
+  a.wet = depth > 0;
+  const canFloat = depth > 0 && ground < floatY;
   const floor = canFloat ? floatY : ground;
+
+  if (a.flying) {
+    a.pos.y = Math.min(floor + TUNING.flight.ceiling, a.pos.y + a.vy * dt);
+    if (a.pos.y <= floor) {
+      // Touching the ground ends the flight: the landing is automatic.
+      a.pos.y = floor;
+      a.vy = 0;
+      a.flying = false;
+      a.grounded = true;
+      a.swimming = canFloat;
+      a.altitude = 0;
+    } else {
+      a.grounded = false;
+      a.swimming = false;
+      a.altitude = a.pos.y - floor;
+    }
+    return;
+  }
+  a.altitude = 0;
 
   const wasGrounded = a.grounded;
   a.vy -= TUNING.player.gravity * dt;

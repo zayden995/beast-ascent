@@ -6,9 +6,13 @@ import { STAGES, previousStage } from '../../src/data/stages.ts';
 import { TUNING } from '../../src/data/tuning.ts';
 import { getSpecies, getVariant } from '../../src/data/species.ts';
 import { activeBiomeMods, describeMod, toStatMods } from '../../src/logic/biome.ts';
-import { isBehind, lowHealthMultiplier, mitigate } from '../../src/logic/damage.ts';
+import { isBehind, lowHealthMultiplier, mitigate, withinVerticalReach } from '../../src/logic/damage.ts';
+import { clampAltitude, stepVerticalSpeed } from '../../src/logic/flight.ts';
 import { describeDeath } from '../../src/logic/deathText.ts';
 import { createForestHeight } from '../../src/logic/heightfield.ts';
+import { noticeMultiplier } from '../../src/logic/senses.ts';
+import { withArticle } from '../../src/logic/text.ts';
+import { ColliderGrid } from '../../src/world/colliders.ts';
 import { playerIsUnseen } from '../../src/logic/stealth.ts';
 import {
   abilityPower, addGrowth, addXp, applyDeath, evolve, evolveStatus, newProgress,
@@ -95,6 +99,105 @@ test('damage: a hit lands from behind only when the attacker is in the rear arc 
   assert.equal(isBehind(Math.PI, 5, 5, 5, 8), true, 'a target facing -z has its back to +z');
   assert.equal(isBehind(Math.PI / 2, 0, 0, -3, 0), true, 'a target facing +x has its back to -x');
   assert.equal(isBehind(0, 3, 3, 3, 3), false, 'standing on the target is not behind it');
+});
+
+test('senses: an animal sees best straight ahead and worst straight behind, with a blend on the sides', () => {
+  const cone = { frontHalfDeg: 60, rearHalfDeg: 30 };
+  const normal = { front: 1, rear: 0.25 };
+  const deg = (d: number) => (d * Math.PI) / 180;
+  // The animal faces yaw 0 (+z). `look(d)` is a thing d degrees to its right of where it faces.
+  const look = (ranges: { front: number; rear: number }, d: number, yaw = 0) =>
+    noticeMultiplier(yaw, Math.sin(deg(d) + yaw) * 5, Math.cos(deg(d) + yaw) * 5, ranges, cone);
+  assert.equal(look(normal, 0), 1, 'straight ahead: full range');
+  assert.equal(look(normal, 59), 1, 'anywhere in the front cone: full range');
+  assert.ok(Math.abs(look(normal, 105) - 0.625) < 1e-9, 'halfway between the cones: halfway between the ranges');
+  assert.equal(look(normal, 160), 0.25, 'in the rear cone: short range');
+  assert.equal(look(normal, 180), 0.25, 'straight behind: short range');
+  assert.ok(Math.abs(look(normal, -105) - look(normal, 105)) < 1e-9, 'left and right are the same');
+  assert.equal(look(normal, 0, Math.PI / 2), 1, 'it works whichever way the animal faces');
+  assert.equal(look(normal, 180, Math.PI / 2), 0.25);
+  assert.equal(noticeMultiplier(0, 0, 0, normal, cone), 1, 'standing on top of the animal counts as ahead');
+
+  const prey = { front: 1.35, rear: 0.25 };
+  assert.equal(look(prey, 0), 1.35, 'prey that faces you sees you farther than its normal range');
+  assert.equal(look(prey, 180), 0.25, 'but it still cannot see behind itself');
+  for (const d of [0, 30, 60, 90, 120, 150, 180]) {
+    assert.ok(look(prey, d) >= look(normal, d), 'prey never sees worse than a predator at the same angle');
+    assert.ok(look(normal, d) >= look(normal, d + 10) - 1e-9 || d + 10 > 180, 'turning away never helps an animal see');
+  }
+});
+
+test('text: "a" or "an" goes in front of a species name', () => {
+  assert.equal(withArticle('Elephant'), 'an Elephant');
+  assert.equal(withArticle('Eagle'), 'an Eagle');
+  assert.equal(withArticle('Tiger'), 'a Tiger');
+  assert.equal(withArticle('crocodile'), 'a crocodile');
+});
+
+const FLIGHT = { climbSpeed: 5, verticalLambda: 6, glideSink: 2.2, ceiling: 25 };
+
+test('flight: flapping climbs, letting go glides down gently, and neither passes its limit', () => {
+  let vy = 0;
+  for (let i = 0; i < 60; i++) vy = stepVerticalSpeed(vy, true, 3, 1 / 60, FLIGHT);
+  assert.ok(vy > 0 && vy <= FLIGHT.climbSpeed, `after a second of flapping vy is ${vy.toFixed(2)}`);
+  assert.ok(vy > FLIGHT.climbSpeed * 0.9, 'it is close to the climb speed within a second');
+  for (let i = 0; i < 120; i++) vy = stepVerticalSpeed(vy, false, 10, 1 / 60, FLIGHT);
+  assert.ok(vy < 0 && vy >= -FLIGHT.glideSink - 1e-9, `gliding sinks at ${vy.toFixed(2)} m/s, no faster than the glide speed`);
+  assert.ok(Math.abs(vy + FLIGHT.glideSink) < 0.05, 'and it settles at the glide speed');
+});
+
+test('flight: at the ceiling flapping stops helping, and the altitude is clamped', () => {
+  let vy = FLIGHT.climbSpeed;
+  for (let i = 0; i < 120; i++) vy = stepVerticalSpeed(vy, true, FLIGHT.ceiling, 1 / 60, FLIGHT);
+  assert.ok(vy < 0, 'flapping at the ceiling cannot climb any further');
+  assert.equal(clampAltitude(40, FLIGHT), 25);
+  assert.equal(clampAltitude(12, FLIGHT), 12);
+  assert.equal(clampAltitude(-3, FLIGHT), 0, 'never below the ground');
+});
+
+test('flight: the same step size or a huge one gives the same kind of answer (no overshoot)', () => {
+  const small = stepVerticalSpeed(0, true, 1, 1 / 60, FLIGHT);
+  const huge = stepVerticalSpeed(0, true, 1, 5, FLIGHT);
+  assert.ok(small > 0 && small < huge);
+  assert.ok(huge <= FLIGHT.climbSpeed + 1e-9, 'a long frame cannot push the climb past its speed');
+});
+
+test('combat: a hit reaches across a big height gap only between animals that are both on the ground', () => {
+  assert.equal(withinVerticalReach(3.5, 1.2, false), true, 'ground animals keep the generous window: 3 m plus their height');
+  assert.equal(withinVerticalReach(5, 1.2, false), false);
+  assert.equal(withinVerticalReach(2.3, 1.2, true), true, 'against a flier the window is the attacker height plus 1.2 m');
+  assert.equal(withinVerticalReach(3, 1.2, true), false, 'a boar cannot hit an eagle 3 m above it');
+  assert.equal(withinVerticalReach(-3, 1.2, true), false, 'or one 3 m below it');
+  assert.equal(withinVerticalReach(1.6, 0.5, true), true, 'an eagle has to come down to about 1.7 m to bite');
+  assert.equal(withinVerticalReach(2.5, 0.5, true), false);
+});
+
+test('colliders: a trunk only blocks an animal that is below its top, so an eagle can fly over', () => {
+  const grid = new ColliderGrid();
+  grid.add(0, 0, 1, 4); // a trunk 4 m tall
+  const low = { x: 0.5, z: 0 };
+  grid.resolve(low, 0.5, 0);
+  assert.ok(Math.hypot(low.x, low.z) >= 1.5 - 1e-6, 'on the ground it is pushed out');
+  const high = { x: 0.5, z: 0 };
+  grid.resolve(high, 0.5, 5);
+  assert.equal(high.x, 0.5, 'above the top it passes over');
+  assert.equal(grid.blocked(0.5, 0, 0.5, 5), false);
+  assert.equal(grid.blocked(0.5, 0, 0.5, 1), true);
+  grid.add(10, 0, 1); // no height given: solid at every altitude, like a wall
+  const wall = { x: 10.5, z: 0 };
+  grid.resolve(wall, 0.5, 30);
+  assert.ok(Math.hypot(wall.x - 10, wall.z) >= 1.5 - 1e-6, 'a collider without a height always blocks');
+});
+
+test('passives: Water Ambush adds damage in water and grows with rank', () => {
+  const croc = getVariant(getSpecies('crocodile'), 'default');
+  const p = newProgress(croc.abilities);
+  assert.equal(summarizePassives(p, croc.abilities).waterDamagePct, 0, 'locked: nothing');
+  p.abilityRanks.croc_water_ambush = 1;
+  const rank1 = summarizePassives(p, croc.abilities);
+  assert.ok(rank1.waterDamagePct > 0);
+  p.abilityRanks.croc_water_ambush = 3;
+  assert.ok(Math.abs(summarizePassives(p, croc.abilities).waterDamagePct - rank1.waterDamagePct * 1.4) < 1e-9);
 });
 
 test('stealth: the player is unseen only while no animal is chasing, fighting or fleeing from it', () => {

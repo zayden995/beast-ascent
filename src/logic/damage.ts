@@ -35,3 +35,14 @@ export function isBehind(
   const away = Math.abs(angleDelta(targetYaw, Math.atan2(dx, dz)));
   return away >= Math.PI - (arcDeg * Math.PI) / 360;
 }
+
+/**
+ * Can a hit reach a target `dy` metres above (+) or below (-) the attacker's feet? Two animals on
+ * the ground keep the generous old window (3 m plus the attacker's height, which covers slopes and
+ * jumps). Once either one flies, only a hit within the attacker's own height plus 1.2 m can land:
+ * a boar cannot hit an eagle high above it, and an eagle must come down to bite.
+ */
+export function withinVerticalReach(dy: number, attackerHeight: number, flying: boolean): boolean {
+  const window = flying ? attackerHeight + 1.2 : 3 + attackerHeight;
+  return Math.abs(dy) <= window;
+}

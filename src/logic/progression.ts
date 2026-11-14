@@ -173,10 +173,16 @@ export interface PassiveSummary {
   lowHealthBonus: { threshold: number; pct: number } | null;
   swimSpeedPct: number;
   foodBonus: Partial<Record<string, number>>;
+  /** Extra damage while the animal stands in water (0.35 = +35%). */
+  waterDamagePct: number;
+  /** How far away enemy level tags are shown (0 = the normal range). */
+  revealRange: number;
 }
 
 export function summarizePassives(p: Progress, abilityIds: string[]): PassiveSummary {
-  const out: PassiveSummary = { mods: [], unseenMods: [], lowHealthBonus: null, swimSpeedPct: 0, foodBonus: {} };
+  const out: PassiveSummary = {
+    mods: [], unseenMods: [], lowHealthBonus: null, swimSpeedPct: 0, foodBonus: {}, waterDamagePct: 0, revealRange: 0,
+  };
   for (const id of abilityIds) {
     const def = ABILITIES[id];
     const rank = abilityRank(p, id);
@@ -194,6 +200,8 @@ export function summarizePassives(p: Progress, abilityIds: string[]): PassiveSum
       out.lowHealthBonus = { threshold: fx.lowHealthBonus.threshold, pct: fx.lowHealthBonus.pct * power };
     }
     if (fx.swim) out.swimSpeedPct += fx.swim.speedPct * power;
+    if (fx.waterDamage) out.waterDamagePct += fx.waterDamage * power;
+    if (fx.reveal) out.revealRange = Math.max(out.revealRange, fx.reveal);
     if (fx.foodBonus) {
       out.foodBonus[fx.foodBonus.kind] = (out.foodBonus[fx.foodBonus.kind] ?? 0) + fx.foodBonus.pct * power;
     }

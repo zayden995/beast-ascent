@@ -7,6 +7,7 @@ import { STAGES } from '../data/stages.ts';
 import { TUNING } from '../data/tuning.ts';
 import { activeBiomeMods, toStatMods } from '../logic/biome.ts';
 import { describeDeath } from '../logic/deathText.ts';
+import { stepVerticalSpeed } from '../logic/flight.ts';
 import { abilityRank } from '../logic/progression.ts';
 import type { DeathOutcome } from '../logic/progression.ts';
 import type { StatInputs } from '../logic/stats.ts';
@@ -53,6 +54,8 @@ export class PlayerController {
   private staminaDelay = 0;
   private exhausted = false;
   private respawnTimer = 0;
+  /** Out of stamina in flight: no flapping until it has recovered a little. */
+  private flapExhausted = false;
   private lastDeath: DeathOutcome | null = null;
   private modKey = '';
 
@@ -118,6 +121,7 @@ export class PlayerController {
       body: growth.species.body,
       colors: growth.variant.colors,
       features: growth.species.stageFeatures[growth.progress.stage],
+      rig: growth.species.rig,
       size: stage.sizeScale * growth.species.baseStats.size,
       headScale: stage.headScale,
     });
@@ -141,6 +145,9 @@ export class PlayerController {
     this.swing = null;
     this.dodge = null;
     this.abilities.cancel();
+    // A bird that dies in the air falls.
+    this.actor.flying = false;
+    this.flapExhausted = false;
     // Buffs and cooldowns die with the animal; its abilities are reset along with its level.
     this.abilities.setLoadout(this.d.growth.variant.abilities);
     this.actor.buffs = [];
@@ -163,6 +170,8 @@ export class PlayerController {
     a.pos.set(spawn.x, world.heightAt(spawn.x, spawn.z), spawn.z);
     a.yaw = spawn.yaw;
     a.vx = a.vz = a.vy = 0;
+    a.flying = false;
+    a.altitude = 0;
     a.anim.deathT = -1;
     this.dead = false;
     this.exhausted = false;
@@ -186,6 +195,40 @@ export class PlayerController {
     if (candidates.length === 0) return;
     candidates.sort((p, q) => a.distanceTo(p) - a.distanceTo(q));
     a.faceToward(candidates[0].pos.x, candidates[0].pos.z);
+  }
+
+  /**
+   * Flight (winged animals): hold Space to take off and climb, let go to glide down; touching the
+   * ground lands the bird. Climbing costs stamina, gliding is free, and with no stamina left the
+   * bird can only glide until it has recovered a little.
+   */
+  private updateFlight(dt: number, stunned: boolean, busy: boolean): void {
+    const a = this.actor;
+    const F = TUNING.flight;
+    const wants = this.d.input.isDown('Space') && !stunned && !this.dodge;
+    if (this.flapExhausted && a.stamina >= a.stats.stamina * 0.2) this.flapExhausted = false;
+    if (!a.flying) {
+      if (wants && !busy && !this.flapExhausted && a.stamina >= F.takeoffStaminaCost) {
+        a.flying = true;
+        a.grounded = false;
+        a.vy = F.takeoffSpeed;
+        a.stamina -= F.takeoffStaminaCost;
+        this.staminaDelay = T.staminaRegenDelay;
+      }
+      return;
+    }
+    // A dive owns the vertical speed while it plays.
+    if (this.abilities.leaping) return;
+    const flapping = wants && !this.flapExhausted && a.stamina > 0;
+    a.vy = stepVerticalSpeed(a.vy, flapping, a.altitude, dt, F);
+    if (flapping) {
+      a.stamina -= F.flapStaminaPerSec * dt;
+      this.staminaDelay = T.staminaRegenDelay;
+      if (a.stamina <= 0) {
+        a.stamina = 0;
+        this.flapExhausted = true;
+      }
+    }
   }
 
   private refreshBiomeMods(): void {
@@ -263,7 +306,9 @@ export class PlayerController {
       a.yaw = Math.atan2(this.dodge.dx, this.dodge.dz);
     }
 
-    if (input.consume('Space') && !stunned && a.grounded && !a.swimming && !this.dodge && !busy && a.stamina >= T.jumpStaminaCost) {
+    if (growth.species.rig === 'winged') {
+      this.updateFlight(dt, stunned, busy);
+    } else if (input.consume('Space') && !stunned && a.grounded && !a.swimming && !this.dodge && !busy && a.stamina >= T.jumpStaminaCost) {
       a.vy = T.jumpVelocity;
       a.grounded = false;
       a.stamina -= T.jumpStaminaCost;
@@ -289,7 +334,7 @@ export class PlayerController {
         const reach = atk.range * a.stats.size;
         fx.slash(a.pos, a.yaw, reach + a.radius, atk.arcDeg, a.model.height * 0.5, 0xffffff);
         combat.hitArc(a, reach, atk.arcDeg, {
-          damage: a.stats.damage,
+          damage: a.stats.damage * (a.wet ? 1 + growth.getPassives().waterDamagePct : 1),
           knockback: atk.knockback,
           lowHealthBonus: growth.getPassives().lowHealthBonus,
         });

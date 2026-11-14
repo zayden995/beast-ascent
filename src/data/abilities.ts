@@ -137,81 +137,86 @@ const list: AbilityDef[] = [
     },
   },
 
-  // ---------- Milestone 2 species still to build: data placeholders, not playable yet ----------
+  // ---------- Elephant ----------
   {
     id: 'elephant_charge', name: 'Charge', icon: 'leap', signature: true, ...RANKS,
-    description: 'A dash that knocks enemies back.',
-    cooldown: 9, staminaCost: 25, todo: 'M2: ground dash instead of a leap',
-    effect: { kind: 'leap', distance: 9, duration: 0.7, damageMult: 1.6, radius: 3, knockback: 10 },
+    description: 'Charge ahead and knock aside everything in your path.',
+    cooldown: 9, staminaCost: 25,
+    effect: { kind: 'charge', distance: 9, duration: 0.7, damageMult: 1.6, radius: 2.4, knockback: 10 },
   },
   {
     id: 'elephant_stomp', name: 'Stomp', icon: 'slam', ...RANKS,
-    description: 'Stomp the ground, damaging everything nearby.',
-    cooldown: 10, staminaCost: 25, todo: 'M2: tune',
+    description: 'Stomp the ground, damaging and staggering everything nearby.',
+    cooldown: 10, staminaCost: 25,
     effect: { kind: 'aoe', windup: 0.5, radius: 6, damageMult: 1.5, knockback: 6, stun: 0.6 },
   },
   {
     id: 'elephant_trunk_whip', name: 'Trunk Whip', icon: 'claw', ...RANKS,
     description: 'A long sweeping strike with the trunk.',
-    cooldown: 5, staminaCost: 15, todo: 'M2: tune',
+    cooldown: 5, staminaCost: 15,
     effect: { kind: 'melee', windup: 0.25, damageMult: 1.4, range: 3.2, arcDeg: 150, knockback: 6 },
   },
   {
     id: 'elephant_thick_skin', name: 'Thick Skin', icon: 'shield', ...RANKS,
     description: 'Passive. Bonus defense.',
-    cooldown: 0, staminaCost: 0, todo: 'M2: tune',
+    cooldown: 0, staminaCost: 0,
     effect: { kind: 'passive', mods: [{ stat: 'defense', flat: 10 }] },
   },
+
+  // ---------- Crocodile ----------
   {
     id: 'croc_death_roll', name: 'Death Roll', icon: 'bite', signature: true, ...RANKS,
-    description: 'Clamp on and roll, dealing heavy damage.',
-    cooldown: 10, staminaCost: 25, todo: 'M2: grab the target during the roll',
+    description: 'Clamp on and roll: the target cannot escape while you tear at it four times.',
+    cooldown: 10, staminaCost: 25,
     effect: {
-      kind: 'melee', windup: 0.2, damageMult: 0.9, range: 1.8, arcDeg: 70, knockback: 1,
-      hits: 4, hitInterval: 0.25, selfRoot: true,
+      // No knockback: the jaws hold on, so the target stays where it is for all four bites.
+      kind: 'melee', windup: 0.2, damageMult: 0.9, range: 1.8, arcDeg: 70, knockback: 0,
+      hits: 4, hitInterval: 0.25, selfRoot: true, grab: 1.3,
     },
   },
   {
     id: 'croc_lunge', name: 'Lunge', icon: 'leap', ...RANKS,
     description: 'Burst forward jaws-first.',
-    cooldown: 7, staminaCost: 20, todo: 'M2: tune',
+    cooldown: 7, staminaCost: 20,
     effect: { kind: 'leap', distance: 6, duration: 0.35, damageMult: 1.7, radius: 2, knockback: 4 },
   },
   {
     id: 'croc_tail_sweep', name: 'Tail Sweep', icon: 'claw', ...RANKS,
-    description: 'Sweep the tail in a wide arc.',
-    cooldown: 6, staminaCost: 15, todo: 'M2: hit behind the animal',
-    effect: { kind: 'melee', windup: 0.2, damageMult: 1.3, range: 2.8, arcDeg: 220, knockback: 7 },
+    description: 'Sweep the tail in a full circle, hitting everything around you, even behind you.',
+    cooldown: 6, staminaCost: 15,
+    effect: { kind: 'melee', windup: 0.2, damageMult: 1.3, range: 2.6, arcDeg: 360, knockback: 7 },
   },
   {
     id: 'croc_water_ambush', name: 'Water Ambush', icon: 'wave', ...RANKS,
-    description: 'Passive. Strike harder when attacking from water.',
-    cooldown: 0, staminaCost: 0, todo: 'M2: needs an "in water" damage check',
-    effect: { kind: 'passive', swim: { speedPct: 0.6 } },
+    description: 'Passive. Swim faster, and strike 35% harder while you stand in water.',
+    cooldown: 0, staminaCost: 0,
+    effect: { kind: 'passive', swim: { speedPct: 0.6 }, waterDamage: 0.35 },
   },
+
+  // ---------- Eagle ----------
   {
     id: 'eagle_dive_strike', name: 'Dive Strike', icon: 'leap', signature: true, ...RANKS,
-    description: 'Dive from the air onto a target.',
-    cooldown: 7, staminaCost: 20, todo: 'M2: needs flight',
-    effect: { kind: 'leap', distance: 10, duration: 0.5, damageMult: 2.2, radius: 2, knockback: 5 },
+    description: 'Dive from the air onto a target: 4% more damage for every metre you fall. On the ground it is a short pounce.',
+    cooldown: 7, staminaCost: 20,
+    effect: { kind: 'leap', distance: 10, duration: 0.5, damageMult: 2.2, radius: 2, knockback: 5, dive: { bonusPerMetre: 0.04 } },
   },
   {
     id: 'eagle_talon_grab', name: 'Talon Grab', icon: 'claw', ...RANKS,
-    description: 'Seize a target with your talons.',
-    cooldown: 9, staminaCost: 20, todo: 'M2: grab and carry',
-    effect: { kind: 'melee', windup: 0.15, damageMult: 1.5, range: 1.6, arcDeg: 80, knockback: 1 },
+    description: 'Seize a target in your talons and hold it helpless.',
+    cooldown: 9, staminaCost: 20,
+    effect: { kind: 'melee', windup: 0.15, damageMult: 1.5, range: 1.6, arcDeg: 80, knockback: 0, grab: 1.2 },
   },
   {
     id: 'eagle_gust', name: 'Gust', icon: 'wave', ...RANKS,
     description: 'Beat your wings to knock enemies away.',
-    cooldown: 10, staminaCost: 20, todo: 'M2: tune',
+    cooldown: 10, staminaCost: 20,
     effect: { kind: 'aoe', windup: 0.25, radius: 6, damageMult: 0.4, knockback: 12 },
   },
   {
     id: 'eagle_eye', name: 'Eagle Eye', icon: 'fang', ...RANKS,
-    description: 'Passive. Reveals enemies at long range.',
-    cooldown: 0, staminaCost: 0, todo: 'M2: reveal effect',
-    effect: { kind: 'passive' },
+    description: 'Passive. See the level of every animal up to 90 m away.',
+    cooldown: 0, staminaCost: 0,
+    effect: { kind: 'passive', reveal: 90 },
   },
 ];
 
