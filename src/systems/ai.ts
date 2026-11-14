@@ -3,6 +3,7 @@ import { dampAngle, lerp } from '../core/math.ts';
 import type { EnemyAttackDef, EnemyDef, SpawnZoneDef } from '../core/types.ts';
 import { TUNING } from '../data/tuning.ts';
 import { noticeMultiplier } from '../logic/senses.ts';
+import { shoreStandPoint } from '../logic/water.ts';
 import type { StatInputs } from '../logic/stats.ts';
 import type { ForestWorld } from '../world/forest.ts';
 import { Actor, integrate } from './actor.ts';
@@ -18,6 +19,8 @@ export class EnemyActor extends Actor {
   readonly zone: SpawnZoneDef | null;
   homeX = 0;
   homeZ = 0;
+  /** Set while the current walk is to a drinking spot: the way to face once there (null for an ordinary walk). */
+  drinkYaw: number | null = null;
 
   state: AiState = 'idle';
   timer = 1;
@@ -92,6 +95,24 @@ function moveToward(e: EnemyActor, x: number, z: number, speed: number, dt: numb
 }
 
 function pickWanderTarget(e: EnemyActor, ctx: AiContext): void {
+  e.drinkYaw = null;
+  // Now and then the walk is to the nearest pond, to drink (never for a boss, and never far from home).
+  if (!e.isBoss && ctx.rand() < TUNING.drink.chance) {
+    const spot = shoreStandPoint(ctx.world.layout.waters, e.pos.x, e.pos.z, TUNING.drink.reach);
+    if (
+      spot
+      && Math.hypot(spot.x - e.homeX, spot.z - e.homeZ) <= e.def.behavior.leashRadius * 0.8
+      && Math.hypot(spot.x, spot.z) < ctx.world.boundary - 3
+      && ctx.world.waterDepth(spot.x, spot.z) <= 0.2
+      && !ctx.world.inRefuge(spot.x, spot.z, 2)
+      && !ctx.world.colliders.blocked(spot.x, spot.z, 0.8)
+    ) {
+      e.targetX = spot.x;
+      e.targetZ = spot.z;
+      e.drinkYaw = spot.yaw;
+      return;
+    }
+  }
   const r = e.def.behavior.wanderRadius;
   for (let i = 0; i < 6; i++) {
     const a = ctx.rand() * Math.PI * 2;
@@ -187,6 +208,8 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
   const hurt = b.fleeHealthPct > 0 && e.hp / e.stats.maxHealth < b.fleeHealthPct;
   const walk = e.stats.moveSpeed;
   const run = e.stats.sprintSpeed;
+  // Anything that interrupts the animal (a stun, a hunter coming near, a fight) ends the drink.
+  if (e.drinking && e.state !== 'idle') e.drinking = false;
 
   if (e.stun > 0) {
     // A stun interrupts whatever the animal was doing.
@@ -210,18 +233,28 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
         }
         if (e.state === 'idle') {
           e.vx = e.vz = 0;
+          if (e.drinking && e.drinkYaw !== null) e.yaw = dampAngle(e.yaw, e.drinkYaw, 6, dt);
           e.timer -= dt;
           if (e.timer <= 0) {
+            e.drinking = false;
             pickWanderTarget(e, ctx);
             e.state = 'wander';
-            e.timer = 7;
+            // A walk to water can be a long one: give it the time it needs.
+            e.timer = e.drinkYaw === null ? 7 : Math.min(30, Math.hypot(e.targetX - e.pos.x, e.targetZ - e.pos.z) / Math.max(0.5, walk) + 4);
           }
         } else {
           const d = moveToward(e, e.targetX, e.targetZ, walk, dt);
           e.timer -= dt;
           if (d < 0.6 || e.timer <= 0) {
             e.state = 'idle';
-            e.timer = 1.5 + ctx.rand() * 3.5;
+            if (e.drinkYaw !== null && d < 1.5) {
+              // At the water's edge: stand facing the water with the head down for a few seconds.
+              e.drinking = true;
+              e.timer = TUNING.drink.minSeconds + ctx.rand() * (TUNING.drink.maxSeconds - TUNING.drink.minSeconds);
+            } else {
+              e.drinkYaw = null;
+              e.timer = 1.5 + ctx.rand() * 3.5;
+            }
           }
         }
         break;

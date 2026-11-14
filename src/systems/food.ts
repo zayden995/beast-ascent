@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { toonMaterial } from '../animals/toon.ts';
-import type { FoodKind } from '../core/types.ts';
+import type { FoodKind, WaterBody } from '../core/types.ts';
 import { FOODS } from '../data/food.ts';
 import { TUNING } from '../data/tuning.ts';
+import { newFish, stepFish } from '../logic/fish.ts';
+import type { FishState } from '../logic/fish.ts';
 import type { ForestWorld } from '../world/forest.ts';
 
 export interface FoodItem {
@@ -16,11 +18,14 @@ export interface FoodItem {
   /** Bushes and fish come back this long after being eaten; 0 = never. */
   respawnSeconds: number;
   respawnAt: number;
-  /** Fish only: circle they swim around. */
-  swim?: { cx: number; cz: number; radius: number; phase: number };
+  /**
+   * Fish only: the circle they swim around, a clock for it (it stops while the fish flees), how far a wading
+   * animal has pushed the fish off its circle, and the pond it lives in.
+   */
+  swim?: { cx: number; cz: number; radius: number; phase: number; clock: number; fish: FishState; water: WaterBody };
 }
 
-/** Food in the world: carcasses dropped by animals, fish in the pond, berries on bushes, leafy plants. */
+/** Food in the world: carcasses dropped by animals, fish in the ponds, berries on bushes, leafy plants. */
 export class FoodSystem {
   items: FoodItem[] = [];
   private scene: THREE.Scene;
@@ -60,20 +65,22 @@ export class FoodSystem {
 
     this.growPlants(rand);
 
-    const { pond, fishSpots } = world.layout;
-    for (let i = 0; i < fishSpots; i++) {
-      const g = new THREE.Group();
-      const body = new THREE.Mesh(this.geos.fishBody, this.fishMat);
-      body.scale.set(0.12, 0.16, 0.36);
-      const tail = new THREE.Mesh(this.geos.fishTail, this.fishMat);
-      tail.rotation.x = Math.PI / 2;
-      tail.position.z = -0.42;
-      tail.scale.set(0.5, 1, 1.4);
-      g.add(body, tail);
-      const a = (i / fishSpots) * Math.PI * 2;
-      const d = pond.radius * 0.38;
-      const item = this.add({ kind: 'fish', growth: FOODS.fish.growth, mesh: g, respawnSeconds: TUNING.food.fishRespawnSeconds });
-      item.swim = { cx: pond.x + Math.cos(a) * d, cz: pond.z + Math.sin(a) * d, radius: 1.6 + rand() * 1.4, phase: rand() * 6 };
+    // Fish swim in every pond, in circles around spots spread across it.
+    for (const water of world.layout.waters) {
+      for (let i = 0; i < water.fish; i++) {
+        const g = new THREE.Group();
+        const body = new THREE.Mesh(this.geos.fishBody, this.fishMat);
+        body.scale.set(0.12, 0.16, 0.36);
+        const tail = new THREE.Mesh(this.geos.fishTail, this.fishMat);
+        tail.rotation.x = Math.PI / 2;
+        tail.position.z = -0.42;
+        tail.scale.set(0.5, 1, 1.4);
+        g.add(body, tail);
+        const a = (i / water.fish) * Math.PI * 2;
+        const d = water.radius * 0.38;
+        const item = this.add({ kind: 'fish', growth: FOODS.fish.growth, mesh: g, respawnSeconds: TUNING.food.fishRespawnSeconds });
+        item.swim = { cx: water.x + Math.cos(a) * d, cz: water.z + Math.sin(a) * d, radius: 1.6 + rand() * 1.4, phase: rand() * 6, clock: 0, fish: newFish(), water };
+      }
     }
   }
 
@@ -173,7 +180,8 @@ export class FoodSystem {
     this.items = this.items.filter((i) => i !== item);
   }
 
-  update(): void {
+  /** `wader` is where an animal is wading in a pond (the player, in the water), which fish swim away from. */
+  update(dt: number, wader: { x: number; z: number } | null = null): void {
     const now = this.clock.time;
     for (const item of this.items) {
       if (!item.available) {
@@ -189,9 +197,15 @@ export class FoodSystem {
       }
       if (item.swim) {
         const s = item.swim;
-        const a = now * 0.6 + s.phase;
-        item.mesh.position.set(s.cx + Math.cos(a) * s.radius, this.world.layout.pond.waterY - 0.3, s.cz + Math.sin(a) * s.radius);
-        item.mesh.rotation.y = -a;
+        const a = s.clock * 0.6 + s.phase;
+        const base = { x: s.cx + Math.cos(a) * s.radius, z: s.cz + Math.sin(a) * s.radius };
+        const before = { x: s.fish.ox, z: s.fish.oz };
+        const alarmed = stepFish(s.fish, base, wader, s.water, dt, TUNING.fish);
+        // The calm circle only turns while the fish is left alone; an alarmed fish swims straight away.
+        if (!alarmed) s.clock += dt;
+        item.mesh.position.set(base.x + s.fish.ox, this.world.layout.waterY - 0.3, base.z + s.fish.oz);
+        const heading = Math.hypot(s.fish.ox - before.x, s.fish.oz - before.z) > 1e-6 && alarmed ? Math.atan2(s.fish.ox - before.x, s.fish.oz - before.z) : -a;
+        item.mesh.rotation.y = heading;
       }
     }
   }

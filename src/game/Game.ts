@@ -193,7 +193,8 @@ export class Game {
     this.separate();
     this.combat.update(dt, pa);
     this.spawner.update(pa.pos);
-    this.food.update();
+    // A fish swims away from the player only when the player is wading or swimming (a flier skimming the pond does not scare it).
+    this.food.update(dt, pa.wet && pa.alive && !pa.flying ? pa.pos : null);
     this.fx.update(dt);
     this.interact();
 

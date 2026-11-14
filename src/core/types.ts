@@ -318,12 +318,20 @@ export interface TitleAnimalDef {
 
 /** Title screen camera: a slow pan from `from` to `to` and back, always looking at `lookAt`. */
 export interface TitleViewDef {
-  from: { x: number; z: number };
-  to: { x: number; z: number };
+  /** The middle of the pond that the camera circles. */
+  centre: { x: number; z: number };
+  /** Distance of the camera from the middle of the pond. */
+  radius: number;
+  /** The camera swings between these two angles around the pond and back (0 = east of it, 90 = south, 180 = west, 270 = north). */
+  fromDeg: number;
+  toDeg: number;
   /** Camera height above the ground. */
   height: number;
-  lookAt: { x: number; z: number; height: number };
-  /** Seconds for one pan there and back. */
+  /** Height of the point it looks at. */
+  lookHeight: number;
+  /** It looks this many metres to one side of the pond's middle, so that the animals sit to the right of the lettering. */
+  shift: number;
+  /** Seconds for one swing there and back. */
   period: number;
 }
 
@@ -375,4 +383,15 @@ export interface FoodDef {
   growth: number;
   /** Fraction of max health restored. */
   healPct: number;
+}
+
+/** A round pond or lake in a biome. Positions and sizes are in metres; the water surface is at `FOREST_LAYOUT.waterY`. */
+export interface WaterBody {
+  x: number;
+  z: number;
+  radius: number;
+  /** How far the middle of the bowl sinks below the shore. */
+  depth: number;
+  /** How many fish swim in it. */
+  fish: number;
 }

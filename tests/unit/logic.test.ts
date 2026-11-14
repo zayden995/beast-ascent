@@ -428,11 +428,12 @@ test('progression: threat colour buckets', () => {
 
 test('terrain: arena and den are flat, the pond is below water, the edge rises', () => {
   const h = createForestHeight();
-  const { arena, den, pond, worldRadius } = FOREST_LAYOUT;
+  const { arena, den, waters, waterY, worldRadius } = FOREST_LAYOUT;
+  const pond = waters[0];
   assert.ok(Math.abs(h(arena.x, arena.z) - h(arena.x + 12, arena.z - 9)) < 1e-6);
   assert.ok(Math.abs(h(den.x, den.z) - h(den.x + 5, den.z)) < 1e-6);
-  assert.ok(h(pond.x, pond.z) < pond.waterY - 2);
-  assert.ok(h(pond.x + pond.radius + 1, pond.z) > pond.waterY, 'shore is dry');
+  assert.ok(h(pond.x, pond.z) < waterY - 2);
+  assert.ok(h(pond.x + pond.radius + 1, pond.z) > waterY, 'shore is dry');
   assert.ok(h(worldRadius + 12, 0) > h(worldRadius - 10, 0) + 8);
 });
 

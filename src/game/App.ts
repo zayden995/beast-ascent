@@ -71,7 +71,7 @@ export class App {
     this.preview = new SpeciesPreview(aspect);
     this.input = new Input(canvas);
 
-    const at = FOREST_TITLE.view.lookAt;
+    const at = FOREST_TITLE.view.centre;
     this.titleFocus.set(at.x, this.world.heightAt(at.x, at.z), at.z);
 
     this.input.onKey = (code) => this.onKey(code);

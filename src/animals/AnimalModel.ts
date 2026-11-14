@@ -29,12 +29,14 @@ export interface AnimState {
   flying: boolean;
   /** -1..1: how fast it is climbing (1) or sinking (-1) in flight. */
   climb: number;
+  /** Head down at the water's edge, drinking. */
+  drinking: boolean;
 }
 
 export function createAnimState(): AnimState {
   return {
     speed: 0, sprinting: false, grounded: true, swimming: false, attackT: -1, attackPower: 1,
-    windupT: -1, dodgeT: -1, stunned: false, deathT: -1, hitFlash: 0, warn: 0, flying: false, climb: 0,
+    windupT: -1, dodgeT: -1, stunned: false, deathT: -1, hitFlash: 0, warn: 0, flying: false, climb: 0, drinking: false,
   };
 }
 

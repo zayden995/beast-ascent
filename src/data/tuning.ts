@@ -55,6 +55,32 @@ export const TUNING = {
      */
     senses: { frontHalfDeg: 60, rearHalfDeg: 30, front: 1, rear: 0.25 },
   },
+  /**
+   * Fish in the ponds. They swim away from an animal wading in within `alarmRange` and dart when it gets
+   * close. All of it is slower than the slowest swimmer that eats fish (the Bear, about 2.9 m/s), so a
+   * fish can always be caught, but it takes a little chase.
+   */
+  fish: {
+    alarmRange: 6,
+    fleeSpeed: 2.2,
+    dartSpeed: 3.0,
+    dartRange: 1.6,
+    dartSeconds: 0.5,
+    dartCooldown: 2.5,
+    returnSpeed: 1.0,
+    shoreMargin: 0.6,
+  },
+  /** Wild animals now and then walk to a pond and drink instead of just wandering. */
+  drink: {
+    /** The chance that a walk to a new spot is a walk to water (when a pond is within reach). */
+    chance: 0.25,
+    /** How far from its position an animal will look for a shore, in metres. */
+    reach: 30,
+    /** How far outside the shore it stands, so that it never wades in. */
+    standOff: 1.3,
+    minSeconds: 4,
+    maxSeconds: 7,
+  },
   /** Enemy level tags: how far away they can be seen, in metres. */
   labels: {
     range: 42,

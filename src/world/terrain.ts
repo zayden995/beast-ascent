@@ -5,7 +5,7 @@ import type { BiomePalette } from '../core/types.ts';
 import type { FOREST_LAYOUT } from '../data/biomes.ts';
 import type { HeightFn } from '../logic/heightfield.ts';
 
-/** Terrain mesh with vertex colours: grass, dirt at the den and arena, sand at the pond, rock at the edge. */
+/** Terrain mesh with vertex colours: grass, dirt at the den and arena, sand at the ponds, rock at the edge. */
 export function buildTerrainMesh(heightAt: HeightFn, layout: typeof FOREST_LAYOUT, palette: BiomePalette): THREE.Mesh {
   const size = (layout.worldRadius + 34) * 2;
   const segments = 190;
@@ -21,7 +21,7 @@ export function buildTerrainMesh(heightAt: HeightFn, layout: typeof FOREST_LAYOU
   const sand = new THREE.Color(0xd8c690);
   const deep = new THREE.Color(0x6f8a6a);
   const c = new THREE.Color();
-  const { arena, den, pond, gate, worldRadius } = layout;
+  const { arena, den, waters, waterY, gate, worldRadius } = layout;
 
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
@@ -43,10 +43,13 @@ export function buildTerrainMesh(heightAt: HeightFn, layout: typeof FOREST_LAYOU
     );
     c.lerp(dirt, dirtAmount);
 
-    const dPond = Math.hypot(x - pond.x, z - pond.z);
-    if (dPond < pond.radius + 5) {
-      c.lerp(sand, 1 - smoothstep(pond.radius - 1, pond.radius + 5, dPond));
-      c.lerp(deep, smoothstep(0.2, 2.0, pond.waterY - h));
+    // Sand around every pond, greener-grey in the deep water.
+    for (const w of waters) {
+      const dPond = Math.hypot(x - w.x, z - w.z);
+      if (dPond < w.radius + 5) {
+        c.lerp(sand, 1 - smoothstep(w.radius - 1, w.radius + 5, dPond));
+        c.lerp(deep, smoothstep(0.2, 2.0, waterY - h));
+      }
     }
 
     const r = Math.hypot(x, z);

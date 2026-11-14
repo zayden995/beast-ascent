@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
+import { realPointerLock, releaseCursorClip, stubPointerLock } from './pointerLock.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../..');
@@ -26,6 +27,8 @@ const url = server.resolvedUrls.local[0];
 
 const browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+// The real pointer lock would trap the user's own mouse cursor in the corner of the screen (see pointerLock.mjs).
+if (!realPointerLock) await stubPointerLock(page);
 page.on('console', (m) => {
   if (m.type() === 'error') problems.push(`console.error: ${m.text()}`);
   if (m.type() === 'warning' && !/GPU stall|ReadPixels/i.test(m.text())) console.log(`  [warning] ${m.text()}`);
@@ -74,6 +77,9 @@ const hold = (id, yaw) => page.evaluate(([animal, facing]) => {
   e.vx = e.vz = 0;
   e.provoked = false;
   e.stun = 0;
+  // A drinking animal turns to face the water: held still, it must face where the test says.
+  e.drinking = false;
+  e.drinkYaw = null;
   // Where it stands is its home now: an animal beyond its leash would give up a chase at once.
   e.homeX = e.pos.x;
   e.homeZ = e.pos.z;
@@ -203,6 +209,41 @@ try {
   const herdLater = await B.call('titleAnimals');
   const roamed = herd.filter((a, i) => Math.hypot(herdLater[i].x - a.x, herdLater[i].z - a.z) > 0.5).length;
   check('animals roam behind the title screen: prey and predators', herd.length >= 8 && herd.some((a) => a.predator) && herd.some((a) => !a.predator) && roamed >= herd.length - 2, `${herd.length} animals, ${roamed} moved in 30 s`);
+  // The animals stand all around the big pond (46, 12, radius 15), drink at its edge, and the camera swing never runs into a tree.
+  const around = new Set(herd.map((a) => Math.floor((((Math.atan2(a.z - 12, a.x - 46) * 180) / Math.PI + 360) % 360) / 45)));
+  check('the title animals stand all around the pond, not only in front of the camera', around.size >= 5, `${around.size} of 8 sides`);
+  let drinkers = 0;
+  const badDrinkers = [];
+  for (let i = 0; i < 60; i++) {
+    await B.call('advanceTitle', 2);
+    for (const a of await B.call('titleAnimals')) {
+      if (!a.drinking) continue;
+      drinkers++;
+      const d = Math.hypot(a.x - 46, a.z - 12);
+      if (d < 14 || d > 19.5) badDrinkers.push(d.toFixed(1));
+    }
+  }
+  check('title animals walk to the water and drink at its edge, on dry ground', drinkers > 0 && badDrinkers.length === 0, `${drinkers} drinking samples; off the shore at ${badDrinkers.join(', ')}`);
+  const blockedOnArc = await page.evaluate(async () => {
+    const { FOREST_TITLE } = await import('/src/data/biomes.ts');
+    const { titleCameraPose } = await import('/src/logic/titleView.ts');
+    const w = window.__beast.app.world;
+    const v = FOREST_TITLE.view;
+    let blocked = 0;
+    for (let k = 0; k <= 40; k++) {
+      const pose = titleCameraPose(v, (k / 40) * (v.period / 2), w.heightAt);
+      let hit = w.colliders.blocked(pose.x, pose.z, 6);
+      // A clear view of the pond: nothing within 3 m of the line from the camera to the shore.
+      for (let d = 3; !hit && d < v.radius - 17; d += 1.5) {
+        const px = pose.x + ((v.centre.x - pose.x) / v.radius) * d;
+        const pz = pose.z + ((v.centre.z - pose.z) / v.radius) * d;
+        if (w.colliders.blocked(px, pz, 3)) hit = true;
+      }
+      if (hit) blocked++;
+    }
+    return blocked;
+  });
+  check('the title camera swing keeps 6 m from every tree and rock and has a clear view of the pond', blockedOnArc === 0, `${blockedOnArc} of 41 points on the arc are blocked`);
   await B.call('setTimeOfDay', 0.34);
   await shot('01-title');
 
@@ -799,7 +840,34 @@ try {
   s = await B.state();
   check('animals swim in the pond', s.player.swimming);
   const fish = s.food.filter((f) => f.kind === 'fish' && f.available);
-  check('fish live in the pond', fish.length === 4);
+  const pondFish = await page.evaluate(() => window.__beast.app.world.layout.waters.map((w) => w.fish));
+  check('fish live in every pond: 4 in the old one, and some in each of the three new ones', fish.length === pondFish.reduce((a, b) => a + b, 0) && pondFish.length === 4 && pondFish.every((n) => n >= 2), `${fish.length} fish, per pond ${pondFish.join(', ')}`);
+  // Every pond can be swum in, and none of them is just a painted patch.
+  const waterBodies = await page.evaluate(() => window.__beast.app.world.layout.waters);
+  for (const [i, w] of waterBodies.entries()) {
+    await B.teleport(w.x, w.z);
+    await B.advance(0.6);
+    const inWater = (await B.state()).player;
+    check(`animals swim in pond ${i + 1} (radius ${w.radius} m)`, inWater.wet && inWater.swimming, `wet ${inWater.wet}, swimming ${inWater.swimming}`);
+  }
+  // Fish swim away from an animal that wades in, so catching one takes a little chase.
+  const pond0 = waterBodies[0];
+  const foodNow = (await B.state()).food;
+  const fi = foodNow.findIndex((f) => f.kind === 'fish' && f.available && Math.hypot(f.x - pond0.x, f.z - pond0.z) < pond0.radius - 6);
+  const fishPoked = foodNow[fi];
+  const towardMiddle = Math.hypot(pond0.x - fishPoked.x, pond0.z - fishPoked.z) || 1;
+  await B.teleport(fishPoked.x + ((pond0.x - fishPoked.x) / towardMiddle) * 3.5, fishPoked.z + ((pond0.z - fishPoked.z) / towardMiddle) * 3.5);
+  await B.advance(0.1);
+  const gap = async () => {
+    const st = await B.state();
+    return Math.hypot(st.food[fi].x - st.player.x, st.food[fi].z - st.player.z);
+  };
+  const gap0 = await gap();
+  await B.advance(1.5);
+  const gap1 = await gap();
+  check('a fish swims away from a bear that wades in beside it', gap1 > gap0 + 1.2, `the gap grew from ${gap0.toFixed(1)} to ${gap1.toFixed(1)} m`);
+  await B.teleport(46, 12);
+  await B.advance(0.6);
   await B.call('grantXp', 200);
   await page.keyboard.press('Tab');
   for (let i = 0; i < 3; i++) await page.locator('.ability-row .chip:not(:disabled)', { hasText: 'Unlock' }).first().click();
@@ -1255,7 +1323,7 @@ try {
     a.flying = true;
     a.grounded = false;
     a.swimming = false;
-    a.pos.y = h === 'high' ? g.world.layout.pond.waterY + 15 : g.world.layout.pond.waterY + 1.0;
+    a.pos.y = h === 'high' ? g.world.layout.waterY + 15 : g.world.layout.waterY + 1.0;
     a.vy = 0;
   }, height);
   await eagleAt('high');
@@ -1614,6 +1682,20 @@ try {
   await page.keyboard.press('Escape');
   await page.locator('.admin-card').waitFor({ state: 'detached' });
   check('Esc closes the panel and the game goes on', (await B.state()).screen === 'playing');
+  // Wild animals now and then walk to a pond and drink there (the player rests at the den, where nobody comes).
+  const ponds = await page.evaluate(() => window.__beast.app.world.layout.waters);
+  let drinkingSeen = 0;
+  const wrongPlace = [];
+  for (let i = 0; i < 120; i++) {
+    await B.advance(2.5);
+    for (const e of (await B.state()).enemies) {
+      if (!e.drinking) continue;
+      drinkingSeen++;
+      const onShore = ponds.some((w) => { const d = Math.hypot(e.x - w.x, e.z - w.z); return d >= w.radius && d <= w.radius + 3.5; });
+      if (!onShore) wrongPlace.push(`${e.kind} at ${e.x.toFixed(0)}, ${e.z.toFixed(0)}`);
+    }
+  }
+  check('wild animals walk to a pond and drink at its edge, never in the water', drinkingSeen > 0 && wrongPlace.length === 0, `${drinkingSeen} drinking samples in 300 s; wrong place: ${wrongPlace.slice(0, 3).join('; ')}`);
   await B.advance(1);
   await shot('14h-admin-elephant');
   await page.keyboard.press('Escape');
@@ -1680,6 +1762,7 @@ for (const p of problems) console.log(`  ! ${p}`);
 
 await browser.close();
 await server.close();
+if (realPointerLock) releaseCursorClip();
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed. Screenshots: ${shots}`);

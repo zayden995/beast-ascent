@@ -97,6 +97,8 @@ export class ProceduralQuadruped implements AnimalModel {
   private time = Math.random() * 10;
   private amp = 0;
   private run = 0;
+  /** 0..1: how far the head is lowered to drink. */
+  private drink = 0;
   private air = 0;
 
   constructor(look: AnimalAppearance) {
@@ -419,6 +421,7 @@ export class ProceduralQuadruped implements AnimalModel {
     if (moving || s.swimming) this.phase += rate * dt;
 
     this.run = damp(this.run, moving && s.sprinting ? 1 : 0, 8, dt);
+    this.drink = damp(this.drink, s.drinking && !dead ? 1 : 0, 5, dt);
     const targetAmp = dead ? 0 : s.swimming ? 0.35 : moving ? lerp(0.42, 0.78, this.run) : 0;
     this.amp = damp(this.amp, targetAmp, 10, dt);
     this.air = damp(this.air, s.grounded || s.swimming || dead ? 0 : 1, 12, dt);
@@ -443,13 +446,13 @@ export class ProceduralQuadruped implements AnimalModel {
     const bob = Math.sin(this.phase * 2) * 0.03 * this.amp * p.legLength;
     this.body.position.y = lerp(this.hip + bob - windup * p.legLength * 0.14, p.bodyWidth * 0.5, death);
     this.body.position.z = attack * p.bodyLength * 0.26 - windup * p.bodyLength * 0.16;
-    this.body.rotation.x = Math.sin(this.phase) * 0.06 * this.run * this.amp - windup * 0.14 + attack * 0.1;
+    this.body.rotation.x = Math.sin(this.phase) * 0.06 * this.run * this.amp - windup * 0.14 + attack * 0.1 + this.drink * 0.1;
     this.body.rotation.z = death * (Math.PI / 2) + (s.dodgeT >= 0 ? s.dodgeT * TAU : 0);
 
     const breath = dead ? 0 : Math.sin(this.time * 2.2) * 0.012;
     this.torso.scale.set(1 + breath, 1 + breath, 1);
 
-    this.neck.rotation.x = Math.sin(this.phase * 2 + 0.6) * 0.05 * this.amp + attack * 0.45 - windup * 0.3 + death * 0.3;
+    this.neck.rotation.x = Math.sin(this.phase * 2 + 0.6) * 0.05 * this.amp + attack * 0.45 - windup * 0.3 + death * 0.3 + this.drink * 1.0;
     this.neck.rotation.z = s.stunned && !dead ? Math.sin(this.time * 13) * 0.2 : 0;
 
     if (this.trunk) {

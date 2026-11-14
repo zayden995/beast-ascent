@@ -1,4 +1,4 @@
-import type { BiomeDef, BiomeId, SpawnZoneDef, TitleAnimalDef, TitleViewDef } from '../core/types.ts';
+import type { BiomeDef, BiomeId, SpawnZoneDef, TitleAnimalDef, TitleViewDef, WaterBody } from '../core/types.ts';
 
 /** Order in which biomes unlock (bible section 4.5, tunable). */
 export const BIOME_ORDER: BiomeId[] = ['forest', 'jungle', 'plains', 'winter'];
@@ -56,7 +56,19 @@ export const FOREST_LAYOUT = {
   // until the user found it too big (2026-11-14, Milestone 2). The player spawns 9 m from the den.
   den: { x: 0, z: 52, radius: 8, refugeRadius: 12 },
   playerSpawn: { x: 0, z: 43, yaw: Math.PI },
-  pond: { x: 46, z: 12, radius: 15, depth: 2.4, waterY: 0 },
+  /** Height of the water surface, the same for every pond. */
+  waterY: 0,
+  /**
+   * The ponds. The first is the original pond (kept where it was). The other three were added in the M2
+   * review: each sits in a natural low spot (chosen from the terrain), clear of the den, the spawn point,
+   * the arena, the gate, the berry bushes and each other (a unit test checks all of that).
+   */
+  waters: [
+    { x: 46, z: 12, radius: 15, depth: 2.4, fish: 4 },
+    { x: -56, z: 16, radius: 11, depth: 2.0, fish: 3 },
+    { x: -26, z: -26, radius: 9, depth: 1.8, fish: 2 },
+    { x: 56, z: -74, radius: 7, depth: 1.6, fish: 2 },
+  ] as WaterBody[],
   arena: { x: 0, z: -58, radius: 18 },
   gate: { x: 0, z: -101, radius: 6 },
   trees: 430,
@@ -65,11 +77,10 @@ export const FOREST_LAYOUT = {
   berryBushes: [
     [-14, 30], [18, 34], [-32, 14], [22, -6], [-52, -18], [-10, -24], [62, -22], [30, 44],
   ] as [number, number][],
-  fishSpots: 4,
   /** Leafy plants for herbivores to eat (4 of them inside the den refuge). */
   plants: 30,
   plantsAtDen: 4,
-  /** Distance from the pond centre that still counts as "near water". */
+  /** Distance from the shore of any pond that still counts as "near water". */
   nearWaterMargin: 8,
 };
 
@@ -88,30 +99,46 @@ export const FOREST_SPAWNS: SpawnZoneDef[] = [
 ];
 
 /**
- * Title screen: the clearing on the west shore of the pond, where the forest's animals gather (and, from Milestone 2, a tiger, an elephant and a crocodile).
- * The camera sits low among them, like a wildlife film. Nobody fights here; prey just keeps its distance.
+ * Title screen: the animals of the forest gathered around the big pond (from Milestone 2 with a tiger, an
+ * elephant and a crocodile, the Eagle excepted: the title scene has no flight), spread over all its shores.
+ * The camera swings slowly around the pond, low among them, like a wildlife film. Nobody fights here; prey just
+ * keeps its distance, and now and then an animal walks to the water's edge to drink.
+ * Angles around the pond: 0 is east of it, 90 south, 180 west, 270 north.
  */
 export const FOREST_TITLE: { view: TitleViewDef; animals: TitleAnimalDef[]; shyDistance: number } = {
-  // The pan stays at least 4 m from every tree and rock, and aims a little left of the animals
-  // so that they sit to the right of the title lettering.
+  // The arc (west-south-west round to north-west: the longest stretch where the camera is 6 m from every tree
+  // and rock and has a clear view of the pond, found by scanning the forest) is checked by a browser test that
+  
+  // camera looks a little to one side of the pond so that the animals sit to the right of the title lettering.
   view: {
-    from: { x: 17, z: -4 },
-    to: { x: 17, z: 11 },
+    centre: { x: 46, z: 12 },
+    radius: 26,
+    fromDeg: 168,
+    toDeg: 246,
     height: 2.2,
-    lookAt: { x: 32, z: -1, height: 1.0 },
-    period: 80,
+    lookHeight: 1.0,
+    shift: 8,
+    period: 120,
   },
   animals: [
-    { enemyId: 'deer', count: 3, x: 31, z: 10, radius: 4.5 },
-    { enemyId: 'fox', count: 2, x: 24, z: 7, radius: 3.5 },
-    { enemyId: 'boar', count: 1, x: 29, z: 5, radius: 3 },
-    { speciesId: 'bear', variantId: 'brown', count: 1, x: 35, z: 15, radius: 4, wades: true },
-    { speciesId: 'wolf', count: 2, x: 35, z: -1, radius: 4 },
-    { speciesId: 'lion', count: 1, x: 30, z: 0, radius: 3 },
-    // Milestone 2: the new species join the clearing (the Eagle does not: the title scene has no flight).
-    { speciesId: 'tiger', count: 1, x: 26, z: -1.5, radius: 2.5 },
-    { speciesId: 'elephant', count: 1, x: 38, z: 4, radius: 2.5 },
-    { speciesId: 'crocodile', count: 1, x: 40, z: 11, radius: 3, wades: true },
+    // West shore (180 degrees)
+    { enemyId: 'deer', count: 3, x: 29, z: 12, radius: 4 },
+    // South-west (135)
+    { enemyId: 'fox', count: 2, x: 33, z: 25, radius: 3 },
+    // South: the crocodile lies in the water (90)
+    { speciesId: 'crocodile', count: 1, x: 46, z: 22, radius: 3, wades: true },
+    // South-east (45)
+    { enemyId: 'boar', count: 1, x: 59, z: 25, radius: 3 },
+    // East: the bear wades at the water's edge (0)
+    { speciesId: 'bear', variantId: 'brown', count: 1, x: 59, z: 12, radius: 3.5, wades: true },
+    // North-east (330)
+    { speciesId: 'elephant', count: 1, x: 62, z: 3, radius: 2.5 },
+    // North, north-east (300)
+    { speciesId: 'lion', count: 1, x: 55, z: -4, radius: 2.5 },
+    // North (270)
+    { speciesId: 'tiger', count: 1, x: 46, z: -5, radius: 2.5 },
+    // North-west (225)
+    { speciesId: 'wolf', count: 2, x: 33, z: -1, radius: 3.5 },
   ],
   /** Prey trots away when a predator comes closer than this. */
   shyDistance: 3.5,

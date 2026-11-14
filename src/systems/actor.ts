@@ -62,6 +62,8 @@ export class Actor {
   lastHitTime = -999;
   /** Bosses: barely knocked back, shorter stuns, not pushed around. */
   heavy = false;
+  /** Standing at the water's edge with its head down. */
+  drinking = false;
   /** Mid-charge: shoves other animals aside without being slowed by them (the Elephant's Charge). */
   plowing = false;
 
@@ -170,6 +172,7 @@ export class Actor {
     this.anim.grounded = this.grounded;
     this.anim.swimming = this.swimming;
     this.anim.flying = this.flying;
+    this.anim.drinking = this.drinking && this.alive;
     this.anim.climb = this.flying ? Math.max(-1, Math.min(1, this.vy / TUNING.flight.climbSpeed)) : 0;
     this.model.update(dt, this.anim);
   }
@@ -193,7 +196,7 @@ export function integrate(a: Actor, dt: number, world: ForestWorld): void {
   a.knock.multiplyScalar(Math.exp(-TUNING.combat.knockbackDecay * dt));
 
   const ground = world.heightAt(a.pos.x, a.pos.z);
-  const floatY = world.layout.pond.waterY - a.model.height * 0.5;
+  const floatY = world.layout.waterY - a.model.height * 0.5;
   const depth = world.waterDepth(a.pos.x, a.pos.z);
   a.wet = depth > 0;
   const canFloat = depth > 0 && ground < floatY;

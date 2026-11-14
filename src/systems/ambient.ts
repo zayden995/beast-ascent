@@ -5,6 +5,8 @@ import type { TitleAnimalDef } from '../core/types.ts';
 import { getEnemy } from '../data/enemies.ts';
 import { getSpecies, getVariant } from '../data/species.ts';
 import { STAGES } from '../data/stages.ts';
+import { TUNING } from '../data/tuning.ts';
+import { shoreStandPoint } from '../logic/water.ts';
 import type { ForestWorld } from '../world/forest.ts';
 import { Actor, integrate } from './actor.ts';
 
@@ -20,6 +22,10 @@ interface Roamer {
   targetZ: number;
   stroll: number;
   speed: number;
+  /** Set while the walk is to the water's edge: the way to face when it gets there. */
+  drinkYaw: number | null;
+  /** Standing at the water's edge with its head down. */
+  drinking: boolean;
 }
 
 /** Calm walking pace, whatever the animal's real speed is. */
@@ -45,10 +51,11 @@ export class AmbientLife {
         const r: Roamer = {
           actor, def, predator: !!def.speciesId, walking: false, wary: false,
           timer: 0, targetX: def.x, targetZ: def.z,
-          stroll: STROLL * (0.8 + this.rand() * 0.35), speed: 0,
+          stroll: STROLL * (0.8 + this.rand() * 0.35), speed: 0, drinkYaw: null, drinking: false,
         };
-        // Start on a free spot in the patch, then stand for a moment before the first walk.
-        this.pickTarget(r);
+        // Start on a free spot in the patch (never at a pond: the animal has no position yet), then stand for a
+        // moment before the first walk.
+        this.pickTarget(r, false);
         actor.pos.set(r.targetX, world.heightAt(r.targetX, r.targetZ), r.targetZ);
         actor.yaw = this.rand() * Math.PI * 2;
         r.walking = false;
@@ -80,8 +87,19 @@ export class AmbientLife {
   }
 
   /** Picks a free spot in the animal's patch and starts walking to it. */
-  private pickTarget(r: Roamer): void {
+  private pickTarget(r: Roamer, allowDrink = true): void {
     const { def } = r;
+    // Now and then the walk is to the water's edge, to drink (not for the animals that wade in).
+    if (allowDrink && !def.wades && this.rand() < TUNING.drink.chance) {
+      const here = r.actor.pos;
+      const spot = shoreStandPoint(this.world.layout.waters, here.x, here.z, TUNING.drink.reach);
+      if (spot && !this.world.colliders.blocked(spot.x, spot.z, 1) && this.world.waterDepth(spot.x, spot.z) <= 0.1) {
+        this.walkTo(r, spot.x, spot.z, r.stroll, false);
+        r.drinkYaw = spot.yaw;
+        r.timer = 18;
+        return;
+      }
+    }
     for (let i = 0; i < 10; i++) {
       const a = this.rand() * Math.PI * 2;
       const d = Math.sqrt(this.rand()) * def.radius;
@@ -102,6 +120,9 @@ export class AmbientLife {
     r.wary = wary;
     r.walking = true;
     r.timer = wary ? 3 : 10;
+    // Any new walk (a hunter came near, say) ends a drink.
+    r.drinking = false;
+    r.drinkYaw = null;
   }
 
   /** Prey that finds a predator too close trots a few metres the other way. */
@@ -139,7 +160,13 @@ export class AmbientLife {
         if (d < 0.5 || r.timer <= 0) {
           r.walking = false;
           r.wary = false;
-          r.timer = 1.5 + this.rand() * 4;
+          if (r.drinkYaw !== null && d < 1.5) {
+            r.drinking = true;
+            r.timer = TUNING.drink.minSeconds + this.rand() * (TUNING.drink.maxSeconds - TUNING.drink.minSeconds);
+          } else {
+            r.drinkYaw = null;
+            r.timer = 1.5 + this.rand() * 4;
+          }
           a.vx = a.vz = 0;
         } else {
           a.vx = (dx / d) * r.speed;
@@ -148,7 +175,12 @@ export class AmbientLife {
         }
       } else {
         a.vx = a.vz = 0;
-        if (r.timer <= 0) this.pickTarget(r);
+        if (r.drinking && r.drinkYaw !== null) a.yaw = dampAngle(a.yaw, r.drinkYaw, 6, dt);
+        if (r.timer <= 0) {
+          r.drinking = false;
+          r.drinkYaw = null;
+          this.pickTarget(r);
+        }
       }
     }
 
@@ -177,14 +209,15 @@ export class AmbientLife {
       integrate(a, dt, this.world);
       a.anim.speed = Math.hypot(a.vx, a.vz);
       a.anim.sprinting = false;
+      a.drinking = r.drinking && !r.walking;
       a.syncModel(dt);
     }
   }
 
   /** Where everyone is and how fast they are moving (read by the browser test). */
-  snapshot(): { x: number; z: number; speed: number; predator: boolean; swimming: boolean }[] {
+  snapshot(): { kind: string; x: number; z: number; speed: number; predator: boolean; swimming: boolean; drinking: boolean }[] {
     return this.roamers.map((r) => ({
-      x: r.actor.pos.x, z: r.actor.pos.z, speed: r.actor.anim.speed, predator: r.predator, swimming: r.actor.swimming,
+      kind: r.def.enemyId ?? r.def.speciesId ?? '?', x: r.actor.pos.x, z: r.actor.pos.z, speed: r.actor.anim.speed, predator: r.predator, swimming: r.actor.swimming, drinking: r.actor.drinking,
     }));
   }
 

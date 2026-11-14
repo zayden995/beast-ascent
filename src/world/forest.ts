@@ -5,6 +5,7 @@ import { TAU, fbm2, mulberry32 } from '../core/math.ts';
 import { BIOMES, FOREST_LAYOUT } from '../data/biomes.ts';
 import { createForestHeight } from '../logic/heightfield.ts';
 import type { HeightFn } from '../logic/heightfield.ts';
+import { bodyAt, nearWater as isNearWater } from '../logic/water.ts';
 import { ColliderGrid } from './colliders.ts';
 import { buildTerrainMesh } from './terrain.ts';
 
@@ -19,7 +20,7 @@ const _q = new THREE.Quaternion();
 const _e = new THREE.Euler();
 const _c = new THREE.Color();
 
-/** The Forest biome: terrain, vegetation, pond, den, boss arena and the gate to the next biome. */
+/** The Forest biome: terrain, vegetation, ponds, den, boss arena and the gate to the next biome. */
 export class ForestWorld {
   readonly group = new THREE.Group();
   readonly layout = FOREST_LAYOUT;
@@ -30,7 +31,7 @@ export class ForestWorld {
   readonly boundary: number;
 
   private rand = mulberry32(FOREST_LAYOUT.seed);
-  private water!: THREE.Mesh;
+  private waters: THREE.Mesh[] = [];
   private gateBarrier = new THREE.Group();
   private gatePortal!: THREE.Mesh;
   private grassChunks: { mesh: THREE.InstancedMesh; x: number; z: number }[] = [];
@@ -56,14 +57,13 @@ export class ForestWorld {
 
   /** Depth of water at a point (0 on dry land). */
   waterDepth(x: number, z: number): number {
-    const { pond } = this.layout;
-    if (Math.hypot(x - pond.x, z - pond.z) > pond.radius) return 0;
-    return Math.max(0, pond.waterY - this.heightAt(x, z));
+    if (!bodyAt(this.layout.waters, x, z)) return 0;
+    return Math.max(0, this.layout.waterY - this.heightAt(x, z));
   }
 
+  /** True within a few metres of the shore of any pond (or in one). */
   nearWater(x: number, z: number): boolean {
-    const { pond, nearWaterMargin } = this.layout;
-    return Math.hypot(x - pond.x, z - pond.z) < pond.radius + nearWaterMargin;
+    return isNearWater(this.layout.waters, x, z, this.layout.nearWaterMargin);
   }
 
   /** True inside the den's refuge, where wild animals never go (`margin` widens it). */
@@ -101,11 +101,11 @@ export class ForestWorld {
 
   /** True if nothing is built or planted at this spot. */
   isOpenGround(x: number, z: number, margin: number): boolean {
-    const { den, arena, pond, gate, playerSpawn } = this.layout;
+    const { den, arena, waters, gate, playerSpawn } = this.layout;
     if (Math.hypot(x - den.x, z - den.z) < den.radius + margin) return false;
     if (Math.hypot(x - playerSpawn.x, z - playerSpawn.z) < 5 + margin) return false;
     if (Math.hypot(x - arena.x, z - arena.z) < arena.radius + 3 + margin) return false;
-    if (Math.hypot(x - pond.x, z - pond.z) < pond.radius - 1 + margin) return false;
+    for (const w of waters) if (Math.hypot(x - w.x, z - w.z) < w.radius - 1 + margin) return false;
     if (Math.hypot(x - gate.x, z - gate.z) < gate.radius + margin) return false;
     if (Math.abs(x - gate.x) < 4 + margin * 0.5 && z < arena.z && z > gate.z - 2) return false;
     return true;
@@ -127,7 +127,8 @@ export class ForestWorld {
   }
 
   update(time: number, cameraPos: THREE.Vector3): void {
-    this.water.position.y = this.layout.pond.waterY + Math.sin(time * 0.8) * 0.03;
+    const surface = this.layout.waterY + Math.sin(time * 0.8) * 0.03;
+    for (const water of this.waters) water.position.y = surface;
     for (const chunk of this.grassChunks) {
       chunk.mesh.visible = Math.hypot(chunk.x - cameraPos.x, chunk.z - cameraPos.z) < 105;
     }
@@ -147,15 +148,17 @@ export class ForestWorld {
   // ---------- Construction ----------
 
   private buildWater(): void {
-    const { pond } = this.layout;
-    const geo = new THREE.CircleGeometry(pond.radius, 48);
-    geo.rotateX(-Math.PI / 2);
     const mat = toonMaterial({ color: this.biome.palette.water, transparent: true, opacity: 0.8 });
     mat.depthWrite = false;
-    this.water = new THREE.Mesh(geo, mat);
-    this.water.position.set(pond.x, pond.waterY, pond.z);
-    this.water.renderOrder = 1;
-    this.group.add(this.water);
+    for (const w of this.layout.waters) {
+      const geo = new THREE.CircleGeometry(w.radius, 48);
+      geo.rotateX(-Math.PI / 2);
+      const water = new THREE.Mesh(geo, mat);
+      water.position.set(w.x, this.layout.waterY, w.z);
+      water.renderOrder = 1;
+      this.waters.push(water);
+      this.group.add(water);
+    }
   }
 
   private instanced(
@@ -278,7 +281,7 @@ export class ForestWorld {
   }
 
   private buildGrass(): void {
-    const { grassTufts, worldRadius, pond } = this.layout;
+    const { grassTufts, worldRadius, waters } = this.layout;
     const p = this.biome.palette;
 
     // One tuft = five leaning blades. Vertex colour darkens the base.
@@ -312,7 +315,7 @@ export class ForestWorld {
       const x = Math.cos(a) * d;
       const z = Math.sin(a) * d;
       if (!this.isOpenGround(x, z, -1)) continue;
-      if (Math.hypot(x - pond.x, z - pond.z) < pond.radius + 1.5) continue;
+      if (waters.some((w) => Math.hypot(x - w.x, z - w.z) < w.radius + 1.5)) continue;
       const s = 0.5 + this.rand() * 0.6;
       _q.setFromEuler(_e.set(0, this.rand() * TAU, 0));
       const matrix = new THREE.Matrix4().compose(
