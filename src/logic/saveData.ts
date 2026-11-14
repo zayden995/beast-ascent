@@ -75,6 +75,8 @@ export function sanitizeSave(raw: unknown): SaveData | null {
       stage,
       growth,
       abilityRanks: ranks,
+      // Saves from before the mark existed have none. A Juvenile has nothing left to lose.
+      wounded: rp.wounded === true && stage !== 'juvenile',
     },
     unlockedBiomes: unlocked,
     ruledBiomes: biomeList(raw.ruledBiomes),

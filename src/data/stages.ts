@@ -42,3 +42,9 @@ export function nextStage(stage: StageId): StageId | null {
   const i = STAGE_ORDER.indexOf(stage);
   return i >= 0 && i < STAGE_ORDER.length - 1 ? STAGE_ORDER[i + 1] : null;
 }
+
+/** The stage an animal falls back to when it dies while wounded (null for a Juvenile). */
+export function previousStage(stage: StageId): StageId | null {
+  const i = STAGE_ORDER.indexOf(stage);
+  return i > 0 ? STAGE_ORDER[i - 1] : null;
+}

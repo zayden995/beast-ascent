@@ -5,9 +5,9 @@ import { FOODS } from '../data/food.ts';
 import { getSpecies, getVariant } from '../data/species.ts';
 import { STAGES } from '../data/stages.ts';
 import {
-  addGrowth, addXp, evolve, evolveStatus, newProgress, resetProgress, summarizePassives, upgradeAbility,
+  addGrowth, addXp, applyDeath, evolve, evolveStatus, newProgress, summarizePassives, upgradeAbility,
 } from '../logic/progression.ts';
-import type { PassiveSummary, Progress } from '../logic/progression.ts';
+import type { DeathOutcome, PassiveSummary, Progress } from '../logic/progression.ts';
 import type { SaveData } from '../logic/saveData.ts';
 import type { GameEvents } from './gameEvents.ts';
 
@@ -117,11 +117,15 @@ export class Growth {
     return true;
   }
 
-  /** Death: back to a level 1 Juvenile of the same species. Ruled and unlocked biomes are kept. */
-  resetOnDeath(): void {
-    resetProgress(this.progress, this.variant.abilities);
+  /**
+   * Death: levels are lost, and a second death before the next level costs a life stage (see
+   * `applyDeath`). The species stays the same, and ruled and unlocked biomes are kept.
+   */
+  penalizeDeath(): DeathOutcome {
+    const outcome = applyDeath(this.progress, this.variant.abilities);
     this.passives = summarizePassives(this.progress, this.variant.abilities);
     this.changed();
+    return outcome;
   }
 
   ruleBiome(biome: BiomeId, next: BiomeId | null): void {

@@ -100,7 +100,7 @@ Starting values *(tunable)*:
 - **Enemy AI states**: idle/wander, aggro, chase, attack, and **flee** (prey animals flee at low health or on sight). Fleeing animals sprint in short bursts, then tire, and slow down as they are wounded, so that every playable species can run them down.
 - Enemies have a **visible level** above them so danger is readable (color-coded relative to the player's level).
 - Defeated animals drop **food** (carcass) and give XP.
-- Death: the player respawns at a **den** and their animal is **reset**: back to a level 1 Juvenile of the same species, with no XP, growth, ability points or bought abilities. Ruled and unlocked biomes are kept. (Changed on 2026-11-14 at the user's request; the first design was a small XP penalty.)
+- Death: the player respawns at a **den**, as the same species. **First death**: the animal keeps its life stage but falls to that stage's first level (Juvenile 1, Adult 8, Alpha 18), loses its XP progress, and is marked **wounded**. Bought abilities are refunded as ability points (one per level above 1). **A second death before gaining a level** drops it one whole stage (Alpha to Adult, Adult to Juvenile) and empties its growth meter; it stays wounded. **Gaining a level heals the wound.** Ruled and unlocked biomes are kept. (Changed at the user's request: first a small XP penalty, then a full reset to a level 1 Juvenile, and on 2026-11-14 in M2 this softer rule, because losing a hard-won Alpha felt too harsh.)
 
 ### 4.4 Biomes, buffs and nerfs
 Each biome gives species-dependent **buffs or nerfs**. They are data-driven. Each species has favored and disfavored biomes, applying roughly **+/-15 to 25%** to one stat *(tunable)*. The HUD shows the active modifier.
@@ -146,7 +146,7 @@ Starter enemy roster (placeholders, to be refined; all enemy animals are data-dr
 - **Jungle**: monkey, snake, capybara/tapir.
 - **Plains**: zebra/antelope (prey), hyena, buffalo.
 - **Winter**: arctic hare, seal, arctic fox.
-- Wild animals also include the other predator species not chosen by the player, so players meet "competing" animals. In the Forest (built in M1): a pair of wolves, a lion and a bear, each in its own territory; the player's own species is left out, so 2 or 3 rivals are met.
+- Wild animals also include the other predator species not chosen by the player, so players meet "competing" animals. In the Forest (built in M1): a pair of wolves, a lion and a bear, each in its own territory; the player's own species is left out, so a wolf meets 2 rivals, a lion or bear meets 3, and (from M2) a Tiger, Elephant, Crocodile or Eagle meets all 4. The limit is 5 rival animals per species. Rivals for the new species belong in their home biomes in M3.
 
 ---
 
@@ -216,7 +216,7 @@ Menus: Title screen (the biome's animals roam peacefully behind it) -> Species s
 
 ### Milestone Status
 - M1: **DONE, accepted by the user on 2026-11-14.** Built on 2026-11-13, then revised the same day after the user's two rounds of playtest feedback (catchable prey, boss returns on re-entry and pays 50 XP after the first win, day and night cycle of 6 minutes, death resets the animal, animals on the title screen, a safe den refuge, rival predators). See the Decisions Log. Every automated check passes (see "Verification"). Acceptance was inferred from "seems good" plus the user's wish to start M2; the user did not separately comment on the camera, UI style or the `@types/three` dev dependency, so those stand as built.
-- M2: **CURRENT, not started.** Next session begins here: read "Notes for Milestone 2" below, then discuss the plan with the user before building (the user's rules ask for approval of the approach first).
+- M2: **CURRENT, in progress.** Plan agreed with the user on 2026-11-14 (see the Decisions Log), built in this order: (1) Alpha stage, the new death rule and the smaller den ring, **DONE** (41 unit tests, 117 browser checks, typecheck all pass); (2) Tiger; (3) Elephant, with plants as food; (4) Crocodile; (5) Eagle with flight, last. The task list is in `PLAN.md`. Tiger, Elephant, Crocodile and Eagle stay "Coming soon" until their step is built (`TUNING.currentMilestone` is still 1 on purpose; see "Notes for Milestone 2").
 - M3 to M5: not started
 
 (Update this list at the end of every session.)
@@ -234,7 +234,7 @@ Menus: Title screen (the biome's animals roam peacefully behind it) -> Species s
 - Food and growth meter, and **Juvenile -> Adult** evolution (Alpha can be a stub that is clearly marked as a TODO).
 - Full HUD as in Section 7, including the biome buff/nerf indicator.
 - **Forest boss**: a large animal in an arena. Defeating it shows "Forest Ruled" and opens a gate to the (stubbed) next biome. It is back each time the player re-enters the Forest.
-- Death and respawn at the den, with the animal reset to a level 1 Juvenile (ruled biomes kept). The den is a safe refuge from wild animals.
+- Death and respawn at the den, with the animal reset to a level 1 Juvenile (ruled biomes kept). The den is a safe refuge from wild animals. (As built in M1; the death rule was softened in M2, see section 4.3.)
 - Save and load via localStorage.
 
 ### Done when
@@ -315,10 +315,16 @@ Keep it short: what works, what is rough, how to run it, what was changed in thi
 - 2026-11-14 (M1 feedback, second round): **A day lasts 6 minutes** (was 8). `TUNING.dayNight.cycleSeconds = 360`.
 - 2026-11-14 (M1 feedback, second round): **Rival predators** (this replaces the 2026-11-13 note that they were not in M1). The user asked for 1 to 3 predators in the biome. Built as the bible's "competing animals": a pair of wolves (level 4 to 5, west edge), a lion (level 5 to 6, east of the pond) and a bear (level 6 to 7, south-east), using the playable species' adult bodies. The player's own species is left out, so a wolf meets 2 rivals and a lion or bear meets 3. They attack on sight, never flee, each have two attacks, give more XP and growth than a boar, and come back 150 s after being killed. Their chase speed is below every playable species' sprint, so a fight can always be escaped. They are hostile to the player only: **they do not hunt deer or fight each other** (wild animals cannot damage one another yet).
 
+- 2026-11-14 (M2 plan): **Order of M2**: Alpha stage + death rule + den ring first, then Tiger, Elephant (with plants as food), Crocodile, and the Eagle with flight last as the biggest piece. Each species is playable only once its own step is done and tested.
+- 2026-11-14 (M2, step 1): **Rival limit is 5 animals per species** (it was 1 to 3). The user raised it so that Tiger, Elephant, Crocodile and Eagle can meet all four existing Forest rivals (wolf pair, lion, bear) without new rival models. Rivals for the new species are planned for their home biomes in M3. The unit test now checks 1 to 5.
+- 2026-11-14 (M2, step 1): **Death rule softened** (replaces "death resets to a level 1 Juvenile"). The user proposed dropping to the lowest level of the current stage, and a stage lower on a later death. As built: a first death keeps the stage and falls to the stage's first level (Juvenile 1, Adult 8, Alpha 18); a death while still **wounded** (no level gained since the last death) drops one stage and empties the growth meter; **gaining a level heals the wound**. Choices made by me, not the user: the wound heals on one level gained (the user left this open and said to go ahead); bought abilities are always refunded as points, never kept above the level's allowance; food already eaten stays while the stage is kept; a Juvenile is never wounded. The mark is saved (`progress.wounded`; older saves load as not wounded) and applied the moment the animal dies. Logic is `applyDeath` in `src/logic/progression.ts`; the messages are `src/logic/deathText.ts`. The HUD shows "Wounded" and the Tab menu says what another death costs.
+- 2026-11-14 (M2, step 1): **Alpha stage is playable** (`TUNING.maxPlayableStage = 'alpha'`): level 18 and a full 250 growth meter, size 1.4, 3.0x health and damage, ruff/mane/hump plus a scar. It has no growth meter of its own.
+- 2026-11-14 (M2, step 1): **Den ring shrunk from 18 m to 12 m** (`den.refugeRadius`), because the user felt it was too big. The player's spawn point stays 9 m from the den, so it is now 3 m inside the ring (it was 9 m inside). It was not moved because the Forest's trees are placed from a seeded random sequence that depends on the spawn position, so moving it would reshuffle the whole forest. The number of ring stones follows the radius. Move the spawn closer only if the user asks for it, and expect a different tree layout.
+- 2026-11-14 (M2, agreed design for the Eagle, built last): hold Space to flap and climb, release to glide down, landing is automatic, no new keys. Climbing drains stamina, gliding barely does, and with none left the eagle can only glide down. Ceiling of about 25 m (a guess to tune). Trunks and rocks block only below about 4 m. Fighting needs no new rule because `combat.ts` already ignores hits across a large height gap (a ground animal cannot hit a high eagle, and the eagle must swoop low or dive); the boar and stag charge check in `ai.ts` needs the same height check. The den refuge stays a column, safe at any height inside the ring. There are no flying wild animals, and the Eagle is not a wild rival in the Forest.
+
 ## 16. Known Issues / TODO
 
 ### Stubs (marked `TODO` in code)
-- **Alpha stage** (M2): defined in `src/data/stages.ts` but locked by `TUNING.maxPlayableStage = 'adult'`. The Tab menu and HUD say it arrives in Milestone 2.
 - **Tiger, Elephant, Crocodile, Eagle** (M2): data only. Their stats and abilities are placeholders, and each placeholder ability has a `todo` note in `src/data/abilities.ts`. The rig cannot yet draw stripes, a trunk, a long crocodile jaw, or wings.
 - **Plants as food** (M2): defined in `src/data/food.ts`, no source in the world yet (no herbivore is playable).
 - **Gate to the Jungle** (M3): opens after the boss; pressing E only shows a message. Jungle, Plains and Winter are palette stubs in `src/data/biomes.ts`.
@@ -331,7 +337,10 @@ Keep it short: what works, what is rough, how to run it, what was changed in thi
 - The player can walk around behind the gate (there is nothing there).
 - Animal models are simple shapes. They read as wolf, lion and bear, but they are placeholders for nicer art.
 - Balance is only partly tuned: prey speed was fixed from the user's playtest, but fight length, XP pace and boss difficulty are still first guesses in the data files.
-- Death is now harsh, and regrowing means hunting from level 1 again. The den refuge gives a safe place to recover, but a level 1 Juvenile that walks into a rival's territory (levels 4 to 7) will lose. Their level tags show red as a warning.
+- A level 1 Juvenile that walks into a rival's territory (levels 4 to 7) will lose; their level tags show red as a warning. Death is softer since M2 (see section 4.3), but a second death in a row still costs a life stage. Untested by a human: whether "heal the wound with one level" is the right pace for an Alpha, whose next level costs about 500 XP.
+- The respawn point is only 3 m inside the 12 m den ring, so a freshly woken animal that walks north leaves safety almost at once. Moving the spawn closer would reshuffle the Forest's trees (see the Decisions Log).
+- Alpha animals look like their Adult selves with a ruff or mane and a scar (the data's `stageFeatures`), at 1.4 size. Nothing else about the model changes yet.
+- A level 18 Alpha is far stronger than anything in the Forest (rivals are level 4 to 7, the boss level 10), so the Forest stops being a challenge. That is expected until the harder biomes arrive in M3.
 - Rival predators ignore prey and each other; only the player is attacked. A player can also stand just inside the refuge and hit an animal at its edge without being hit back; the animal walks away and heals, so it gains little.
 - Rival stats are a first guess, untested by a human.
 - Night is visual only, and the moon is rarely on screen: the hills around the Forest and the camera's upward limit hide most of the high sky.
@@ -341,17 +350,18 @@ Keep it short: what works, what is rough, how to run it, what was changed in thi
 - `node_modules` sits inside a OneDrive folder, which makes installs slow and syncs thousands of files. Consider excluding it from sync or moving the project out of OneDrive.
 
 ### Notes for Milestone 2
-- Set `TUNING.maxPlayableStage` to `'alpha'` and `TUNING.currentMilestone` to `2` in `src/data/tuning.ts`. Species unlock from their `playableFrom` value, and the save validator follows both settings.
+- `TUNING.maxPlayableStage` is `'alpha'` now (done in step 1). `TUNING.currentMilestone` is **still 1 on purpose**: species unlock from their `playableFrom` value, so raising it would unlock all four unfinished species at once. When building a species (steps 2 to 5), unlock only that one (for example a per-species ready flag or `playableFrom` handled in `isPlayable`), and keep the unit test `save: ... locked-species saves are rejected` and the e2e check "N species are locked as Coming soon" truthful. `speciesSelect.ts` and `sanitizeSave` both call `isPlayable(species, TUNING.currentMilestone)`.
 - New rig features go in `src/animals/ProceduralQuadruped.ts` (see `FeatureId` in `src/core/types.ts`). The eagle needs a second class behind the same `AnimalModel` interface; `createAnimalModel` in `src/animals/AnimalModel.ts` is the one place that chooses a rig.
 - Flight needs changes in `integrate` (`src/systems/actor.ts`) and the jump handling in `src/systems/player.ts`.
 - Abilities are data. An existing effect kind (`leap`, `melee`, `aoe`, `buff`, `passive`) needs only a data entry; a new mechanic (hit from behind, grab, "unseen") needs a new field in `AbilityEffect` and its handling in `src/systems/abilities.ts`.
 - Extend `tests/e2e/smoke.mjs` with a section per new species, as done for the lion and the bears.
-- **Rival predators and the unit test that guards them.** `FOREST_SPAWNS` holds rival zones tagged `rivalOf` (a wolf pair, a lion, a bear), and the player's own species is filtered out in `Game`. `tests/unit/data.test.ts` checks every playable species meets 1 to 3 rivals, but it only looks at species playable in Milestone 1. Once Tiger, Elephant, Crocodile and Eagle are playable the rule needs a decision: they would meet all four existing rivals. Options: add `rivalOf` zones for the new species and let each species skip its own kind and one other, or keep 4 rivals and relax the test to "1 to 4". Ask the user. New rivals are just data in `src/data/enemies.ts` (the `rival()` helper copies a playable species' adult body).
-- **Death now resets the animal** (level 1 Juvenile). With the Alpha stage playable in M2, dying as an Alpha throws away a lot; watch how that feels and whether the user wants the rule softened.
+- **Rival predators (decided).** `FOREST_SPAWNS` holds rival zones tagged `rivalOf` (a wolf pair, a lion, a bear), and the player's own species is filtered out in `Game`. The user raised the limit to **5 rival animals**, so each new species simply meets all four existing ones and no new rival zones are added in M2 (`tests/unit/data.test.ts` checks 1 to 5 and looks at every species that `isPlayable`). New rivals are just data in `src/data/enemies.ts` (the `rival()` helper copies a playable species' adult body); do them in M3 in the species' home biomes.
+- **Death rule (decided and built in step 1).** See section 4.3 and `applyDeath`. Watch how it feels in play: the wound heals after one level, which is quick for a low level and slow for an Alpha.
 - **Title screen cast** (`FOREST_TITLE` in `src/data/biomes.ts`) could include the new species once they have models. Eagle needs a winged rig first.
-- **Eagle flight vs the refuge and rivals**: flying animals will cross the den refuge ring and the world boundary differently; `integrate` (`src/systems/actor.ts`) and `World.keepOutOfRefuge` both treat the ground plane only.
+- **Eagle flight (design agreed, see the Decisions Log, build it last).** `integrate` (`src/systems/actor.ts`) applies gravity and the ground; the jump is in `src/systems/player.ts`; colliders in `src/world/colliders.ts` are plain circles without a height, so trunks and rocks need a height (about 4 m) before an eagle can fly over them; `combat.ts` line 41 already limits hits by height, `ai.ts` charge hits (around line 275) measure flat distance and need the same check. The den refuge is a column and `World.keepOutOfRefuge` only matters for ground animals.
 - The browser test hunts prey with a bot (`hunt()` in `tests/e2e/smoke.mjs`); reuse it to check that any new species can catch deer and foxes. A unit test already keeps fleeing animals slower than the slowest playable species, so a slow new species (the Elephant) needs a check against it.
 - Run order for a clean start on a new machine: `npm install`, `npx playwright install chromium`, `npm test`, `npm run test:e2e`.
+- Tests: `npm test` now runs 41 unit tests; `npm run test:e2e` runs 117 browser checks (state after M2 step 1). The browser test reads the den ring radius from the game's own layout, so changing `den.refugeRadius` needs only the explicit "ring is 12 m" check updated.
 
 # CLAUDE.md
 

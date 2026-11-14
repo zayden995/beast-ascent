@@ -1,4 +1,5 @@
 import type { BiomeId, FoodKind, StageId } from '../core/types.ts';
+import type { DeathOutcome } from '../logic/progression.ts';
 import type { Actor } from './actor.ts';
 
 export type Tone = 'good' | 'bad' | 'info';
@@ -18,6 +19,7 @@ export interface GameEvents {
   toast: { text: string; tone: Tone };
   banner: { title: string; subtitle: string };
   biomeRuled: { biome: BiomeId };
-  playerDied: null;
+  /** The player's animal died; the payload says what the death cost (already applied and saved). */
+  playerDied: DeathOutcome;
   playerRespawned: null;
 }

@@ -1,4 +1,4 @@
-// End-to-end check of Milestone 1: boots the real game in a headless browser, plays the core
+// End-to-end check of Milestones 1 and 2: boots the real game in a headless browser, plays the core
 // loop through real key/mouse events, and fails on any console error.
 // The simulation is stepped through the debug hook so the run is deterministic and fast.
 // Run with: npm run test:e2e
@@ -215,26 +215,32 @@ try {
   await settle();
   s = await B.state();
   check('the player starts inside the den refuge and the HUD says so', s.player.safe && /Safe at the den/.test(await page.locator('.hud-status').textContent()));
-  // Put a boar just outside the ring of stones, 8 m from a player standing inside it.
-  const moved = await page.evaluate(() => {
+  // The ring of stones is 12 m from the den (the user found the first 18 m too big). Put a boar 6 m
+  // outside it, and stand 1.5 m inside it: about 7.5 m apart, well within the boar's notice range.
+  const ring = await page.evaluate(() => window.__beast.app.world.layout.den.refugeRadius);
+  const denZ = 52;
+  const boarZ = denZ - ring - 6;
+  const insideZ = denZ - ring + 1.5;
+  check('the refuge ring is 12 m, down from 18 m', ring === 12, `${ring} m`);
+  const moved = await page.evaluate((z) => {
     const g = window.__beast.app.game;
     const boar = g.spawner.enemies.find((e) => e.def.id === 'boar');
     const keep = { id: boar.id, x: boar.pos.x, z: boar.pos.z, homeX: boar.homeX, homeZ: boar.homeZ };
-    boar.pos.set(0, g.world.heightAt(0, 30), 30);
+    boar.pos.set(0, g.world.heightAt(0, z), z);
     boar.homeX = 0;
-    boar.homeZ = 30;
+    boar.homeZ = z;
     boar.state = 'idle';
     boar.timer = 99;
     return keep;
-  });
+  }, boarZ);
   const guard = async () => (await B.state()).enemies.find((e) => e.id === moved.id);
-  await B.teleport(0, 38, Math.PI);
+  await B.teleport(0, insideZ, Math.PI);
   await B.advance(5);
   s = await B.state();
   let g1 = await guard();
-  check('a boar ignores a player inside the refuge, 8 m away', s.player.safe && s.player.hp === s.player.maxHp && g1.state === 'idle' && g1.dist < 10, `${g1.state}, ${g1.dist.toFixed(1)} m`);
+  check('a boar ignores a player inside the refuge, 7.5 m away', s.player.safe && s.player.hp === s.player.maxHp && g1.state === 'idle' && g1.dist < 10, `${g1.state}, ${g1.dist.toFixed(1)} m`);
   // Stand on the far side of the boar, so that its knockback cannot push the player back into safety.
-  await B.teleport(0, 26.5, 0);
+  await B.teleport(0, boarZ - 3.5, 0);
   await B.advance(1.5);
   s = await B.state();
   g1 = await guard();
@@ -247,8 +253,8 @@ try {
   await B.advance(3);
   s = await B.state();
   check('it gives up when the player steps back in, and never enters the refuge',
-    s.player.safe && s.player.hp >= hpThen && ['return', 'idle', 'wander'].includes(g1.state) && Math.hypot(g1.x, g1.z - 52) >= 17.99,
-    `${g1.state}, ${Math.hypot(g1.x, g1.z - 52).toFixed(1)} m from the den`);
+    s.player.safe && s.player.hp >= hpThen && ['return', 'idle', 'wander'].includes(g1.state) && Math.hypot(g1.x, g1.z - denZ) >= ring - 0.01,
+    `${g1.state}, ${Math.hypot(g1.x, g1.z - denZ).toFixed(1)} m from the den`);
   await page.evaluate((k) => {
     const g = window.__beast.app.game;
     const boar = g.spawner.enemies.find((e) => e.id === k.id);
@@ -394,7 +400,9 @@ try {
   await page.keyboard.press('Tab');
   await page.locator('.growth-card').waitFor();
   const alphaBtn = page.getByRole('button', { name: /Evolve into Alpha/ });
-  check('Alpha is shown but locked for Milestone 2', (await alphaBtn.isDisabled()) && /Milestone 2/.test(await page.locator('.growth-card').innerText()));
+  const growthCardText = await page.locator('.growth-card').innerText();
+  check('Alpha is offered, but not until the meter is full and the animal is level 18',
+    (await alphaBtn.isDisabled()) && /Reach level 18/.test(growthCardText) && !/Milestone 2|not available yet/.test(growthCardText));
   await page.keyboard.press('Escape');
 
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('beastAscent.save.v1')));
@@ -412,7 +420,7 @@ try {
   check('boss bar appears', await page.locator('.hud-boss').isVisible());
   await shot('10-boss-engaged');
 
-  // Die to the boss: wake at the den as a level 1 Juvenile with nothing but the signature ability.
+  // Die to the boss: a first death keeps the Adult stage but drops to level 8 and wounds the animal.
   check('about to die as a grown animal', s.player.level >= 8 && s.player.stage === 'adult' && Object.keys(s.player.ranks).length === 4);
   await B.teleport(boss.x, boss.z + 4);
   await B.call('setHp', 1);
@@ -425,33 +433,37 @@ try {
   }
   s = await B.state();
   check('player can die', s.player.dead, `after ${waited}s`);
-  check('death screen shows and says what is lost', (await page.locator('.hud-death').isVisible()) && /level, abilities and growth are lost/i.test(await page.locator('.hud-death').innerText()));
+  const deathText = await page.locator('.hud-death').innerText();
+  check('death screen shows what was lost, and warns that the animal is wounded',
+    (await page.locator('.hud-death').isVisible()) && /keep your life stage/i.test(deathText) && /level 8 Adult Grey Wolf/.test(deathText) && /wounded/i.test(deathText), deathText.replace(/\n+/g, ' | '));
   const savedDead = await page.evaluate(() => JSON.parse(localStorage.getItem('beastAscent.save.v1')));
-  check('the reset is saved the moment the animal dies', savedDead.progress.level === 1 && savedDead.progress.stage === 'juvenile');
+  check('the death is saved the moment the animal dies',
+    savedDead.progress.level === 8 && savedDead.progress.stage === 'adult' && savedDead.progress.wounded === true);
   await shot('11-defeated');
   await B.advance(4);
   s = await B.state();
   const d = s.player;
   check('respawns at the den', !d.dead && d.alive && Math.hypot(d.x - 0, d.z - 43) < 2 && d.hp === d.maxHp);
-  check('death resets the animal: level 1 Juvenile, no XP, growth, points or bought abilities',
-    d.level === 1 && d.stage === 'juvenile' && d.xp === 0 && d.growth === 0 && d.abilityPoints === 0 && JSON.stringify(d.ranks) === '{"wolf_pounce":1}',
-    `level ${d.level} ${d.stage}, ranks ${JSON.stringify(d.ranks)}`);
-  check('the reset animal has Juvenile size and health again', Math.abs(d.size - 0.6) < 1e-6 && Math.abs(d.maxHp - 90) < 0.01, `size ${d.size}, hp ${d.maxHp}`);
+  check('a first death keeps the stage: still an Adult, at level 8, no XP, every bought ability refunded as points',
+    d.level === 8 && d.stage === 'adult' && d.xp === 0 && d.abilityPoints === 7 && JSON.stringify(d.ranks) === '{"wolf_pounce":1}',
+    `level ${d.level} ${d.stage}, points ${d.abilityPoints}, ranks ${JSON.stringify(d.ranks)}`);
+  check('the animal keeps its Adult size and health', Math.abs(d.size - 1) < 1e-6 && d.maxHp > 90 * 1.8, `size ${d.size}, hp ${d.maxHp}`);
+  check('the HUD shows "Wounded"', /Wounded/.test(await page.locator('.hud-status').textContent()));
   await B.advance(12);
   s = await B.state();
   boss = s.enemies.find((e) => e.boss);
   check('boss resets to full health after the player dies', boss.hp === boss.maxHp && ['idle', 'wander', 'return'].includes(boss.state), `${boss.hp}/${boss.maxHp} ${boss.state}`);
 
-  // Grow back to an Adult before taking on the boss again.
-  await B.call('grantXp', 600);
-  await B.call('addGrowth', 100);
+  // Spend the refunded points again before taking on the boss.
   await page.keyboard.press('Tab');
   await page.locator('.growth-card').waitFor();
+  check('the Growth menu says what another death would cost',
+    /Wounded: dying before you gain a level drops you to Juvenile/.test(await page.locator('.growth-card').innerText()));
   for (let i = 0; i < 3; i++) await page.locator('.ability-row .chip:not(:disabled)', { hasText: 'Unlock' }).first().click();
-  await evolveBtn.click();
+  await page.keyboard.press('Escape');
   await B.advance(0.2);
   s = await B.state();
-  check('the animal can grow back to Adult after dying', s.player.stage === 'adult' && s.player.level >= 8 && Object.keys(s.player.ranks).length === 4 && s.screen === 'playing');
+  check('refunded points buy the abilities back', s.player.stage === 'adult' && s.player.level === 8 && Object.keys(s.player.ranks).length === 4 && s.screen === 'playing');
 
   await B.teleport(boss.x, boss.z + 5);
   const watchXp = () => page.evaluate(() => {
@@ -517,15 +529,79 @@ try {
   await B.advance(3);
   check('the beaten boss stays down for the rest of this visit', !(await B.state()).enemies.some((e) => e.boss));
 
-  // Dying after ruling the Forest resets the animal but not the biome.
-  await page.evaluate(() => {
-    const g = window.__beast.app.game;
-    const foe = g.spawner.enemies.find((e) => e.alive);
-    g.combat.damage(foe, g.player.actor, { damage: 1e7, knockback: 0 });
-  });
-  await B.advance(4.5);
+  // ---------- Alpha, and the death rule at every stage ----------
+  await B.teleport(0, 43, Math.PI);
+  await B.call('grantXp', 9000);
+  await B.call('addGrowth', 250);
+  await B.advance(0.2);
+  await page.keyboard.press('Tab');
+  await page.locator('.growth-card').waitFor();
+  const alphaEvolve = page.getByRole('button', { name: /Evolve into Alpha/ });
+  check('Alpha can be chosen once the meter is full and the animal is level 18', await alphaEvolve.isEnabled());
+  await alphaEvolve.click();
+  await B.advance(0.2);
   s = await B.state();
-  check('death keeps ruled biomes and the open gate', !s.player.dead && s.player.level === 1 && s.player.stage === 'juvenile' && s.ruled.includes('forest') && s.unlocked.includes('jungle') && s.gateOpen);
+  check('evolves Adult -> Alpha: size 1.4, three times the health of a Juvenile',
+    s.player.stage === 'alpha' && Math.abs(s.player.size - 1.4) < 1e-6 && s.player.level >= 18 && s.player.maxHp > 90 * 3 && s.screen === 'playing', `size ${s.player.size}, hp ${s.player.maxHp.toFixed(0)}`);
+  await settle();
+  check('the HUD shows an Alpha with a full growth meter', /Alpha Grey Wolf/.test(await page.locator('.hud-growth .who').innerText()) && /Fully grown/.test(await page.locator('.hud-growth').innerText()));
+  await shot('14a-alpha-wolf');
+
+  await page.keyboard.press('Tab');
+  await page.locator('.growth-card').waitFor();
+  check('the Growth menu says Fully grown', /Fully grown/.test(await page.locator('.growth-card').innerText()));
+  await page.keyboard.press('Escape');
+  await B.advance(1.5);
+  const alphaSaved = await page.evaluate(() => JSON.parse(localStorage.getItem('beastAscent.save.v1')));
+  check('an Alpha is saved as an Alpha', alphaSaved.progress.stage === 'alpha' && alphaSaved.progress.wounded === false);
+
+  const killPlayer = async () => {
+    await page.evaluate(() => {
+      const g = window.__beast.app.game;
+      const foe = g.spawner.enemies.find((e) => e.alive);
+      g.combat.damage(foe, g.player.actor, { damage: 1e7, knockback: 0 });
+    });
+    await B.advance(0.3);
+    await settle();
+  };
+  const wake = async () => {
+    await B.advance(4.2);
+    return (await B.state()).player;
+  };
+
+  const alphaLevel = (await B.state()).player.level;
+  await killPlayer();
+  check('Alpha, first death: the death screen says the stage is kept', /keep your life stage/i.test(await page.locator('.hud-death').innerText()));
+  let w = await wake();
+  check('Alpha, first death: still an Alpha, back at level 18, wounded, abilities refunded',
+    w.stage === 'alpha' && w.level === 18 && alphaLevel >= 18 && w.abilityPoints === 17 && JSON.stringify(w.ranks) === '{"wolf_pounce":1}' && Math.abs(w.size - 1.4) < 1e-6,
+    `${w.stage} level ${w.level}, points ${w.abilityPoints}`);
+  check('an Alpha that has died once is wounded', /Wounded/.test(await page.locator('.hud-status').textContent()) && (await page.evaluate(() => JSON.parse(localStorage.getItem('beastAscent.save.v1')))).progress.wounded === true);
+
+  await killPlayer();
+  check('Alpha, second death: the death screen says the animal falls back to Adult', /Alpha to Adult/.test(await page.locator('.hud-death').innerText()));
+  w = await wake();
+  check('second death before a new level: falls back to Adult at level 8, growth meter empty, still wounded',
+    w.stage === 'adult' && w.level === 8 && w.growth === 0 && w.abilityPoints === 7 && Math.abs(w.size - 1) < 1e-6 && (await page.evaluate(() => JSON.parse(localStorage.getItem('beastAscent.save.v1')))).progress.wounded === true,
+    `${w.stage} level ${w.level}, growth ${w.growth}`);
+  await shot('14b-fallen-to-adult');
+
+  // Gaining a level heals the wound, so the next death is a first death again.
+  await B.call('grantXp', 400);
+  await B.advance(0.2);
+  await settle();
+  s = await B.state();
+  check('gaining a level heals the wound', s.player.level > 8 && s.player.stage === 'adult' && !/Wounded/.test(await page.locator('.hud-status').textContent()), `level ${s.player.level}`);
+  await killPlayer();
+  w = await wake();
+  check('so the next death keeps the Adult stage, at level 8', w.stage === 'adult' && w.level === 8, `${w.stage} level ${w.level}`);
+
+  await killPlayer();
+  w = await wake();
+  s = await B.state();
+  check('then a second death in a row falls back to a level 1 Juvenile, no longer wounded',
+    w.stage === 'juvenile' && w.level === 1 && w.abilityPoints === 0 && Math.abs(w.size - 0.6) < 1e-6 && Math.abs(w.maxHp - 90) < 0.01 && !/Wounded/.test(await page.locator('.hud-status').textContent()), `${w.stage} level ${w.level}`);
+  check('every death keeps ruled biomes and the open gate', s.ruled.includes('forest') && s.unlocked.includes('jungle') && s.gateOpen);
 
   // ---------- Lion ----------
   await page.keyboard.press('Escape');

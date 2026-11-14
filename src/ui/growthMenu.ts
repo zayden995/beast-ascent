@@ -1,5 +1,5 @@
 import { getAbility } from '../data/abilities.ts';
-import { STAGES, STAGE_ORDER } from '../data/stages.ts';
+import { STAGES, STAGE_ORDER, previousStage } from '../data/stages.ts';
 import { abilityRank, canUpgradeAbility, evolveStatus, growthNeeded } from '../logic/progression.ts';
 import type { Growth } from '../systems/growth.ts';
 import { button, el } from './dom.ts';
@@ -67,15 +67,18 @@ export class GrowthMenu {
       col.append(evolve);
 
       if (status.locked) {
-        // TODO(M2): the Alpha stage is defined in data but not playable yet.
-        col.append(el('p', 'hint', `${next.name} arrives in Milestone 2. Keep growing until then.`));
+        col.append(el('p', 'hint', `${next.name} is not available yet. Keep growing until then.`));
       } else {
         col.append(el('p', 'hint', `${next.name}: ${next.sizeScale / STAGES[p.stage].sizeScale > 1 ? 'bigger' : 'same size'}, ${next.powerMult / STAGES[p.stage].powerMult}x health and damage.`));
       }
     } else {
       col.append(el('p', 'hint', 'Fully grown.'));
     }
-    col.append(el('p', 'hint', `Diet: ${g.species.diet}. Dying costs some XP, never a level or a life stage.`));
+    const lower = previousStage(p.stage);
+    if (p.wounded && lower) {
+      col.append(el('p', 'hint wounded', `Wounded: dying before you gain a level drops you to ${STAGES[lower].name}.`));
+    }
+    col.append(el('p', 'hint', `Diet: ${g.species.diet}. Dying drops you to level ${STAGES[p.stage].levelRequired}, the start of your stage. Dying again before your next level costs a whole stage.`));
     return col;
   }
 

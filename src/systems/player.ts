@@ -6,7 +6,9 @@ import type { BiomeModDef } from '../core/types.ts';
 import { STAGES } from '../data/stages.ts';
 import { TUNING } from '../data/tuning.ts';
 import { activeBiomeMods, toStatMods } from '../logic/biome.ts';
+import { describeDeath } from '../logic/deathText.ts';
 import { abilityRank } from '../logic/progression.ts';
+import type { DeathOutcome } from '../logic/progression.ts';
 import type { StatInputs } from '../logic/stats.ts';
 import type { ForestWorld } from '../world/forest.ts';
 import { AbilitySystem } from './abilities.ts';
@@ -49,6 +51,7 @@ export class PlayerController {
   private staminaDelay = 0;
   private exhausted = false;
   private respawnTimer = 0;
+  private lastDeath: DeathOutcome | null = null;
   private modKey = '';
 
   constructor(deps: PlayerDeps) {
@@ -113,9 +116,10 @@ export class PlayerController {
     if (celebrate) this.d.fx.ring(this.actor.pos, 6, 0xfff2b0, 0.9);
   }
 
-  /** Called by the game when the player's actor dies. */
-  onDeath(): void {
+  /** Called by the game when the player's actor dies, after the death has been applied to the progress. */
+  onDeath(outcome: DeathOutcome): void {
     this.dead = true;
+    this.lastDeath = outcome;
     this.respawnTimer = TUNING.death.respawnSeconds;
     this.swing = null;
     this.dodge = null;
@@ -127,7 +131,7 @@ export class PlayerController {
     this.actor.vz = 0;
     this.actor.anim.dodgeT = -1;
     this.actor.anim.hitFlash = 0;
-    this.d.events.emit('playerDied', null);
+    this.d.events.emit('playerDied', outcome);
   }
 
   private respawn(): void {
@@ -136,7 +140,8 @@ export class PlayerController {
     const spawn = world.layout.playerSpawn;
     a.alive = true;
     a.clearStatuses();
-    // Progress was reset when the animal died (see Game); wake up in the Juvenile body.
+    // The death was applied to the progress when the animal died (see Game); wake up in the body
+    // of the stage it fell to.
     this.rebuildModel(false);
     a.pos.set(spawn.x, world.heightAt(spawn.x, spawn.z), spawn.z);
     a.yaw = spawn.yaw;
@@ -146,7 +151,9 @@ export class PlayerController {
     this.exhausted = false;
     cam.snap(spawn.yaw);
     events.emit('playerRespawned', null);
-    events.emit('toast', { text: `You wake at the den as a Juvenile ${growth.species.name}. Start again.`, tone: 'bad' });
+    if (this.lastDeath) {
+      events.emit('toast', { text: describeDeath(this.lastDeath, growth.variant.name).wake, tone: 'bad' });
+    }
   }
 
   /** Turn toward the nearest enemy roughly in front of the camera, so attacks connect. */

@@ -379,7 +379,8 @@ export class ForestWorld {
     // A ring of pale stones marks the edge of the refuge. They are low enough to step over.
     const stoneRand = mulberry32(this.layout.seed + 71);
     const stones: { matrix: THREE.Matrix4; color: THREE.Color }[] = [];
-    const stoneCount = 34;
+    // About one stone every 3.3 m of the ring, whatever its radius.
+    const stoneCount = Math.round(den.refugeRadius * 1.9);
     for (let i = 0; i < stoneCount; i++) {
       const a = (i / stoneCount) * TAU;
       const x = den.x + Math.cos(a) * den.refugeRadius;

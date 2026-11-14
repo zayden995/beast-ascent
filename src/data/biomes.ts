@@ -52,8 +52,9 @@ export function nextBiome(id: BiomeId): BiomeId | null {
 export const FOREST_LAYOUT = {
   seed: 1337,
   worldRadius: 108,
-  // Wild animals never enter `refugeRadius`, and ignore a player who is inside it.
-  den: { x: 0, z: 52, radius: 8, refugeRadius: 18 },
+  // Wild animals never enter `refugeRadius`, and ignore a player who is inside it. It was 18 m
+  // until the user found it too big (2026-11-14, Milestone 2). The player spawns 9 m from the den.
+  den: { x: 0, z: 52, radius: 8, refugeRadius: 12 },
   playerSpawn: { x: 0, z: 43, yaw: Math.PI },
   pond: { x: 46, z: 12, radius: 15, depth: 2.4, waterY: 0 },
   arena: { x: 0, z: -58, radius: 18 },

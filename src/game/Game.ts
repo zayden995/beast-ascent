@@ -6,7 +6,7 @@ import { BIOMES, FOREST_SPAWNS, nextBiome } from '../data/biomes.ts';
 import { getBoss } from '../data/bosses.ts';
 import { FOODS, canEat } from '../data/food.ts';
 import { TUNING } from '../data/tuning.ts';
-import { enemyXp, evolveStatus } from '../logic/progression.ts';
+import { enemyXp, growthNeeded } from '../logic/progression.ts';
 import type { Actor } from '../systems/actor.ts';
 import { EnemyActor, updateEnemy } from '../systems/ai.ts';
 import type { ThirdPersonCamera } from '../systems/camera.ts';
@@ -112,10 +112,10 @@ export class Game {
 
     ev.on('death', ({ actor }) => {
       if (actor === playerActor) {
-        this.player.onDeath();
-        // Dying resets the animal to a level 1 Juvenile. It is applied and saved right away, so
-        // closing the game on the death screen cannot undo it. Ruled biomes are kept.
-        this.growth.resetOnDeath();
+        // Dying costs levels, and a second death before the next level costs a life stage. It is
+        // applied and saved right away, so closing the game on the death screen cannot undo it.
+        // Ruled biomes are kept.
+        this.player.onDeath(this.growth.penalizeDeath());
         this.save();
         // Dying mid-fight also sends the boss home at full health.
         this.spawner.resetBoss();
@@ -270,9 +270,9 @@ export class Game {
       this.events.emit('heal', { target: pa, amount: heal });
     }
     const name = FOODS[item.kind].name;
-    const evo = evolveStatus(this.growth.progress);
     let text = `${name}: +${gained} growth`;
-    if (gained <= 0) text = evo.locked ? `${name} eaten. Alpha growth arrives in Milestone 2.` : `${name} eaten. Growth meter is full.`;
+    // An Alpha is fully grown and has no growth meter to fill.
+    if (gained <= 0) text = growthNeeded(this.growth.progress.stage) === null ? `${name} eaten.` : `${name} eaten. Growth meter is full.`;
     this.events.emit('toast', { text, tone: 'good' });
   }
 

@@ -1,6 +1,6 @@
 # Beast Ascent — Implementation Plan
 
-Spec: [CLAUDE.md](CLAUDE.md) (the game bible). This plan covers **Milestone 1 only**.
+Spec: [CLAUDE.md](CLAUDE.md) (the game bible). This plan covers **Milestone 1** (done) and the task list for **Milestone 2** (in progress, at the end of this file).
 
 **Goal:** a playable vertical slice — pick Wolf, Lion or Bear, roam the Forest, fight, level up, eat, evolve to Adult, beat the Forest boss — with no console errors.
 
@@ -101,11 +101,11 @@ Choices the bible leaves open (also recorded in its Decisions Log):
 - Forest enemies: **deer** (flees on sight), **boar** (fights back, charges), **fox** (small, fast, flees when hurt).
 - Each player level adds a small stat bonus so that visible enemy levels are a fair comparison.
 - Eating also heals a little; slow health regeneration out of combat.
-- Death resets the animal to a level 1 Juvenile of the same species; ruled biomes are kept. (First build: lose 25% of XP progress. Changed after the user's playtest.)
+- Death: a first death keeps the life stage and drops to its first level; a second death before gaining a level drops a stage; ruled biomes are kept. (First build: lose 25% of XP progress; then a full reset to a level 1 Juvenile; softened in M2 step 1, see the bible's Decisions Log.)
 - The boss returns each time the player re-enters its biome; the biome stays ruled.
 - Day and night cycle: 6 minutes per day, visual only (moved forward from M4 after the user's playtest).
 - The boss pays its full XP once, then 50 XP per repeat win.
-- The den is a safe refuge (18 m, ring of stones): wild animals never enter and ignore a player inside.
+- The den is a safe refuge (ring of stones; 18 m at first, 12 m since M2 step 1): wild animals never enter and ignore a player inside.
 - Rival predators (wild wolves, lion, bear) live at the edges of the Forest; the player's own species is left out.
 - The title screen shows the forest's animals roaming by the pond.
 - `@types/three` (type definitions only) was added as a dev dependency.
@@ -143,3 +143,18 @@ Status on 2026-11-14: M1 is DONE and accepted by the user. All tasks built, and 
 - Prey must stay catchable by the slowest playable species (unit test on the data, hunt checks in the browser test).
 - Evolving while buffs or biome modifiers are active keeps health ratio and stats consistent.
 - A low frame rate (large `dt`) must not let actors tunnel through the boundary or fall through terrain.
+
+---
+
+# Milestone 2 task list
+
+Scope: the full Alpha stage and the four remaining species (Tiger, Elephant, Crocodile, Eagle with flight). Agreed with the user on 2026-11-14; the reasons and the choices made are in the bible's Decisions Log. Built one step at a time, tests first for the rules, each step verified (unit tests, typecheck, browser test) before the next.
+
+- [x] **1. Alpha, death rule, den ring, rival limit.** Alpha playable (`maxPlayableStage = 'alpha'`). Death: first death keeps the stage and drops to its first level (wounded); a second death before gaining a level drops a stage; a level heals the wound (`applyDeath`, `deathText`, `progress.wounded` in the save). Den ring 12 m. Rival limit 5. Checks: 41 unit tests, 117 browser checks, typecheck.
+- [ ] **2. Tiger.** Stripes on the rig (`FeatureId`), Ambush Strike (a hit-from-behind bonus is a new `AbilityEffect` field), Rend, Stalk, Double Claw; replace the placeholder numbers. Unlock Tiger alone (see "Notes for Milestone 2" in the bible). Hunt check against deer and foxes.
+- [ ] **3. Elephant.** Trunk and tusks on the rig, Charge, Stomp, Trunk Whip, Thick Skin; plants as food (herbivore diet needs a food source in the Forest); the slowest species, so check it can still catch fleeing prey.
+- [ ] **4. Crocodile.** Long jaw and ridge on the rig, Death Roll (grab), Lunge, Tail Sweep, Water Ambush; the pond is its home (damage bonus near water).
+- [ ] **5. Eagle with flight.** Winged rig behind `AnimalModel` (`createAnimalModel` chooses the rig), flight in `integrate` and the player controller (hold Space to climb, release to glide, stamina cost, ceiling about 25 m), height-aware colliders, charge-hit height check in `ai.ts`, Dive Strike, Talon Grab, Gust, Eagle Eye. Biggest piece, so last.
+- [ ] **6. Wrap-up.** Title-screen cast with the new species, balance notes, bible and this file updated, final report.
+
+Review focus for M2: every species can catch the prey (unit test plus the hunt bot), a save from Milestone 1 still loads, the death rule at every stage, and no console errors.

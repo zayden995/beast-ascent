@@ -1,6 +1,6 @@
 import type { AbilityDef, StageId, StatMod } from '../core/types.ts';
 import { ABILITIES } from '../data/abilities.ts';
-import { ABILITY_POINTS_PER_LEVEL, STAGES, STAGE_ORDER, XP_CURVE, nextStage } from '../data/stages.ts';
+import { ABILITY_POINTS_PER_LEVEL, STAGES, STAGE_ORDER, XP_CURVE, nextStage, previousStage } from '../data/stages.ts';
 import { TUNING } from '../data/tuning.ts';
 
 /** Everything about the player's growth that is saved. */
@@ -14,12 +14,14 @@ export interface Progress {
   growth: number;
   /** Ability id -> rank (0 or missing = locked). */
   abilityRanks: Record<string, number>;
+  /** Set by a death. Dying again before gaining a level costs a whole life stage. */
+  wounded: boolean;
 }
 
 export function newProgress(abilityIds: string[]): Progress {
   const ranks: Record<string, number> = {};
   for (const id of abilityIds) if (ABILITIES[id]?.signature) ranks[id] = 1;
-  return { level: 1, xp: 0, abilityPoints: 0, stage: 'juvenile', growth: 0, abilityRanks: ranks };
+  return { level: 1, xp: 0, abilityPoints: 0, stage: 'juvenile', growth: 0, abilityRanks: ranks, wounded: false };
 }
 
 // ---------- Track 1: XP -> levels -> ability points ----------
@@ -39,6 +41,8 @@ export function addXp(p: Progress, amount: number): number {
     p.abilityPoints += ABILITY_POINTS_PER_LEVEL;
     gained += 1;
   }
+  // Making progress heals the wound: the next death is a first death again.
+  if (gained > 0) p.wounded = false;
   return gained;
 }
 
@@ -46,13 +50,43 @@ export function enemyXp(baseXp: number, level: number): number {
   return Math.round(baseXp * (1 + TUNING.enemies.levelXpPct * (level - 1)));
 }
 
+/** What a death did to the animal, for the death screen and the wake-up message. */
+export interface DeathOutcome {
+  /** True when the animal also fell back a life stage. */
+  dropped: boolean;
+  from: StageId;
+  stage: StageId;
+  level: number;
+  /** Whether another death before the next level would cost a stage. */
+  wounded: boolean;
+}
+
 /**
- * Death sends the animal back to the start: level 1 Juvenile, no XP, growth or bought abilities.
+ * Death costs levels, and a second death in a row costs a life stage.
+ * - First death: the animal keeps its stage but falls to that stage's first level (Juvenile 1,
+ *   Adult 8, Alpha 18). It loses its XP progress and is marked wounded.
+ * - Death while still wounded (no level gained since): it falls back one stage, to that stage's
+ *   first level, and its growth meter empties. It stays wounded until it gains a level.
+ * Bought abilities are always refunded as ability points (one per level above 1), so the animal
+ * never holds more than its level earned. Food already eaten stays while the stage is kept.
  * Changes `p` in place (the save and the systems hold on to it). Ruled biomes live in the profile,
  * not here, so they survive.
  */
-export function resetProgress(p: Progress, abilityIds: string[]): void {
-  Object.assign(p, newProgress(abilityIds));
+export function applyDeath(p: Progress, abilityIds: string[]): DeathOutcome {
+  const from = p.stage;
+  const lower = p.wounded ? previousStage(from) : null;
+  const stage = lower ?? from;
+  const dropped = lower !== null;
+
+  // Never raise a level that was already below its stage's floor.
+  p.level = Math.min(p.level, STAGES[stage].levelRequired);
+  p.xp = 0;
+  p.abilityPoints = (p.level - 1) * ABILITY_POINTS_PER_LEVEL;
+  p.abilityRanks = newProgress(abilityIds).abilityRanks;
+  p.stage = stage;
+  p.growth = dropped ? 0 : Math.min(p.growth, growthNeeded(stage) ?? 0);
+  p.wounded = stage !== 'juvenile';
+  return { dropped, from, stage, level: p.level, wounded: p.wounded };
 }
 
 export type Threat = 'trivial' | 'easy' | 'even' | 'hard' | 'deadly';

@@ -1,6 +1,7 @@
 import { STAGES } from '../data/stages.ts';
 import { TUNING } from '../data/tuning.ts';
 import { describeMod } from '../logic/biome.ts';
+import { describeDeath } from '../logic/deathText.ts';
 import { PHASE_NAMES } from '../logic/dayNight.ts';
 import { evolveStatus, growthNeeded, xpToNext } from '../logic/progression.ts';
 import type { Game } from '../game/Game.ts';
@@ -55,6 +56,8 @@ export class Hud {
   private prompt = el('div', 'hud-prompt plaque');
   private toasts = el('div', 'hud-toasts');
   private death = el('div', 'hud-death');
+  private deathLost = el('p');
+  private deathWake = el('p');
   private hurt = el('div', 'hud-hurt');
   private banner: HTMLElement | null = null;
 
@@ -100,8 +103,9 @@ export class Hud {
     const deathBox = el('div');
     deathBox.append(
       el('h2', '', 'Defeated'),
-      el('p', '', 'Your level, abilities and growth are lost.'),
-      el('p', '', 'You will wake at your den as a Juvenile. Biomes you rule stay yours.'),
+      this.deathLost,
+      this.deathWake,
+      el('p', '', 'Biomes you rule stay yours.'),
     );
     this.death.append(deathBox);
 
@@ -117,9 +121,12 @@ export class Hud {
         this.hurt.classList.add('on');
         requestAnimationFrame(() => this.hurt.classList.remove('on'));
       }),
-      ev.on('playerDied', () => {
+      ev.on('playerDied', (outcome) => {
         // Nothing else should compete with the death screen.
         this.banner?.remove();
+        const text = describeDeath(outcome, game.growth.variant.name);
+        this.deathLost.textContent = text.lost;
+        this.deathWake.textContent = text.wake;
         this.death.hidden = false;
       }),
       ev.on('playerRespawned', () => (this.death.hidden = true)),
@@ -167,7 +174,7 @@ export class Hud {
       c.width('gr', this.growthMeter.fill, p.growth / growthNeed);
       let label = `Growth ${Math.floor(p.growth)} / ${growthNeed}`;
       if (evo.canEvolve) label = 'Ready to evolve (Tab)';
-      else if (evo.growthOk && evo.locked) label = 'Growth full. Alpha arrives in Milestone 2';
+      else if (evo.growthOk && evo.locked && evo.next) label = `Growth full. ${STAGES[evo.next].name} is not available yet`;
       else if (evo.growthOk && evo.next) label = `Growth full. Reach level ${STAGES[evo.next].levelRequired}`;
       c.text('grT', this.growthMeter.label, label);
     }
@@ -191,6 +198,7 @@ export class Hud {
 
     const status: string[] = [];
     if (g.world.inRefuge(a.pos.x, a.pos.z)) status.push('Safe at the den');
+    if (p.wounded) status.push('Wounded');
     for (const s of g.player.abilities.slots) {
       const t = a.buffTime(s.def.id);
       if (t > 0) status.push(`${s.def.name} ${Math.ceil(t)}s`);

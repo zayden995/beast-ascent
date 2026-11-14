@@ -80,7 +80,10 @@ test('data: every playable species can run down every animal that flees', () => 
   }
 });
 
-test('data: rival predators: every playable species meets 1 to 3 of the others and can outrun them', () => {
+// The user raised the limit from 3 to 5 so that the four Milestone 2 species can meet every rival.
+const MAX_RIVALS_MET = 5;
+
+test('data: rival predators: every playable species meets 1 to 5 of the others and can outrun them', () => {
   const playable = SPECIES.filter((s) => isPlayable(s, 1));
   const slowestSprint = Math.min(...playable.map((s) => s.baseStats.sprintSpeed));
   const rivalZones = FOREST_SPAWNS.filter((z) => z.rivalOf);
@@ -94,7 +97,7 @@ test('data: rival predators: every playable species meets 1 to 3 of the others a
   for (const species of playable) {
     const met = rivalZones.filter((z) => z.rivalOf !== species.id);
     const count = met.reduce((n, z) => n + z.count, 0);
-    assert.ok(count >= 1 && count <= 3, `a ${species.id} meets ${count} rival predators`);
+    assert.ok(count >= 1 && count <= MAX_RIVALS_MET, `a ${species.id} meets ${count} rival predators`);
     assert.ok(met.every((z) => z.rivalOf !== species.id), 'never its own kind');
   }
 });
@@ -111,7 +114,10 @@ test('data: the den refuge covers the spawn point and stays clear of spawn zones
   const { den, playerSpawn, arena } = FOREST_LAYOUT;
   const fromDen = (x: number, z: number) => Math.hypot(x - den.x, z - den.z);
   assert.ok(den.refugeRadius > den.radius);
-  assert.ok(fromDen(playerSpawn.x, playerSpawn.z) < den.refugeRadius - 5, 'the player wakes well inside the refuge');
+  assert.ok(den.refugeRadius <= 12, 'the user found the first 18 m ring too big');
+  // The spawn point stays where it is: moving it would reshuffle the Forest's trees, which are
+  // placed from a seeded random sequence that depends on it.
+  assert.ok(fromDen(playerSpawn.x, playerSpawn.z) < den.refugeRadius - 2, 'the player wakes inside the refuge, with room to spare');
   assert.ok(fromDen(arena.x, arena.z) > den.refugeRadius + arena.radius + 20);
   for (const zone of FOREST_SPAWNS) assert.ok(fromDen(zone.x, zone.z) > den.refugeRadius, `${zone.enemyId} zone is centred in the refuge`);
 });
@@ -140,6 +146,20 @@ test('save: a valid save round-trips through JSON', () => {
   assert.equal(loaded.progress.level, 4);
   assert.equal(loaded.progress.growth, 55);
   assert.equal(loaded.progress.abilityRanks.bear_heavy_swipe, 1);
+});
+
+test('save: the wounded mark round-trips, and a save from before it existed loads as not wounded', () => {
+  const adult = { ...goodSave().progress, stage: 'adult', level: 8, growth: 0 };
+  assert.equal(parseSave(JSON.stringify({ ...goodSave(), progress: { ...adult, wounded: true } }))?.progress.wounded, true);
+  assert.equal(parseSave(JSON.stringify({ ...goodSave(), progress: { ...adult, wounded: false } }))?.progress.wounded, false);
+
+  const { wounded: _gone, ...oldStyle } = { ...adult, wounded: false };
+  const old = parseSave(JSON.stringify({ ...goodSave(), progress: oldStyle }));
+  assert.ok(old, 'a Milestone 1 save still loads');
+  assert.equal(old.progress.wounded, false);
+
+  assert.equal(parseSave(JSON.stringify({ ...goodSave(), progress: { ...adult, wounded: 'yes' } }))?.progress.wounded, false, 'only a real true counts');
+  assert.equal(parseSave(JSON.stringify({ ...goodSave(), progress: { ...goodSave().progress, wounded: true } }))?.progress.wounded, false, 'a Juvenile is never wounded');
 });
 
 test('save: corrupt, empty, old-version or locked-species saves are rejected', () => {
@@ -171,8 +191,8 @@ test('save: out-of-range values are clamped instead of trusted', () => {
   assert.equal(s.progress.level, 1);
   assert.ok(s.progress.xp < 20);
   assert.equal(s.progress.abilityPoints, 0);
-  assert.equal(s.progress.stage, 'adult', 'Alpha is not playable in M1');
-  assert.equal(s.progress.growth, 250);
+  assert.equal(s.progress.stage, 'alpha', 'Alpha is playable from Milestone 2');
+  assert.equal(s.progress.growth, 0, 'Alpha has no growth meter, so nothing can be stored in it');
   assert.deepEqual(s.progress.abilityRanks, { bear_heavy_swipe: 1, bear_maul: 3 });
   assert.deepEqual(s.unlockedBiomes, ['forest', 'winter']);
   assert.deepEqual(s.ruledBiomes, []);

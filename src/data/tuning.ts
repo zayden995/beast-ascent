@@ -56,7 +56,8 @@ export const TUNING = {
     berryRespawnSeconds: 60,
   },
   death: {
-    // Dying resets the animal to a level 1 Juvenile (see resetProgress); ruled biomes are kept.
+    // Dying drops the animal to the first level of its stage; a second death before it gains a
+    // level costs a whole stage (see applyDeath). Ruled biomes are kept.
     respawnSeconds: 3.5,
   },
   dayNight: {
@@ -86,7 +87,7 @@ export const TUNING = {
     version: 1,
     autosaveSeconds: 20,
   },
-  /** TODO(M2): raise to 'alpha' when the Alpha stage is built. */
-  maxPlayableStage: 'adult' as StageId,
+  /** The highest life stage the game allows: Alpha, built in Milestone 2. */
+  maxPlayableStage: 'alpha' as StageId,
   currentMilestone: 1,
 };
