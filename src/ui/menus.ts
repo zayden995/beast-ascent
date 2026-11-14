@@ -25,11 +25,14 @@ function controlsList(): HTMLElement {
   return dl;
 }
 
-/** Title screen over the live forest. Both buttons are always there; Continue waits for a first save. */
+/**
+ * Title screen over the live forest. Both buttons are always there; Continue waits for a first save.
+ * `on.admin` is only given when the address has ?admin: it adds a third button for the admin sandbox.
+ */
 export function createTitleScreen(
   parent: HTMLElement,
   hasSave: boolean,
-  on: { newGame: () => void; continueGame: () => void },
+  on: { newGame: () => void; continueGame: () => void; admin?: () => void },
 ): HTMLElement {
   const root = el('div', 'screen title');
   const h1 = el('h1');
@@ -45,6 +48,7 @@ export function createTitleScreen(
   );
   continueGame.disabled = !hasSave;
   planks.append(newGame, continueGame);
+  if (on.admin) planks.append(button('plank', 'Admin sandbox', on.admin, 'Try any animal and edit its progress. Nothing is saved.'));
   const note = el('p', 'note', 'Keyboard and mouse. Milestone 2: the Forest, with seven animals to play.');
   root.append(h1, lede, planks, note);
   parent.append(root);
@@ -115,13 +119,13 @@ export function createSlotScreen(
 }
 
 /** Pause menu: resume, controls, back to the title screen. */
-export function createPauseMenu(parent: HTMLElement, on: { resume: () => void; quit: () => void }): HTMLElement {
+export function createPauseMenu(parent: HTMLElement, on: { resume: () => void; quit: () => void }, sandbox = false): HTMLElement {
   const root = el('div', 'screen overlay');
   const card = el('div', 'pause-card plaque');
   card.append(
     el('h2', '', 'Paused'),
     button('plank primary', 'Resume', on.resume),
-    button('plank', 'Save and return to title', on.quit),
+    button('plank', sandbox ? 'Leave the sandbox (nothing is saved)' : 'Save and return to title', on.quit),
     controlsList(),
   );
   root.append(card);

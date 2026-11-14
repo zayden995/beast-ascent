@@ -66,10 +66,10 @@ export class Game {
   private dirty = false;
   private lastSave = 0;
 
-  /** The save slot (1 to 4) this animal lives in; every save goes there. */
-  readonly slot: number;
+  /** The save slot (1 to 4) this animal lives in; every save goes there. null is the admin sandbox, which saves nothing. */
+  readonly slot: number | null;
 
-  constructor(ctx: GameContext, profile: Profile, slot: number) {
+  constructor(ctx: GameContext, profile: Profile, slot: number | null) {
     this.ctx = ctx;
     this.slot = slot;
     this.world = ctx.world;
@@ -297,7 +297,21 @@ export class Game {
   save(): boolean {
     this.dirty = false;
     this.lastSave = this.clock.time;
+    // The admin sandbox never touches the player's slots.
+    if (this.slot === null) return true;
     return writeSave(this.slot, this.growth.profile);
+  }
+
+  /** True once the biome the player is in has been ruled (its gate is open). */
+  get biomeRuled(): boolean {
+    return this.growth.profile.ruledBiomes.includes(this.world.biome.id);
+  }
+
+  /** Admin sandbox only: rules the current biome (opening its gate) or takes the rule away. */
+  adminSetRuled(ruled: boolean): void {
+    const id = this.world.biome.id;
+    this.growth.adminSetRuled(id, nextBiome(id), ruled);
+    this.world.setGateOpen(ruled);
   }
 
   dispose(): void {

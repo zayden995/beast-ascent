@@ -80,6 +80,9 @@ export function installDebug(app: App): void {
         time: g.clock.time,
         prompt: g.prompt,
         gateOpen: g.world.isGateOpen(),
+        species: g.growth.profile.speciesId,
+        variant: g.growth.profile.variantId,
+        slot: g.slot,
         ruled: [...g.growth.profile.ruledBiomes],
         unlocked: [...g.growth.profile.unlockedBiomes],
         player: {

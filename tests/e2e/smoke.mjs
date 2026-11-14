@@ -1409,6 +1409,84 @@ try {
   await page.getByRole('button', { name: 'Back' }).click();
   await page.locator('.title').waitFor();
 
+  // ---------- Admin sandbox (only with ?admin in the address) ----------
+  check('without ?admin the title has no admin sandbox', (await page.getByRole('button', { name: /Admin sandbox/ }).count()) === 0);
+  const slotsBefore = await page.evaluate(() => [1, 2, 3, 4].map((n) => localStorage.getItem(`beastAscent.save.slot${n}`)));
+  await page.goto(`${url}?admin`);
+  await page.locator('.title').waitFor();
+  check('with ?admin the title offers the admin sandbox', (await page.getByRole('button', { name: /Admin sandbox/ }).count()) === 1);
+  await shot('14f-admin-title');
+  await page.getByRole('button', { name: /Admin sandbox/ }).click();
+  await page.locator('.signpost .plank', { hasText: 'Tiger' }).click();
+  check('the sandbox species screen goes back to the title, not to the slots', (await page.getByRole('button', { name: /Back to title/ }).count()) === 1);
+  await page.getByRole('button', { name: /Begin as/ }).click();
+  await page.locator('.hud').waitFor();
+  await B.call('setAutoStep', false);
+  await B.call('setRender', false);
+  await B.advance(0.2);
+  s = await B.state();
+  check('the sandbox starts a level 1 Tiger that belongs to no save slot', s.screen === 'playing' && s.slot === null && s.species === 'tiger' && s.player.level === 1, `${s.species} level ${s.player.level} slot ${s.slot}`);
+  check('a badge says that nothing is saved', /nothing is saved/.test(await page.locator('.admin-badge').innerText()));
+  await page.keyboard.press('KeyJ');
+  await page.locator('.admin-card').waitFor();
+  check('J opens the admin panel and the game waits', (await B.state()).screen === 'admin');
+
+  await page.getByRole('button', { name: 'Alpha', exact: true }).click();
+  s = await B.state();
+  check('admin: Alpha makes a level 18 Alpha at once, 1.4 times the size, with 17 points to spend',
+    s.player.stage === 'alpha' && s.player.level === 18 && s.player.abilityPoints === 17 && Math.abs(s.player.size - 1.4) < 1e-6 && s.player.maxHp > 100 * 3,
+    `${s.player.stage} level ${s.player.level}, points ${s.player.abilityPoints}, size ${s.player.size}`);
+  await page.locator('.admin-row', { hasText: 'Level' }).getByRole('button', { name: '+5' }).click();
+  s = await B.state();
+  check('admin: +5 raises the level and earns the points', s.player.level === 23 && s.player.abilityPoints === 22, `level ${s.player.level}, points ${s.player.abilityPoints}`);
+  await shot('14g-admin-panel');
+  await page.locator('.admin-ability[data-ability="tiger_rend"]').getByRole('button', { name: '3', exact: true }).click();
+  s = await B.state();
+  check('admin: an ability can be set to rank 3 without spending points', s.player.ranks.tiger_rend === 3 && s.player.abilityPoints === 22, JSON.stringify(s.player.ranks));
+  check('admin: the signature ability cannot be locked', await page.locator('.admin-ability[data-ability="tiger_ambush_strike"]').getByRole('button', { name: '0', exact: true }).isDisabled());
+
+  await page.getByRole('button', { name: 'Adult', exact: true }).click();
+  await page.locator('.admin-row', { hasText: 'Growth meter' }).getByRole('button', { name: 'Full' }).click();
+  s = await B.state();
+  check('admin: Adult keeps the higher level, and Full fills the growth meter', s.player.stage === 'adult' && s.player.level === 23 && s.player.growth === 250 && Math.abs(s.player.size - 1) < 1e-6, `${s.player.stage} level ${s.player.level}, growth ${s.player.growth}`);
+  await page.getByRole('button', { name: 'Wounded', exact: true }).click();
+  check('admin: the wounded mark can be set', await page.evaluate(() => window.__beast.app.game.growth.progress.wounded));
+  await page.getByRole('button', { name: /Forest ruled/ }).click();
+  s = await B.state();
+  check('admin: ruling the Forest opens the gate and unlocks the Jungle', s.ruled.includes('forest') && s.gateOpen && s.unlocked.includes('jungle'));
+  await page.getByRole('button', { name: /Forest ruled/ }).click();
+  s = await B.state();
+  check('admin: the rule can be taken away again', s.ruled.length === 0 && !s.gateOpen && !s.unlocked.includes('jungle'));
+
+  await page.getByRole('button', { name: 'Bush Elephant' }).click();
+  await page.locator('.admin-card').waitFor();
+  s = await B.state();
+  check('admin: switching animal starts it as an Elephant and keeps stage, level, growth and wound; abilities start again',
+    s.species === 'elephant' && s.slot === null && s.player.stage === 'adult' && s.player.level === 23 && s.player.growth === 250
+    && await page.evaluate(() => window.__beast.app.game.growth.progress.wounded) && Object.keys(s.player.ranks).join() === 'elephant_charge',
+    `${s.species} ${s.player.stage} level ${s.player.level} growth ${s.player.growth} ranks ${Object.keys(s.player.ranks)}`);
+  // The restart used to request the mouse after the panel had opened, which made the panel unclickable.
+  check('the panel stays open after switching animal, and the mouse is free to click it', s.screen === 'admin' && (await page.evaluate(() => document.pointerLockElement === null)));
+  await page.getByRole('button', { name: 'Max all' }).click();
+  s = await B.state();
+  check('admin: Max all sets every ability to rank 3', Object.keys(s.player.ranks).length === 4 && Object.values(s.player.ranks).every((r) => r === 3), JSON.stringify(s.player.ranks));
+
+  await page.keyboard.press('Escape');
+  await page.locator('.admin-card').waitFor({ state: 'detached' });
+  check('Esc closes the panel and the game goes on', (await B.state()).screen === 'playing');
+  await B.advance(1);
+  await shot('14h-admin-elephant');
+  await page.keyboard.press('Escape');
+  await page.locator('.pause-card').waitFor();
+  check('pausing a sandbox offers to leave it, not to save', (await page.getByRole('button', { name: /Leave the sandbox/ }).count()) === 1 && (await page.getByRole('button', { name: /Save and return to title/ }).count()) === 0);
+  await page.getByRole('button', { name: /Leave the sandbox/ }).click();
+  await page.locator('.title').waitFor();
+  check('leaving the sandbox removes its badge', (await page.locator('.admin-badge').count()) === 0);
+  const slotsAfter = await page.evaluate(() => [1, 2, 3, 4].map((n) => localStorage.getItem(`beastAscent.save.slot${n}`)));
+  check('the sandbox wrote nothing to the four save slots', JSON.stringify(slotsAfter) === JSON.stringify(slotsBefore));
+  await page.goto(url);
+  await page.locator('.title').waitFor();
+
   // Storage that throws (private mode, blocked cookies) must not break the game.
   await page.evaluate(() => {
     Storage.prototype.setItem = () => { throw new Error('storage blocked'); };

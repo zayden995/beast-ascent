@@ -104,7 +104,7 @@ export class SpeciesSelect {
   private board = el('div', 'board plaque');
   private planks = new Map<string, HTMLButtonElement>();
   private stageButtons = new Map<StageId, HTMLButtonElement>();
-  private on: { begin: (speciesId: string, variantId: string) => void; back: () => void };
+  private on: { begin: (speciesId: string, variantId: string) => void; back: () => void; backLabel?: string };
 
   constructor(parent: HTMLElement, preview: SpeciesPreview, on: SpeciesSelect['on']) {
     this.preview = preview;
@@ -204,7 +204,7 @@ export class SpeciesSelect {
     const actions = el('div', 'actions');
     actions.append(
       button('plank primary', `Begin as a ${variant.name}`, () => this.on.begin(s.id, variant.id)),
-      button('chip', 'Back to slots', this.on.back),
+      button('chip', this.on.backLabel ?? 'Back to slots', this.on.back),
     );
     board.append(actions);
   }

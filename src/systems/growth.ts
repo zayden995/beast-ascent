@@ -133,4 +133,26 @@ export class Growth {
     if (next && !this.profile.unlockedBiomes.includes(next)) this.profile.unlockedBiomes.push(next);
     this.changed();
   }
+
+  /**
+   * Admin sandbox only: edits the progress with `edit`, then brings the passives, the stats and (if the
+   * life stage changed) the model up to date, the way a level, an upgrade or an evolution would.
+   */
+  adminEdit(edit: (p: Progress, abilityIds: string[]) => void, stageChanged = false): void {
+    edit(this.progress, this.variant.abilities);
+    this.passives = summarizePassives(this.progress, this.variant.abilities);
+    if (stageChanged) this.events.emit('evolved', { stage: this.progress.stage });
+    this.changed();
+  }
+
+  /** Admin sandbox only: rules a biome, or takes the rule away again (and the unlock it gave). */
+  adminSetRuled(biome: BiomeId, next: BiomeId | null, ruled: boolean): void {
+    if (ruled) {
+      this.ruleBiome(biome, next);
+      return;
+    }
+    this.profile.ruledBiomes = this.profile.ruledBiomes.filter((b) => b !== biome);
+    if (next) this.profile.unlockedBiomes = this.profile.unlockedBiomes.filter((b) => b !== next);
+    this.changed();
+  }
 }

@@ -42,6 +42,7 @@ src/
     biome.ts               which buff/nerf is active for a species in a biome
     saveData.ts            validates and clamps whatever comes out of storage
     saveSlots.ts           the four save slots, moving the old single save into a slot, the two lines a slot card shows
+    admin.ts               rules for the admin sandbox: stage, level, points, ranks, growth and wound edits that stay consistent
     dayNight.ts            time of day -> sun height, daylight, twilight, phase name
     heightfield.ts         forest terrain height function
   animals/
@@ -74,6 +75,7 @@ src/
     menus.ts               title screen, save slot screen, pause menu
     speciesSelect.ts       species select + 3D turntable
     growthMenu.ts          Tab menu
+    adminPanel.ts          the admin panel (J in an admin sandbox game, with ?admin)
     icons.ts, dom.ts       inline SVG icons, DOM helpers
   game/
     App.ts                 renderer, world, screen flow: title -> species select -> game
@@ -169,5 +171,18 @@ Title screen with **New Game** and **Continue Game**, both opening four save slo
 - [x] **Rules first (unit-tested):** `src/logic/saveSlots.ts`: four slots with their own keys, reading and writing one slot without touching the others, a damaged slot reads as empty, the old single save moves into the first empty slot (and is kept if the copy fails), the two lines a slot card shows. 17 unit tests.
 - [x] **Wiring:** `src/systems/save.ts` (slots, migration on start), `Game` takes its slot and saves into it, `App` flow title -> slots -> species select -> game (`showSlots`, `showSelect(slot)`, `startGame(profile, slot)`), `createTitleScreen` and `createSlotScreen` in `src/ui/menus.ts`, styles in `src/style.css`.
 - [x] **Checks:** 77 unit tests, typecheck, 185 browser checks (13 slot checks, which replace 3 old title checks: both buttons, four empty slots, the saved animal in its slot, the replace question and "Keep it", backing out erases nothing, a second animal in slot 2 leaves slot 1 alone, progress goes to its own slot, a damaged slot, the old save moving into slot 1). Screenshots looked at: title, new game, replace question, continue, phone width.
-- [ ] **Waiting for the user:** commit permission (nothing is committed or pushed), and a look at the slot screens in a real browser.
+- [x] **Committed** as `bbc365f`. Nothing is pushed.
+- [ ] **Waiting for the user:** a look at the slot screens in a real browser.
 - Not built, on purpose: a Delete button, play time or last-played date on the cards, anything that syncs saves between browsers.
+
+---
+
+# M2 review feedback (plan agreed 2026-11-15)
+
+The user reviewed M2 and sent feedback in pieces (12 items: admin function, bald eagle, crocodile speeds, water bodies and the fish and animals that use them, prey stamina, more Elephant food and fox food reserves, the growth meter hint). The list, what the data says about each item, and the agreed plan are in the bible, section 16, "Feedback from the user's review of M2". One item is parked for after M5: different animals start in different biomes. Each step below gets tests first, a full browser run and screenshots, and its own commit that the user approves.
+
+- [x] **1. Admin sandbox.** Built. `?admin` adds a sandbox button to the title; J opens the panel; the sandbox belongs to no save slot and saves nothing. Rules in `src/logic/admin.ts` (10 unit tests), panel in `src/ui/adminPanel.ts`, `Game.slot` is `number | null`. Found by testing and fixed: the pointer lock requested after a switch of animal made the panel unclickable. Checks: 87 unit tests, 206 browser checks (22 new), typecheck, build. Not committed yet.
+- [ ] **2. Animal balance.** Elephant 4.2 / 7.2; Crocodile 4.4 / 7.4 on land and about 8 m/s swimming; tiring prey (winded about 45% of sprint) with a new catching rule and the hunt test; Bald Eagle (look, health 50, reach 2.0 m, Talon Grab 2.2 m, Winter buff); the HUD hint when the growth meter is full (option D, numbers unchanged).
+- [ ] **3. Water.** Three more water bodies (the trees move), fish in each that dodge, title animals around the shore, wild animals drinking.
+- [ ] **4. Food.** Leaves, fruit and nuts on trees for the Elephant and the bear; two fox food reserves guarded by foxes.
+- [ ] **5. Docs and final checks.**

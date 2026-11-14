@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { FOREST_TITLE } from '../data/biomes.ts';
+import { getSpecies, getVariant } from '../data/species.ts';
 import { TUNING } from '../data/tuning.ts';
+import { adminProgress, setGrowth, setLevel, setWounded } from '../logic/admin.ts';
 import { AmbientLife } from '../systems/ambient.ts';
 import { hasAnySave } from '../logic/saveSlots.ts';
 import { loadSlots, migrateOldSave } from '../systems/save.ts';
@@ -8,6 +10,7 @@ import { ThirdPersonCamera } from '../systems/camera.ts';
 import { newProfile, profileFromSave } from '../systems/growth.ts';
 import type { Profile } from '../systems/growth.ts';
 import { Input } from '../systems/input.ts';
+import { createAdminPanel } from '../ui/adminPanel.ts';
 import { el } from '../ui/dom.ts';
 import { GrowthMenu } from '../ui/growthMenu.ts';
 import { createPauseMenu, createSlotScreen, createTitleScreen } from '../ui/menus.ts';
@@ -17,7 +20,7 @@ import { ForestWorld } from '../world/forest.ts';
 import { Sky } from '../world/sky.ts';
 import { Game } from './Game.ts';
 
-export type Screen = 'title' | 'select' | 'playing' | 'paused' | 'growth';
+export type Screen = 'title' | 'select' | 'playing' | 'paused' | 'growth' | 'admin';
 
 const MAX_DT = 0.05;
 
@@ -42,6 +45,9 @@ export class App {
   private overlay: HTMLElement | null = null;
   private select: SpeciesSelect | null = null;
   private growthMenu: GrowthMenu | null = null;
+  /** True when the address has ?admin: the title offers the admin sandbox. */
+  private adminEnabled: boolean;
+  private adminBadge: HTMLElement | null = null;
   private last = 0;
   private pausedAt = 0;
   private elapsed = 0;
@@ -49,7 +55,8 @@ export class App {
   /** Animals roaming behind the title screen. Gone while a game is running. */
   titleLife: AmbientLife | null = null;
 
-  constructor(canvas: HTMLCanvasElement, ui: HTMLElement) {
+  constructor(canvas: HTMLCanvasElement, ui: HTMLElement, options: { admin?: boolean } = {}) {
+    this.adminEnabled = options.admin === true;
     this.canvas = canvas;
     this.ui = ui;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -137,6 +144,11 @@ export class App {
       // The same Esc press that released the pointer must not immediately un-pause.
       else if (this.screen === 'paused' && performance.now() - this.pausedAt > 350) this.resume();
       else if (this.screen === 'growth') this.closeGrowth();
+      else if (this.screen === 'admin') this.closeAdmin();
+    } else if (code === 'KeyJ' && this.game?.slot === null) {
+      // The admin panel belongs to sandbox games only, so it can never change a saved animal.
+      if (this.screen === 'playing') this.openAdmin();
+      else if (this.screen === 'admin') this.closeAdmin();
     }
   }
 
@@ -156,6 +168,7 @@ export class App {
     this.overlay = createTitleScreen(this.ui, hasAnySave(loadSlots()), {
       newGame: () => this.showSlots('new'),
       continueGame: () => this.showSlots('continue'),
+      admin: this.adminEnabled ? () => this.showSelect(null) : undefined,
     });
   }
 
@@ -178,19 +191,22 @@ export class App {
     });
   }
 
-  /** Species select for a new animal in `slot`. Nothing in the slot changes until the player begins. */
-  showSelect(slot: number): void {
+  /** Species select for a new animal in `slot` (null: the admin sandbox). Nothing in the slot changes until the player begins. */
+  showSelect(slot: number | null): void {
     this.clearOverlay();
     this.screen = 'select';
     this.select = new SpeciesSelect(this.ui, this.preview, {
       begin: (speciesId, variantId) => this.startGame(newProfile(speciesId, variantId), slot),
-      back: () => this.showSlots('new'),
+      back: () => (slot === null ? this.showTitle() : this.showSlots('new')),
+      backLabel: slot === null ? 'Back to title' : undefined,
     });
   }
 
   /** Starts the game and saves at once, so the new animal replaces whatever the slot held. */
-  startGame(profile: Profile, slot: number): void {
+  startGame(profile: Profile, slot: number | null, lockPointer = true): void {
     this.clearOverlay();
+    this.adminBadge?.remove();
+    this.adminBadge = null;
     this.game?.dispose();
     this.titleLife?.dispose();
     this.titleLife = null;
@@ -199,9 +215,15 @@ export class App {
     this.world.setUnlitTint(this.sky.unlitTint);
     this.game = new Game({ scene: this.scene, world: this.world, sky: this.sky, cam: this.cam, input: this.input, ui: this.ui }, profile, slot);
     this.game.save();
+    if (slot === null) {
+      this.adminBadge = el('div', 'admin-badge plaque', 'Admin sandbox: nothing is saved. J opens the panel.');
+      this.ui.append(this.adminBadge);
+    }
     this.screen = 'playing';
     this.input.clear();
-    this.input.requestLock();
+    // The admin panel restarts the sandbox and then opens itself: a lock requested here would be granted
+    // a moment after the panel opened, and the panel could not be clicked.
+    if (lockPointer) this.input.requestLock();
     this.canvas.focus();
   }
 
@@ -212,7 +234,7 @@ export class App {
     this.game.save();
     this.input.releaseLock();
     this.input.clear();
-    this.overlay = createPauseMenu(this.ui, { resume: () => this.resume(), quit: () => this.quitToTitle() });
+    this.overlay = createPauseMenu(this.ui, { resume: () => this.resume(), quit: () => this.quitToTitle() }, this.game.slot === null);
   }
 
   resume(): void {
@@ -239,9 +261,55 @@ export class App {
     this.input.requestLock();
   }
 
+  /** The admin panel (sandbox games only). The game waits while it is open, like the Growth menu. */
+  openAdmin(): void {
+    const game = this.game;
+    if (!game || game.slot !== null || (this.screen !== 'playing' && this.screen !== 'admin')) return;
+    this.clearOverlay();
+    this.screen = 'admin';
+    this.input.releaseLock();
+    this.input.clear();
+    this.overlay = createAdminPanel(this.ui, game.growth, {
+      biomeName: this.world.biome.name,
+      isRuled: () => game.biomeRuled,
+      setRuled: (ruled) => game.adminSetRuled(ruled),
+      switchAnimal: (speciesId, variantId) => this.adminSwitch(speciesId, variantId),
+      close: () => this.closeAdmin(),
+    });
+  }
+
+  closeAdmin(): void {
+    if (this.screen !== 'admin') return;
+    this.clearOverlay();
+    this.screen = 'playing';
+    this.input.clear();
+    this.input.requestLock();
+  }
+
+  /** Restarts the sandbox as another animal, keeping the life stage, level, growth, wound and ruled biomes. */
+  private adminSwitch(speciesId: string, variantId: string): void {
+    const old = this.game?.growth.profile;
+    if (!old) return;
+    const variant = getVariant(getSpecies(speciesId), variantId);
+    const progress = adminProgress(variant.abilities, old.progress.stage);
+    setLevel(progress, old.progress.level, variant.abilities);
+    setGrowth(progress, old.progress.growth);
+    setWounded(progress, old.progress.wounded);
+    this.startGame({
+      speciesId,
+      variantId: variant.id,
+      progress,
+      unlockedBiomes: [...old.unlockedBiomes],
+      ruledBiomes: [...old.ruledBiomes],
+    }, null, false);
+    this.openAdmin();
+  }
+
   quitToTitle(): void {
     this.game?.dispose();
     this.game = null;
+    this.adminBadge?.remove();
+    this.adminBadge = null;
     this.showTitle();
   }
 }
