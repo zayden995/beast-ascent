@@ -41,6 +41,7 @@ src/
     damage.ts              damage and defense formula
     biome.ts               which buff/nerf is active for a species in a biome
     saveData.ts            validates and clamps whatever comes out of storage
+    saveSlots.ts           the four save slots, moving the old single save into a slot, the two lines a slot card shows
     dayNight.ts            time of day -> sun height, daylight, twilight, phase name
     heightfield.ts         forest terrain height function
   animals/
@@ -65,12 +66,12 @@ src/
     ambient.ts             peaceful animals behind the title screen (scenery, not the enemy AI)
     growth.ts              profile + both growth tracks
     fx.ts                  slashes, shockwaves, attack warnings
-    save.ts                localStorage wrapper
+    save.ts                localStorage wrapper (reads the four slots, saves into the animal's slot)
     gameEvents.ts          event types shared by systems and UI
   ui/
     hud.ts                 HUD
     worldLabels.ts         enemy level tags, damage numbers
-    menus.ts               title screen, pause menu
+    menus.ts               title screen, save slot screen, pause menu
     speciesSelect.ts       species select + 3D turntable
     growthMenu.ts          Tab menu
     icons.ts, dom.ts       inline SVG icons, DOM helpers
@@ -93,7 +94,7 @@ tests/
 6. **World collision is simple**: terrain height function, circle colliders for trees/rocks, a circular world boundary. No physics library.
 7. **UI is DOM over the canvas.** Enemy level tags and damage numbers are pooled DOM elements projected from 3D.
 8. **Simulation can be stepped without rendering** through a debug hook, so the browser test is deterministic and fast even on a software GPU.
-9. **Saving**: one versioned localStorage key, every call in try/catch, autosave on progress events.
+9. **Saving**: four save slots (one animal each), one versioned localStorage key per slot, every call in try/catch, autosave on progress events. The slot rules are pure logic (`saveSlots.ts`) so they can be unit-tested.
 
 Choices the bible leaves open (also recorded in its Decisions Log):
 
@@ -155,6 +156,18 @@ Scope: the full Alpha stage and the four remaining species (Tiger, Elephant, Cro
 - [x] **3. Elephant.** Done. `trunk` on the rig, Charge (a new `charge` effect, a ground dash that hits each animal once and ploughs through them), Stomp, Trunk Whip, Thick Skin; plants as food (30 in the Forest, 4 inside the den refuge, growing back); walk 4.7 and sprint 8.0 so that prey stays catchable; the eat prompt says "An elephant".
 - [x] **4. Crocodile.** Done. `jaw`, `sprawl` and a `heavy` tail on the rig; Death Roll (`grab`, and the body rolls), Lunge, a full-circle Tail Sweep, Water Ambush (+35% damage in water, `Actor.wet`); Crocodile and Alligator skins.
 - [x] **5. Eagle with flight.** Done. `ProceduralBird` behind `AnimalModel`; flight in `integrate` and the player controller (hold Space, `TUNING.flight`, `src/logic/flight.ts`); colliders with a height; the vertical-reach rule (`withinVerticalReach`) so that fights stay fair; animals notice a flier only below 5 m; Dive Strike (+4% per metre), Talon Grab, Gust, Eagle Eye (tags to 90 m).
-- [x] **6. Wrap-up.** Done. A tiger, an elephant and a crocodile on the title screen; the bible and this file updated; 60 unit tests, 175 browser checks (run several times in a row, with the flaky ones fixed), typecheck and build. Not committed beyond steps 1 and 2: waiting for the user's permission. Nothing is pushed.
+- [x] **6. Wrap-up.** Done. A tiger, an elephant and a crocodile on the title screen; the bible and this file updated; 60 unit tests, 175 browser checks (run several times in a row, with the flaky ones fixed), typecheck and build. All of M2 is committed (`67cbf62`, `fc3c90e`, `ea93f66`). Nothing is pushed.
 
 Review focus for M2: every species can catch the prey (unit test plus the hunt bot), a save from Milestone 1 still loads, the death rule at every stage, and no console errors.
+
+---
+
+# Save slots (asked for by the user after M2)
+
+Title screen with **New Game** and **Continue Game**, both opening four save slots, one animal per slot (the user's wording: "something similar to LEGO games"). Agreed with the user on 2026-11-14 before building; the decisions are in the bible's Decisions Log.
+
+- [x] **Rules first (unit-tested):** `src/logic/saveSlots.ts`: four slots with their own keys, reading and writing one slot without touching the others, a damaged slot reads as empty, the old single save moves into the first empty slot (and is kept if the copy fails), the two lines a slot card shows. 17 unit tests.
+- [x] **Wiring:** `src/systems/save.ts` (slots, migration on start), `Game` takes its slot and saves into it, `App` flow title -> slots -> species select -> game (`showSlots`, `showSelect(slot)`, `startGame(profile, slot)`), `createTitleScreen` and `createSlotScreen` in `src/ui/menus.ts`, styles in `src/style.css`.
+- [x] **Checks:** 77 unit tests, typecheck, 185 browser checks (13 slot checks, which replace 3 old title checks: both buttons, four empty slots, the saved animal in its slot, the replace question and "Keep it", backing out erases nothing, a second animal in slot 2 leaves slot 1 alone, progress goes to its own slot, a damaged slot, the old save moving into slot 1). Screenshots looked at: title, new game, replace question, continue, phone width.
+- [ ] **Waiting for the user:** commit permission (nothing is committed or pushed), and a look at the slot screens in a real browser.
+- Not built, on purpose: a Delete button, play time or last-played date on the cards, anything that syncs saves between browsers.

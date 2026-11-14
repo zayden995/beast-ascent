@@ -66,8 +66,12 @@ export class Game {
   private dirty = false;
   private lastSave = 0;
 
-  constructor(ctx: GameContext, profile: Profile) {
+  /** The save slot (1 to 4) this animal lives in; every save goes there. */
+  readonly slot: number;
+
+  constructor(ctx: GameContext, profile: Profile, slot: number) {
     this.ctx = ctx;
+    this.slot = slot;
     this.world = ctx.world;
     this.sky = ctx.sky;
     const { scene, world, input, cam } = ctx;
@@ -293,7 +297,7 @@ export class Game {
   save(): boolean {
     this.dirty = false;
     this.lastSave = this.clock.time;
-    return writeSave(this.growth.profile);
+    return writeSave(this.slot, this.growth.profile);
   }
 
   dispose(): void {

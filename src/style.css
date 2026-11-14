@@ -171,6 +171,19 @@ html, body {
 .overlay { display: grid; place-items: center; background: rgba(20, 28, 17, 0.62); padding: 1rem; }
 .pause-card { padding: 1.6rem 1.8rem; width: min(26rem, 100%); display: flex; flex-direction: column; gap: 0.6rem; }
 .pause-card h2 { margin: 0 0 0.4rem; font-size: 2.4rem; font-stretch: 80%; }
+
+/* Save slots: four planks on a plaque, each with its number on a key cap. */
+.slot-card { padding: 1.6rem 1.8rem; width: min(30rem, 100%); max-height: 100%; overflow: auto; display: flex; flex-direction: column; gap: 0.6rem; }
+.slot-card h2 { margin: 0; font-size: 2.4rem; font-stretch: 80%; }
+.slot-card .hint { margin: 0 0 0.4rem; color: var(--dim); line-height: 1.4; }
+.slot-list { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.4rem; }
+/* Named save-slot because the HUD already uses .slot for its ability icons. */
+.plank.save-slot { display: flex; align-items: center; gap: 0.9rem; background: var(--bark-soft); }
+.plank.save-slot .key { flex: none; font-size: 1.1rem; }
+.plank.save-slot .save-slot-text { display: flex; flex-direction: column; min-width: 0; }
+.plank.save-slot strong { font-weight: 600; }
+.plank.save-slot.empty strong { font-weight: 400; color: var(--dim); }
+.plank.save-slot:disabled { background: rgba(43, 31, 23, 0.5); }
 .controls { margin: 0.6rem 0 0; display: grid; grid-template-columns: auto 1fr; gap: 0.35rem 0.9rem; font-size: 0.95rem; align-items: center; }
 .controls dt { justify-self: start; }
 .controls dd { margin: 0; color: var(--dim); }

@@ -204,7 +204,7 @@ export class SpeciesSelect {
     const actions = el('div', 'actions');
     actions.append(
       button('plank primary', `Begin as a ${variant.name}`, () => this.on.begin(s.id, variant.id)),
-      button('chip', 'Back to title', this.on.back),
+      button('chip', 'Back to slots', this.on.back),
     );
     board.append(actions);
   }

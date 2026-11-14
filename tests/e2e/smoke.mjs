@@ -79,8 +79,12 @@ const hold = (id, yaw) => page.evaluate(([animal, facing]) => {
   e.homeZ = e.pos.z;
 }, [id, yaw]);
 
-async function newGame(speciesName, variantName) {
-  await page.getByRole('button', { name: /New game/ }).click();
+/** From the title: New Game, pick a save slot (confirming a replace if it holds an animal), then the species. */
+async function newGame(speciesName, variantName, slot = 1) {
+  await page.getByRole('button', { name: /New Game/ }).click();
+  await page.locator(`.save-slot[data-slot="${slot}"]`).click();
+  const replace = page.getByRole('button', { name: /Pick an animal/ });
+  if (await replace.isVisible()) await replace.click();
   await page.locator('.select').waitFor();
   await page.locator('.signpost .plank', { hasText: speciesName }).click();
   if (variantName) await page.locator('.variants .chip', { hasText: variantName }).click();
@@ -174,7 +178,15 @@ try {
   await page.locator('.title').waitFor();
   await page.waitForTimeout(600);
   check('title screen shows', await page.locator('.title h1').isVisible());
-  check('no Continue without a save', (await page.getByRole('button', { name: /Continue/ }).count()) === 0);
+  check('title offers New Game and Continue Game; Continue waits for a first save',
+    (await page.getByRole('button', { name: /New Game/ }).isEnabled()) && (await page.getByRole('button', { name: /Continue Game/ }).isDisabled()));
+  await page.getByRole('button', { name: /New Game/ }).click();
+  await page.locator('.slot-card').waitFor();
+  check('New Game shows four empty slots, all of them pickable',
+    (await page.locator('.save-slot').count()) === 4 && (await page.locator('.save-slot.empty').count()) === 4 && (await page.locator('.save-slot:disabled').count()) === 0);
+  await shot('01a-slots-new-empty');
+  await page.getByRole('button', { name: 'Back' }).click();
+  await page.locator('.title').waitFor();
   const herd = await B.call('titleAnimals');
   await B.call('advanceTitle', 30);
   const herdLater = await B.call('titleAnimals');
@@ -462,9 +474,9 @@ try {
     (await alphaBtn.isDisabled()) && /Reach level 18/.test(growthCardText) && !/Milestone 2|not available yet/.test(growthCardText));
   await page.keyboard.press('Escape');
 
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('beastAscent.save.v1')));
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('beastAscent.save.slot1')));
   await B.advance(1.5);
-  const saved2 = await page.evaluate(() => JSON.parse(localStorage.getItem('beastAscent.save.v1')));
+  const saved2 = await page.evaluate(() => JSON.parse(localStorage.getItem('beastAscent.save.slot1')));
   check('progress is saved to localStorage', saved2.speciesId === 'wolf' && saved2.progress.stage === 'adult' && saved2.progress.level === s.player.level, saved ? '' : 'first read empty');
 
   // ---------- Boss ----------
@@ -493,7 +505,7 @@ try {
   const deathText = await page.locator('.hud-death').innerText();
   check('death screen shows what was lost, and warns that the animal is wounded',
     (await page.locator('.hud-death').isVisible()) && /keep your life stage/i.test(deathText) && /level 8 Adult Grey Wolf/.test(deathText) && /wounded/i.test(deathText), deathText.replace(/\n+/g, ' | '));
-  const savedDead = await page.evaluate(() => JSON.parse(localStorage.getItem('beastAscent.save.v1')));
+  const savedDead = await page.evaluate(() => JSON.parse(localStorage.getItem('beastAscent.save.slot1')));
   check('the death is saved the moment the animal dies',
     savedDead.progress.level === 8 && savedDead.progress.stage === 'adult' && savedDead.progress.wounded === true);
   await shot('11-defeated');
@@ -556,12 +568,38 @@ try {
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /return to title/ }).click();
   await page.locator('.title').waitFor();
-  const cont = page.getByRole('button', { name: /Continue/ });
-  check('title offers Continue with the saved animal', /Adult Grey Wolf, level/.test(await cont.innerText()), (await cont.innerText()).replace(/\n/g, ' '));
+  check('Continue Game is available once an animal is saved', await page.getByRole('button', { name: /Continue Game/ }).isEnabled());
+  await page.getByRole('button', { name: /Continue Game/ }).click();
+  await page.locator('.slot-card').waitFor();
+  const slot1Text = await page.locator('.save-slot[data-slot="1"]').innerText();
+  check('Continue Game lists the saved animal in slot 1, and the other three slots are empty and cannot be picked',
+    /Adult Grey Wolf, level/.test(slot1Text) && /Forest ruled/.test(slot1Text)
+    && (await page.locator('.save-slot.empty:disabled').count()) === 3 && (await page.locator('.save-slot.filled:enabled').count()) === 1,
+    slot1Text.replace(/\n/g, ' '));
+  await shot('14c-slots-continue');
+  await page.getByRole('button', { name: 'Back' }).click();
+  await page.locator('.title').waitFor();
+
+  // Starting a new game in a full slot asks first, and backing out erases nothing.
+  await page.getByRole('button', { name: /New Game/ }).click();
+  await page.locator('.save-slot[data-slot="1"]').click();
+  check('picking a slot that holds an animal asks before replacing it', /Replace slot 1\?/.test(await page.locator('.slot-card').innerText()) && /Adult Grey Wolf/.test(await page.locator('.slot-card').innerText()));
+  await shot('14d-slots-replace');
+  await page.getByRole('button', { name: /Keep it/ }).click();
+  check('"Keep it" goes back to the four slots', (await page.locator('.save-slot').count()) === 4);
+  await page.locator('.save-slot[data-slot="1"]').click();
+  await page.getByRole('button', { name: /Pick an animal/ }).click();
+  await page.locator('.select').waitFor();
+  await page.getByRole('button', { name: /Back to slots/ }).click();
+  check('backing out of species select returns to the slots, with the saved animal still there',
+    (await page.locator('.save-slot[data-slot="1"]').innerText()).includes('Adult Grey Wolf') && JSON.parse(await page.evaluate(() => localStorage.getItem('beastAscent.save.slot1'))).progress.stage === 'adult');
+  await page.getByRole('button', { name: 'Back' }).click();
+  await page.locator('.title').waitFor();
 
   await page.reload();
   await page.locator('.title').waitFor();
-  await page.getByRole('button', { name: /Continue/ }).click();
+  await page.getByRole('button', { name: /Continue Game/ }).click();
+  await page.locator('.save-slot[data-slot="1"]').click();
   await page.locator('.hud').waitFor();
   await B.call('setAutoStep', false);
   await B.call('setRender', false);
@@ -609,7 +647,7 @@ try {
   check('the Growth menu says Fully grown', /Fully grown/.test(await page.locator('.growth-card').innerText()));
   await page.keyboard.press('Escape');
   await B.advance(1.5);
-  const alphaSaved = await page.evaluate(() => JSON.parse(localStorage.getItem('beastAscent.save.v1')));
+  const alphaSaved = await page.evaluate(() => JSON.parse(localStorage.getItem('beastAscent.save.slot1')));
   check('an Alpha is saved as an Alpha', alphaSaved.progress.stage === 'alpha' && alphaSaved.progress.wounded === false);
 
   const killPlayer = async () => {
@@ -633,13 +671,13 @@ try {
   check('Alpha, first death: still an Alpha, back at level 18, wounded, abilities refunded',
     w.stage === 'alpha' && w.level === 18 && alphaLevel >= 18 && w.abilityPoints === 17 && JSON.stringify(w.ranks) === '{"wolf_pounce":1}' && Math.abs(w.size - 1.4) < 1e-6,
     `${w.stage} level ${w.level}, points ${w.abilityPoints}`);
-  check('an Alpha that has died once is wounded', /Wounded/.test(await page.locator('.hud-status').textContent()) && (await page.evaluate(() => JSON.parse(localStorage.getItem('beastAscent.save.v1')))).progress.wounded === true);
+  check('an Alpha that has died once is wounded', /Wounded/.test(await page.locator('.hud-status').textContent()) && (await page.evaluate(() => JSON.parse(localStorage.getItem('beastAscent.save.slot1')))).progress.wounded === true);
 
   await killPlayer();
   check('Alpha, second death: the death screen says the animal falls back to Adult', /Alpha to Adult/.test(await page.locator('.hud-death').innerText()));
   w = await wake();
   check('second death before a new level: falls back to Adult at level 8, growth meter empty, still wounded',
-    w.stage === 'adult' && w.level === 8 && w.growth === 0 && w.abilityPoints === 7 && Math.abs(w.size - 1) < 1e-6 && (await page.evaluate(() => JSON.parse(localStorage.getItem('beastAscent.save.v1')))).progress.wounded === true,
+    w.stage === 'adult' && w.level === 8 && w.growth === 0 && w.abilityPoints === 7 && Math.abs(w.size - 1) < 1e-6 && (await page.evaluate(() => JSON.parse(localStorage.getItem('beastAscent.save.slot1')))).progress.wounded === true,
     `${w.stage} level ${w.level}, growth ${w.growth}`);
   await shot('14b-fallen-to-adult');
 
@@ -663,10 +701,23 @@ try {
   // ---------- Lion ----------
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /return to title/ }).click();
-  begin = await newGame('Lion');
+  // The Lion goes into slot 2, beside the Wolf in slot 1: two animals live side by side.
+  begin = await newGame('Lion', undefined, 2);
   await begin();
   s = await B.state();
   check('lion: no Forest modifier, boss is back for a new game', s.player.mods.length === 0 && s.enemies.some((e) => e.boss) && !s.gateOpen);
+  const slotsNow = async () => page.evaluate(() => [1, 2, 3, 4].map((n) => JSON.parse(localStorage.getItem(`beastAscent.save.slot${n}`))));
+  let both = await slotsNow();
+  check('a new animal in slot 2 leaves the Wolf in slot 1 alone',
+    (await page.evaluate(() => window.__beast.app.game.slot)) === 2 && both[0]?.speciesId === 'wolf' && both[1]?.speciesId === 'lion' && both[2] === null && both[3] === null,
+    both.map((x) => x?.speciesId ?? 'empty').join(', '));
+  await B.call('grantXp', 5); // too little for a level, so the lion stays a level 1 for the checks below
+  await B.advance(1.5);
+  const lionXp = await page.evaluate(() => window.__beast.app.game.growth.progress.xp);
+  both = await slotsNow();
+  check('progress goes to the slot the animal lives in, and the Wolf in slot 1 is untouched',
+    lionXp > 0 && both[1].progress.xp === lionXp && both[0].speciesId === 'wolf' && both[0].progress.level === 1,
+    `lion saved xp ${both[1].progress.xp} (live ${lionXp}), wolf level ${both[0].progress.level}`);
   await settle();
   check('lion HUD shows "No modifier here"', /No modifier here/.test(await page.locator('.hud-biome').innerText()));
   const lionTarget = nearest(s, 'boar');
@@ -1327,10 +1378,36 @@ try {
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /return to title/ }).click();
   await page.locator('.title').waitFor();
-  await page.evaluate(() => localStorage.setItem('beastAscent.save.v1', '{"version":1,"speciesId":"dragon"'));
+  // A damaged save reads as an empty slot, and never hides the animals in the other slots.
+  await page.evaluate(() => localStorage.setItem('beastAscent.save.slot1', '{"version":1,"speciesId":"dragon"'));
   await page.reload();
   await page.locator('.title').waitFor();
-  check('corrupt save is ignored (no Continue, no crash)', (await page.getByRole('button', { name: /Continue/ }).count()) === 0);
+  await page.getByRole('button', { name: /Continue Game/ }).click();
+  check('a damaged slot looks empty and cannot be picked, while the Lion in slot 2 is still there',
+    (await page.locator('.save-slot[data-slot="1"]').isDisabled()) && /Lion/.test(await page.locator('.save-slot[data-slot="2"]').innerText()) && (await page.locator('.save-slot[data-slot="2"]').isEnabled()));
+  await page.getByRole('button', { name: 'Back' }).click();
+  await page.evaluate(() => localStorage.clear());
+  await page.evaluate(() => localStorage.setItem('beastAscent.save.slot1', '{"version":1,"speciesId":"dragon"'));
+  await page.reload();
+  await page.locator('.title').waitFor();
+  check('with only a damaged save, Continue Game stays disabled and nothing crashes', await page.getByRole('button', { name: /Continue Game/ }).isDisabled());
+
+  // The single save of earlier versions moves into slot 1 on start, and the old key goes.
+  await page.evaluate(() => {
+    localStorage.clear();
+    const progress = { level: 7, xp: 0, abilityPoints: 6, stage: 'adult', growth: 0, abilityRanks: {}, wounded: false };
+    localStorage.setItem('beastAscent.save.v1', JSON.stringify({ version: 1, speciesId: 'lion', variantId: 'default', progress, unlockedBiomes: ['forest'], ruledBiomes: ['forest'] }));
+  });
+  await page.reload();
+  await page.locator('.title').waitFor();
+  check('an animal saved by an earlier version moves into slot 1 and the old key is removed',
+    (await page.evaluate(() => localStorage.getItem('beastAscent.save.v1'))) === null && (await page.getByRole('button', { name: /Continue Game/ }).isEnabled()));
+  await page.getByRole('button', { name: /Continue Game/ }).click();
+  const migrated = await page.locator('.save-slot[data-slot="1"]').innerText();
+  check('the moved animal shows up in slot 1 as it was', /Adult Savanna Lion, level 7/.test(migrated) && /Forest ruled/.test(migrated), migrated.replace(/\n/g, ' '));
+  await shot('14e-slots-migrated');
+  await page.getByRole('button', { name: 'Back' }).click();
+  await page.locator('.title').waitFor();
 
   // Storage that throws (private mode, blocked cookies) must not break the game.
   await page.evaluate(() => {

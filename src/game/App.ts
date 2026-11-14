@@ -2,14 +2,16 @@ import * as THREE from 'three';
 import { FOREST_TITLE } from '../data/biomes.ts';
 import { TUNING } from '../data/tuning.ts';
 import { AmbientLife } from '../systems/ambient.ts';
-import { loadSave, clearSave } from '../systems/save.ts';
+import { hasAnySave } from '../logic/saveSlots.ts';
+import { loadSlots, migrateOldSave } from '../systems/save.ts';
 import { ThirdPersonCamera } from '../systems/camera.ts';
 import { newProfile, profileFromSave } from '../systems/growth.ts';
 import type { Profile } from '../systems/growth.ts';
 import { Input } from '../systems/input.ts';
 import { el } from '../ui/dom.ts';
 import { GrowthMenu } from '../ui/growthMenu.ts';
-import { createPauseMenu, createTitleScreen } from '../ui/menus.ts';
+import { createPauseMenu, createSlotScreen, createTitleScreen } from '../ui/menus.ts';
+import type { SlotMode } from '../ui/menus.ts';
 import { SpeciesPreview, SpeciesSelect } from '../ui/speciesSelect.ts';
 import { ForestWorld } from '../world/forest.ts';
 import { Sky } from '../world/sky.ts';
@@ -77,6 +79,7 @@ export class App {
     });
     window.addEventListener('resize', () => this.resize());
     this.resize();
+    migrateOldSave();
     this.showTitle();
   }
 
@@ -150,29 +153,43 @@ export class App {
     this.clearOverlay();
     this.screen = 'title';
     this.titleLife ??= new AmbientLife(this.scene, this.world, FOREST_TITLE.animals, FOREST_TITLE.shyDistance);
-    this.overlay = createTitleScreen(this.ui, loadSave(), {
-      newGame: () => this.showSelect(),
-      continueGame: () => {
-        const save = loadSave();
-        if (save) this.startGame(profileFromSave(save));
-        else this.showSelect();
-      },
+    this.overlay = createTitleScreen(this.ui, hasAnySave(loadSlots()), {
+      newGame: () => this.showSlots('new'),
+      continueGame: () => this.showSlots('continue'),
     });
   }
 
-  showSelect(): void {
+  /** The four save slots, over the same roaming animals as the title (the screen is still 'title'). */
+  showSlots(mode: SlotMode): void {
     this.clearOverlay();
-    this.screen = 'select';
-    this.select = new SpeciesSelect(this.ui, this.preview, {
-      begin: (speciesId, variantId) => {
-        clearSave();
-        this.startGame(newProfile(speciesId, variantId));
+    this.screen = 'title';
+    this.overlay = createSlotScreen(this.ui, mode, loadSlots(), {
+      pick: (slot) => {
+        if (mode === 'new') {
+          this.showSelect(slot);
+          return;
+        }
+        // Read again: the slot may have changed since the list was drawn.
+        const save = loadSlots()[slot - 1];
+        if (save) this.startGame(profileFromSave(save), slot);
+        else this.showSlots('continue');
       },
       back: () => this.showTitle(),
     });
   }
 
-  startGame(profile: Profile): void {
+  /** Species select for a new animal in `slot`. Nothing in the slot changes until the player begins. */
+  showSelect(slot: number): void {
+    this.clearOverlay();
+    this.screen = 'select';
+    this.select = new SpeciesSelect(this.ui, this.preview, {
+      begin: (speciesId, variantId) => this.startGame(newProfile(speciesId, variantId), slot),
+      back: () => this.showSlots('new'),
+    });
+  }
+
+  /** Starts the game and saves at once, so the new animal replaces whatever the slot held. */
+  startGame(profile: Profile, slot: number): void {
     this.clearOverlay();
     this.game?.dispose();
     this.titleLife?.dispose();
@@ -180,7 +197,7 @@ export class App {
     // Every session starts in the morning; the time of day is not saved.
     this.sky.setTime(TUNING.dayNight.startAt);
     this.world.setUnlitTint(this.sky.unlitTint);
-    this.game = new Game({ scene: this.scene, world: this.world, sky: this.sky, cam: this.cam, input: this.input, ui: this.ui }, profile);
+    this.game = new Game({ scene: this.scene, world: this.world, sky: this.sky, cam: this.cam, input: this.input, ui: this.ui }, profile, slot);
     this.game.save();
     this.screen = 'playing';
     this.input.clear();

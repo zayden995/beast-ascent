@@ -130,7 +130,7 @@ Species not listed as favored or disfavored in a biome get no modifier there.
 - Boss ideas (placeholders): Forest = huge ancient stag or giant boar; Jungle = giant python or huge gorilla-like beast; Plains = giant buffalo or mega hyena pack leader; Winter = giant mammoth-like beast or ice-wolf alpha. Bosses get phases in Milestone 5.
 
 ### 4.6 Save system
-Save to **localStorage** (selected species and variant, level, XP, life stage, growth meter, unlocked and ruled biomes, unlocked abilities). Wrap all storage calls in try/catch because storage can fail.
+Save to **localStorage**, in **four save slots** (added after M2 at the user's request, like the LEGO games). **Each slot holds one animal**: selected species and variant, level, XP, life stage, growth meter, wounded mark, unlocked and ruled biomes, unlocked abilities. New Game picks a slot for a new animal; Continue Game picks a saved animal. Wrap all storage calls in try/catch because storage can fail. Saves live in the player's browser (there is no login), so another browser or device, or cleared site data, starts with four empty slots.
 
 ---
 
@@ -188,7 +188,7 @@ Each species has a **signature ability** (available at level 1 to 3) plus upgrad
 
 HUD: health bar, stamina bar, XP bar and level, growth meter, ability icons with cooldowns, biome name with active buff/nerf indicator, damage numbers, enemy level tags, interaction prompts (eat, enter gate).
 
-Menus: Title screen (the biome's animals roam peacefully behind it) -> Species select (3D turntable preview showing stats, diet, favored/disfavored biomes, variant toggle for bear) -> Game. Pause menu. Tab growth/ability menu (unlock abilities, see growth meter, evolve button when eligible).
+Menus: Title screen (New Game and Continue Game; the biome's animals roam peacefully behind it) -> Save slots (four; New Game picks a slot for a new animal, Continue Game picks a saved animal) -> Species select, for a new animal only (3D turntable preview showing stats, diet, favored/disfavored biomes, variant toggle for bear) -> Game. Pause menu. Tab growth/ability menu (unlock abilities, see growth meter, evolve button when eligible).
 
 ---
 
@@ -218,7 +218,8 @@ Menus: Title screen (the biome's animals roam peacefully behind it) -> Species s
 
 ### Milestone Status
 - M1: **DONE, accepted by the user on 2026-11-14.** Built on 2026-11-13, then revised the same day after the user's two rounds of playtest feedback (catchable prey, boss returns on re-entry and pays 50 XP after the first win, day and night cycle of 6 minutes, death resets the animal, animals on the title screen, a safe den refuge, rival predators). See the Decisions Log. Every automated check passes (see "Verification"). Acceptance was inferred from "seems good" plus the user's wish to start M2; the user did not separately comment on the camera, UI style or the `@types/three` dev dependency, so those stand as built.
-- M2: **BUILT, waiting for the user's review** (not yet accepted). All six steps are done: (1) Alpha stage, the new death rule, the 12 m den ring and the rival limit of 5; (2) Tiger, plus the sight rule the user asked for; (3) Elephant, with plants as food; (4) Crocodile; (5) Eagle with flight; (6) the title-screen cast, the docs and a clean test run. 60 unit tests, 175 browser checks, typecheck and production build pass. The task list is in `PLAN.md`. **Commits:** steps 1 and 2 are committed (`67cbf62`, `fc3c90e`). The sight rule and steps 3 to 6 are NOT committed: the user approved commits one at a time and was away, so nothing was committed without permission. **Nothing is pushed** (the user asked to push only after every step is committed).
+- M2: **BUILT, waiting for the user's review** (not yet accepted). All six steps are done: (1) Alpha stage, the new death rule, the 12 m den ring and the rival limit of 5; (2) Tiger, plus the sight rule the user asked for; (3) Elephant, with plants as food; (4) Crocodile; (5) Eagle with flight; (6) the title-screen cast, the docs and a clean test run. 60 unit tests, 175 browser checks, typecheck and production build pass. The task list is in `PLAN.md`. **Commits:** all of M2 is committed (`67cbf62`, `fc3c90e`, `ea93f66`). **Nothing is pushed** (the user asked to push only after every step is committed).
+- Save slots (a feature the user asked for after M2, built before M3): **BUILT, not committed yet** (waiting for the user's permission). The title has New Game and Continue Game; both open four save slots, each holding one animal. See section 4.6 and the Decisions Log.
 - M3 to M5: not started
 
 (Update this list at the end of every session.)
@@ -237,7 +238,7 @@ Menus: Title screen (the biome's animals roam peacefully behind it) -> Species s
 - Full HUD as in Section 7, including the biome buff/nerf indicator.
 - **Forest boss**: a large animal in an arena. Defeating it shows "Forest Ruled" and opens a gate to the (stubbed) next biome. It is back each time the player re-enters the Forest.
 - Death and respawn at the den, with the animal reset to a level 1 Juvenile (ruled biomes kept). The den is a safe refuge from wild animals. (As built in M1; the death rule was softened in M2, see section 4.3.)
-- Save and load via localStorage.
+- Save and load via localStorage. (As built in M1: one save. Four save slots since the work after M2, see section 4.6.)
 
 ### Done when
 `npm run dev` launches the game and the user can pick wolf, lion or bear, roam the forest, fight, level up, eat, evolve and beat the boss, with **no console errors**, and this file is updated with notes for M2.
@@ -337,6 +338,8 @@ Keep it short: what works, what is rough, how to run it, what was changed in thi
 - 2026-11-14 (M2, step 6): **Title screen**: a tiger, an elephant and a crocodile (in the water) join the clearing; the Eagle does not (the title scene has no flight). **Every species is playable** (`unfinished` is no longer used by any species; the flag stays in the code in case it is needed again).
 - 2026-11-14 (M2, tests): **Flaky browser checks were found and fixed, not ignored.** The game seeds its randomness from the clock, so each run differs. Causes found: test coordinates read before an animal had moved; an animal facing away that therefore never noticed the player (after the sight rule); a second animal inside an ability's arc or standing where the player was put (aim assist turns toward the nearest animal, even one underneath the player); an ability refused because the one before it was still casting; stale altitude or flying state after a test moved the player by hand (the `teleport` hook now lands the animal). Helpers in `tests/e2e/smoke.mjs`: `hold` (freeze an animal facing a given way), `withClearSpots`, `corridor` (a clear run with held animals and nobody else in the way), `duelNote` (positions in a failure message).
 
+- 2026-11-14 (save slots, after M2): **Four save slots, one animal each**, as the user asked ("like the LEGO games"; the user confirmed that a slot holds one animal, not a whole account with all seven species). The title screen always shows **New Game** and **Continue Game**. Continue Game is greyed out until something is saved. Both open the same four-slot screen. **New Game**: any slot can be picked; a slot that holds an animal asks "Replace slot N?" first, and nothing is erased until the player presses Begin on the species screen (backing out keeps the old animal). **Continue Game**: only slots with an animal can be picked. Every save (autosave, pause, quit) goes to the slot the animal was started in (`Game.slot`). The slot screen keeps `screen === 'title'`, so the forest animals keep roaming behind it, and the species screen's button says "Back to slots". Each slot card shows `Stage Variant, level N` and the biomes ruled (or "No biome ruled yet"). Storage: one key per slot (`beastAscent.save.slot1` to `slot4`, `TUNING.save`); the save format itself is unchanged (version 1). The rules are pure logic in `src/logic/saveSlots.ts` (unit-tested); `src/systems/save.ts` wraps localStorage. **Your existing save is not lost**: on start, the single save of earlier versions (`beastAscent.save.v1`) is copied into the first empty slot and the old key is removed only after the copy reads back; an unreadable old save is left alone. Choices made by me, not the user: no Delete button (a slot is freed by replacing it); the replace question comes before species select; Continue Game gets the highlighted look when a save exists, New Game when none does; the slot cards use the existing signpost style (planks on a bark plaque, the slot number on a key cap). Found by looking at a screenshot: the HUD already used the CSS class `slot` for ability icons, which squashed the first version of the slot rows, so they are named `save-slot`.
+
 ## 16. Known Issues / TODO
 
 ### Stubs (marked `TODO` in code)
@@ -362,6 +365,7 @@ Keep it short: what works, what is rough, how to run it, what was changed in thi
 - Night is visual only, and the moon is rarely on screen: the hills around the Forest and the camera's upward limit hide most of the high sky.
 - Frame rate on real hardware is unmeasured. A typical frame is about 270 draw calls and 340k triangles, which should be comfortable for a mid-range laptop.
 - After pressing Esc, browsers refuse to re-lock the mouse for about a second. Resuming with the Resume button works; resuming by pressing Esc again may need one click on the game.
+- **Save slots**: there is no Delete button (only replacing frees a slot), and the cards show no play time or last-played date. Saves live in one browser (no login, no sync between devices); clearing the site's data empties all four slots. The look of the slot screen has been seen only in headless screenshots, not by the user.
 - The project is a git repository on branch `main` with remote `origin` (github.com/zayden995/beast-ascent). `dist/`, `node_modules/` and the test screenshots are not tracked.
 - `node_modules` sits inside a OneDrive folder, which makes installs slow and syncs thousands of files. Consider excluding it from sync or moving the project out of OneDrive.
 
@@ -380,7 +384,7 @@ Keep it short: what works, what is rough, how to run it, what was changed in thi
 - Rig features are in `FeatureId` (`src/core/types.ts`); the four-legged rig is `ProceduralQuadruped`, the bird is `ProceduralBird`.
 - The browser test hunts prey with a bot (`hunt()`); a unit test keeps every fleeing animal slower than the slowest playable species and its winded walk below the slowest walk.
 - Run order for a clean start on a new machine: `npm install`, `npx playwright install chromium`, `npm test`, `npm run test:e2e`.
-- Tests: `npm test` runs 60 unit tests; `npm run test:e2e` runs 175 browser checks (state at the end of M2). The game seeds its randomness from the clock, so run the browser test a few times: two checks passed by luck at first (a second animal inside an ability's arc, and animals still alert after a fight), and were fixed to count only the target's hits and to wait for calm. Since the sight rule, a browser test that needs an animal to notice the player must first face it at the player (the `hold(id, yaw)` helper in `tests/e2e/smoke.mjs`), because an animal that faces away will not notice from a short distance. The browser test reads the den ring radius from the game's own layout, so changing `den.refugeRadius` needs only the explicit "ring is 12 m" check updated.
+- Tests: `npm test` runs 77 unit tests; `npm run test:e2e` runs 185 browser checks (state after the save slots). The game seeds its randomness from the clock, so run the browser test a few times: two checks passed by luck at first (a second animal inside an ability's arc, and animals still alert after a fight), and were fixed to count only the target's hits and to wait for calm. Since the sight rule, a browser test that needs an animal to notice the player must first face it at the player (the `hold(id, yaw)` helper in `tests/e2e/smoke.mjs`), because an animal that faces away will not notice from a short distance. The browser test reads the den ring radius from the game's own layout, so changing `den.refugeRadius` needs only the explicit "ring is 12 m" check updated.
 
 # CLAUDE.md
 

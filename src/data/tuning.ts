@@ -107,7 +107,12 @@ export const TUNING = {
     },
   },
   save: {
-    key: 'beastAscent.save.v1',
+    /** How many animals the player can keep: one save slot each. */
+    slots: 4,
+    /** Slot n is stored under this prefix plus n (1 to 4). */
+    slotKeyPrefix: 'beastAscent.save.slot',
+    /** Where the single save of earlier versions lived. It moves into a slot the first time the game starts. */
+    legacyKey: 'beastAscent.save.v1',
     version: 1,
     autosaveSeconds: 20,
   },
