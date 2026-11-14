@@ -105,17 +105,17 @@ const list: AbilityDef[] = [
     effect: { kind: 'passive', swim: { speedPct: 0.5 }, foodBonus: { kind: 'fish', pct: 0.5 } },
   },
 
-  // ---------- Milestone 2 species: data placeholders, not playable yet ----------
+  // ---------- Tiger ----------
   {
     id: 'tiger_ambush_strike', name: 'Ambush Strike', icon: 'claw', signature: true, ...RANKS,
-    description: 'A sudden strike that hits harder from behind.',
-    cooldown: 6, staminaCost: 18, todo: 'M2: bonus damage from behind',
-    effect: { kind: 'melee', windup: 0.15, damageMult: 1.9, range: 2.0, arcDeg: 100, knockback: 4 },
+    description: 'A sudden strike that deals 75% more damage to a target with its back to you.',
+    cooldown: 6, staminaCost: 18,
+    effect: { kind: 'melee', windup: 0.15, damageMult: 1.6, range: 2.0, arcDeg: 100, knockback: 4, behindBonus: 0.75 },
   },
   {
     id: 'tiger_rend', name: 'Rend', icon: 'bite', ...RANKS,
     description: 'Rake the target and leave it bleeding.',
-    cooldown: 9, staminaCost: 15, todo: 'M2: tune',
+    cooldown: 9, staminaCost: 15,
     effect: {
       kind: 'melee', windup: 0.15, damageMult: 1.0, range: 1.9, arcDeg: 100, knockback: 2,
       bleed: { dpsMult: 0.45, duration: 5 },
@@ -123,19 +123,21 @@ const list: AbilityDef[] = [
   },
   {
     id: 'tiger_stalk', name: 'Stalk', icon: 'paw', ...RANKS,
-    description: 'Passive. Move faster while unseen.',
-    cooldown: 0, staminaCost: 0, todo: 'M2: needs an "unseen" check',
-    effect: { kind: 'passive', mods: [{ stat: 'speed', pct: 0.1 }] },
+    description: 'Passive. Move 15% faster while no animal has noticed you.',
+    cooldown: 0, staminaCost: 0,
+    effect: { kind: 'passive', mods: [{ stat: 'speed', pct: 0.15 }], whileUnseen: true },
   },
   {
     id: 'tiger_double_claw', name: 'Double Claw', icon: 'claw', ...RANKS,
     description: 'Two fast claw strikes.',
-    cooldown: 7, staminaCost: 18, todo: 'M2: tune',
+    cooldown: 7, staminaCost: 18,
     effect: {
       kind: 'melee', windup: 0.1, damageMult: 1.0, range: 2.0, arcDeg: 110, knockback: 2,
       hits: 2, hitInterval: 0.22,
     },
   },
+
+  // ---------- Milestone 2 species still to build: data placeholders, not playable yet ----------
   {
     id: 'elephant_charge', name: 'Charge', icon: 'leap', signature: true, ...RANKS,
     description: 'A dash that knocks enemies back.',

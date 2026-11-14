@@ -161,7 +161,9 @@ try {
   let begin = await newGame('Lion');
   await shot('02-select-lion');
   const locked = await page.locator('.signpost .plank:disabled').allInnerTexts();
-  check('4 species are locked as "Coming soon"', locked.length === 4 && locked.every((t) => /Coming soon/.test(t)), locked.join(' | ').replace(/\n/g, ' '));
+  // Update as each Milestone 2 species is finished (see PLAN.md): the Tiger is playable now.
+  check('3 species are locked as "Coming soon": Elephant, Crocodile, Eagle',
+    locked.length === 3 && locked.every((t) => /Coming soon/.test(t)) && ['Elephant', 'Crocodile', 'Eagle'].every((n) => locked.some((t) => t.includes(n))), locked.join(' | ').replace(/\n/g, ' '));
   await page.locator('.signpost .plank', { hasText: 'Bear' }).click();
   await page.locator('.variants .chip', { hasText: 'Polar' }).click();
   await page.locator('.stage-row .chip', { hasText: 'Adult' }).click();
@@ -716,6 +718,114 @@ try {
   await B.advance(10);
   const bearFox = await hunt('fox');
   check('juvenile bear can catch a fox that bolts when hurt', bearFox.killed, JSON.stringify(bearFox));
+
+  // ---------- Tiger ----------
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: /return to title/ }).click();
+  begin = await newGame('Tiger');
+  await begin();
+  s = await B.state();
+  check('tiger: a level 1 Juvenile with Ambush Strike on key 1 and no Forest modifier',
+    s.player.stage === 'juvenile' && s.player.level === 1 && s.player.mods.length === 0 && s.player.abilities[0] === 'tiger_ambush_strike' && JSON.stringify(s.player.ranks) === '{"tiger_ambush_strike":1}',
+    s.player.abilities.join());
+  const tigerRivals = s.enemies.map((e) => e.kind).filter((k) => k.startsWith('rival'));
+  check('a tiger meets all four rivals: a pair of wolves, a lion and a bear', tigerRivals.sort().join() === 'rival_bear,rival_lion,rival_wolf,rival_wolf', tigerRivals.join(' '));
+  await shot('18a-tiger');
+
+  // A stunned boar cannot turn, so its facing is fixed: yaw 0 faces +z, which puts its back toward -z.
+  await page.evaluate(() => {
+    const g = window.__beast.app.game;
+    window.__dmg = [];
+    g.events.on('damage', (e) => {
+      if (e.attacker === g.player.actor) window.__dmg.push({ target: e.target.id, amount: e.amount, kind: e.kind, ambush: !!e.ambush });
+    });
+  });
+  const prepBoar = () => page.evaluate(() => {
+    const g = window.__beast.app.game;
+    const w = g.world;
+    const boar = g.spawner.enemies.find((e) => e.def.id === 'boar' && e.alive && Math.hypot(e.pos.x, e.pos.z) < 90
+      && !w.colliders.blocked(e.pos.x, e.pos.z - 1.5, 0.9) && !w.colliders.blocked(e.pos.x, e.pos.z + 1.5, 0.9));
+    boar.hp = boar.stats.maxHealth;
+    boar.stun = 6;
+    boar.yaw = 0;
+    boar.vx = boar.vz = 0;
+    boar.knock.set(0, 0, 0);
+    g.player.abilities.resetCooldowns();
+    g.player.actor.stamina = g.player.actor.stats.stamina;
+    return { id: boar.id, x: boar.pos.x, z: boar.pos.z };
+  });
+  const strike = async (key, behind) => {
+    const t = await prepBoar();
+    await B.teleport(t.x, t.z + (behind ? -1.5 : 1.5));
+    await B.lookAt(t.x, t.z);
+    await page.evaluate(() => { window.__dmg = []; });
+    await tap(key);
+    await B.advance(0.9);
+    // Only count hits on the boar being tested: another animal may be standing inside the arc.
+    const log = (await page.evaluate(() => window.__dmg)).filter((d) => d.target === t.id);
+    return { log, boar: (await B.state()).enemies.find((e) => e.id === t.id) };
+  };
+  const front = await strike('Digit1', false);
+  const behind = await strike('Digit1', true);
+  check('Ambush Strike from the front is an ordinary hit', front.log.length === 1 && !front.log[0].ambush, JSON.stringify(front.log));
+  check('Ambush Strike from behind is flagged as an ambush and hits about 75% harder',
+    behind.log.length === 1 && behind.log[0].ambush && behind.log[0].amount > front.log[0].amount * 1.5, `${front.log[0]?.amount} from the front, ${behind.log[0]?.amount} from behind`);
+  await settle();
+  check('the damage number of an ambush is marked', (await page.locator('.dmg.ambush').count()) > 0);
+
+  // Unlock the other three abilities.
+  await B.call('grantXp', 200);
+  await page.keyboard.press('Tab');
+  await page.locator('.growth-card').waitFor();
+  for (let i = 0; i < 3; i++) await page.locator('.ability-row .chip:not(:disabled)', { hasText: 'Unlock' }).first().click();
+  await page.keyboard.press('Tab');
+  s = await B.state();
+  check('tiger: Rend, Double Claw and Stalk can be unlocked',
+    s.player.ranks.tiger_rend === 1 && s.player.ranks.tiger_double_claw === 1 && s.player.ranks.tiger_stalk === 1 && s.player.abilities.join() === 'tiger_ambush_strike,tiger_rend,tiger_double_claw', JSON.stringify(s.player.ranks));
+  const rend = await strike('Digit2', false);
+  check('Rend leaves the target bleeding', rend.boar.bleeds > 0 && rend.log.some((d) => d.kind === 'hit'), `bleeds ${rend.boar.bleeds}`);
+  const claws = await strike('Digit3', false);
+  check('Double Claw lands two hits', claws.log.filter((d) => d.kind === 'hit').length === 2, JSON.stringify(claws.log));
+
+  // Stalk: faster while no animal has noticed the tiger. After a fight an animal that is stunned or
+  // mid-attack still counts as having noticed it, so wait (at the den, where chases are called off)
+  // until the animals have calmed down.
+  const stalkSpeed = 5.8 * 1.15;
+  const waitUntilUnseen = async () => {
+    await B.teleport(0, 43, Math.PI);
+    let waited = 0;
+    let st = await B.state();
+    while (Math.abs(st.player.moveSpeed - stalkSpeed) >= 0.02 && waited < 12) {
+      await B.advance(0.5);
+      waited += 0.5;
+      st = await B.state();
+    }
+    const alerts = st.enemies.filter((e) => e.alive && e.dist < 95 && ['chase', 'windup', 'charging', 'recover', 'flee'].includes(e.state)).map((e) => `${e.kind}:${e.state}`);
+    return { state: st, waited, alerts };
+  };
+  let atDen = await waitUntilUnseen();
+  await settle();
+  s = atDen.state;
+  check('Stalk: +15% speed while unseen, and the HUD says "Unseen"',
+    Math.abs(s.player.moveSpeed - stalkSpeed) < 0.02 && /Unseen/.test(await page.locator('.hud-status').textContent()),
+    `speed ${s.player.moveSpeed.toFixed(2)} after ${atDen.waited}s${atDen.alerts.length ? `, still alert: ${atDen.alerts.join(' ')}` : ''}`);
+  const noticer = nearest(s, 'boar');
+  await B.teleport(noticer.x, noticer.z + 5);
+  await B.advance(0.4);
+  await settle();
+  s = await B.state();
+  check('Stalk stops once an animal has noticed the tiger',
+    Math.abs(s.player.moveSpeed - 5.8) < 0.02 && !/Unseen/.test(await page.locator('.hud-status').textContent()), `speed ${s.player.moveSpeed.toFixed(2)}`);
+  atDen = await waitUntilUnseen();
+  check('and comes back within a few seconds of the tiger reaching the den', Math.abs(atDen.state.player.moveSpeed - stalkSpeed) < 0.02,
+    `after ${atDen.waited}s${atDen.alerts.length ? `, still alert: ${atDen.alerts.join(' ')}` : ''}`);
+  s = atDen.state;
+
+  // A tiger is fast enough to catch prey.
+  await B.call('setHp', s.player.maxHp);
+  await B.advance(20);
+  const tigerDeer = await hunt('deer');
+  check('tiger can run down and kill a fleeing deer', tigerDeer.killed && tigerDeer.fled, JSON.stringify(tigerDeer));
 
   // ---------- Large time steps must not break the world ----------
   await B.teleport(96, 0, Math.PI / 2);

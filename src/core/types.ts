@@ -62,6 +62,7 @@ export type FeatureId =
   | 'antlers'
   | 'tusks'
   | 'ridge'
+  | 'stripes'
   | 'tailTipLight'
   | 'tailTipDark';
 
@@ -114,6 +115,8 @@ export type AbilityEffect =
       hitInterval?: number;
       bleed?: { dpsMult: number; duration: number };
       selfRoot?: boolean;
+      /** Extra damage (0.75 = +75%) against a target that has its back to the attacker. */
+      behindBonus?: number;
     }
   | {
       kind: 'aoe';
@@ -128,6 +131,8 @@ export type AbilityEffect =
   | {
       kind: 'passive';
       mods?: StatMod[];
+      /** The mods only apply while no wild animal has noticed the player (see `playerIsUnseen`). */
+      whileUnseen?: boolean;
       /** Bonus damage against targets below a health fraction. */
       lowHealthBonus?: { threshold: number; pct: number };
       swim?: { speedPct: number };
@@ -174,6 +179,8 @@ export interface SpeciesDef {
   diet: Diet;
   /** Milestone in which the species becomes playable. */
   playableFrom: number;
+  /** Set while the species' own build step is not finished: it stays "Coming soon" even in its milestone. */
+  unfinished?: boolean;
   rig: 'quadruped' | 'winged';
   baseStats: Stats;
   body: BodyPlan;

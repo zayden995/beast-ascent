@@ -168,13 +168,15 @@ export function abilityPower(def: AbilityDef, rank: number): number {
 /** What unlocked passives contribute, summed over an ability list. */
 export interface PassiveSummary {
   mods: StatMod[];
+  /** Mods that only apply while the player is unseen (the Tiger's Stalk). */
+  unseenMods: StatMod[];
   lowHealthBonus: { threshold: number; pct: number } | null;
   swimSpeedPct: number;
   foodBonus: Partial<Record<string, number>>;
 }
 
 export function summarizePassives(p: Progress, abilityIds: string[]): PassiveSummary {
-  const out: PassiveSummary = { mods: [], lowHealthBonus: null, swimSpeedPct: 0, foodBonus: {} };
+  const out: PassiveSummary = { mods: [], unseenMods: [], lowHealthBonus: null, swimSpeedPct: 0, foodBonus: {} };
   for (const id of abilityIds) {
     const def = ABILITIES[id];
     const rank = abilityRank(p, id);
@@ -182,7 +184,7 @@ export function summarizePassives(p: Progress, abilityIds: string[]): PassiveSum
     const power = abilityPower(def, rank);
     const fx = def.effect;
     for (const m of fx.mods ?? []) {
-      out.mods.push({
+      (fx.whileUnseen ? out.unseenMods : out.mods).push({
         stat: m.stat,
         pct: m.pct !== undefined ? m.pct * power : undefined,
         flat: m.flat !== undefined ? m.flat * power : undefined,

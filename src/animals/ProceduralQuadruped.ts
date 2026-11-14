@@ -142,6 +142,16 @@ export class ProceduralQuadruped implements AnimalModel {
         b.add(new THREE.ConeGeometry(r * 0.16, r * 0.5, 5), c.accent, [0, r * 1.05, z], [-0.5, 0, 0]);
       }
     }
+    if (this.has('stripes')) {
+      // Dark bands over the back and down the flanks. Each is a thin cap of an ellipsoid just
+      // wider than the body; the cap stops short of the belly, which stays pale.
+      const bands = 7;
+      for (let i = 0; i < bands; i++) {
+        const z = lerp(halfL * 0.5, -halfL * 0.72, i / (bands - 1));
+        const reach = i % 2 === 0 ? 1.25 : 1.45;
+        b.add(new THREE.SphereGeometry(1, 12, 6, 0, TAU, 0, reach), c.accent, [0, 0, z], [0, 0, 0], [r * w * 1.035, r * 1.035, 0.035 + (i % 3) * 0.01]);
+      }
+    }
     this.torso = b.build(this.material);
     this.body.add(this.torso);
   }
@@ -170,6 +180,14 @@ export class ProceduralQuadruped implements AnimalModel {
       const ub = new PartBuilder();
       ub.add(sphere(t * 1.3 * bulk), c.body, [0, 0, 0], [0, 0, 0], [1, 1.25, 1.2]);
       ub.add(new THREE.CylinderGeometry(t * 1.3 * bulk, t * 0.92, upperLen, 8), c.body, [0, -upperLen / 2, 0]);
+      // Stripes wrap only the outer side of each leg, like a real tiger's.
+      const outer = (d.x * Math.PI) / 2 - 1.25;
+      if (this.has('stripes')) {
+        for (const f of [0.28, 0.62]) {
+          const rad = lerp(t * 1.3 * bulk, t * 0.92, f) * 1.07;
+          ub.add(new THREE.CylinderGeometry(rad, rad, 0.028, 8, 1, true, outer, 2.5), c.accent, [0, -upperLen * f, 0]);
+        }
+      }
       upper.add(ub.build(this.material));
 
       const lower = new THREE.Group();
@@ -177,6 +195,10 @@ export class ProceduralQuadruped implements AnimalModel {
       const lb = new PartBuilder();
       lb.add(sphere(t * 0.95), c.body, [0, 0, 0]);
       lb.add(new THREE.CylinderGeometry(t * 0.9, t * 0.72, lowerLen - t * 0.5, 8), c.body, [0, -(lowerLen - t * 0.5) / 2, 0]);
+      if (this.has('stripes')) {
+        const rad = lerp(t * 0.9, t * 0.72, 0.3) * 1.08;
+        lb.add(new THREE.CylinderGeometry(rad, rad, 0.026, 8, 1, true, outer, 2.5), c.accent, [0, -(lowerLen - t * 0.5) * 0.3, 0]);
+      }
       lb.add(sphere(t * 1.1), c.accent, [0, -lowerLen + t * 0.6, t * 0.35], [0, 0, 0], [1, 0.55, 1.35]);
       lower.add(lb.build(this.material));
       upper.add(lower);
@@ -229,6 +251,17 @@ export class ProceduralQuadruped implements AnimalModel {
         hb.add(sphere(e), c.accent, [s * hr * 0.72, hr * 0.72, -hr * 0.12], [0, 0, 0], [1, 1, 0.42]);
       } else if (p.ears === 'long') {
         hb.add(new THREE.ConeGeometry(e * 0.42, e * 1.9, 5), c.body, [s * (hr * 0.75 + e * 0.5), hr * 0.62 + e * 0.35, -hr * 0.3], [0, 0, -s * 0.95]);
+      }
+    }
+
+    if (this.has('stripes')) {
+      for (const x of [-0.2, 0, 0.2]) {
+        hb.add(new THREE.BoxGeometry(hr * 0.07, hr * 0.06, hr * (x === 0 ? 0.55 : 0.4)), c.accent, [x * hr, hr * 0.9, hr * 0.12], [-0.12, 0, x * 0.5]);
+      }
+      for (const s of [1, -1]) {
+        for (const k of [0, 1]) {
+          hb.add(new THREE.BoxGeometry(hr * 0.06, hr * 0.07, hr * 0.42), c.accent, [s * hr * (0.96 - k * 0.04), -hr * (0.05 + k * 0.22), hr * 0.15], [0, s * 0.15, s * (0.35 - k * 0.45)]);
+        }
       }
     }
 
@@ -312,7 +345,10 @@ export class ProceduralQuadruped implements AnimalModel {
         b.add(sphere(1), color, [0, segLen * 0.5, 0], [0, 0, 0], [rad, segLen * 0.72, rad]);
       } else {
         const thick = p.legThickness * (p.tail === 'tuft' ? 0.3 : 0.42) * (1 - i * 0.22);
-        b.add(new THREE.CylinderGeometry(thick * 0.8, thick, segLen, 6), c.body, [0, segLen / 2, 0]);
+        b.add(new THREE.CylinderGeometry(thick * 0.8, thick, segLen, 6), color, [0, segLen / 2, 0]);
+        if (this.has('stripes') && p.tail === 'thin' && !last) {
+          for (const f of [0.3, 0.72]) b.add(new THREE.CylinderGeometry(thick * 1.12, thick * 1.12, segLen * 0.14, 6), c.accent, [0, segLen * f, 0]);
+        }
         if (last && p.tail === 'tuft') b.add(sphere(p.legThickness * 0.75), c.accent, [0, segLen, 0], [0, 0, 0], [1, 1.5, 1]);
       }
       g.add(b.build(this.material));

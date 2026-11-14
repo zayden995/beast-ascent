@@ -283,6 +283,7 @@ html, body {
 .dmg { position: absolute; left: 0; top: 0; font-size: 1.25rem; font-weight: 700; color: var(--cream); text-shadow: 0 2px 0 var(--bark), 0 0 4px #000; animation: dmg 0.8s ease-out forwards; white-space: nowrap; }
 .dmg.hurt { color: var(--ember); font-size: 1.45rem; }
 .dmg.bleed { color: #ff9a8a; font-size: 1rem; }
+.dmg.ambush { color: var(--honey); font-size: 1.75rem; }
 .dmg.heal { color: var(--lichen); }
 .dmg.miss { color: var(--pond); font-size: 1rem; }
 @keyframes dmg {

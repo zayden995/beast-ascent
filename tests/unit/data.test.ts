@@ -7,6 +7,7 @@ import { ENEMIES } from '../../src/data/enemies.ts';
 import { canEat } from '../../src/data/food.ts';
 import { SPECIES, isPlayable } from '../../src/data/species.ts';
 import { STAGES } from '../../src/data/stages.ts';
+import { TUNING } from '../../src/data/tuning.ts';
 import { parseSave, sanitizeSave } from '../../src/logic/saveData.ts';
 import { newProgress } from '../../src/logic/progression.ts';
 
@@ -18,6 +19,29 @@ test('data: all seven species are defined; wolf, lion and bear are playable in M
   assert.deepEqual(SPECIES.filter((s) => isPlayable(s, 1)).map((s) => s.id).sort(), ['bear', 'lion', 'wolf']);
   const bear = SPECIES.find((s) => s.id === 'bear');
   assert.deepEqual(bear?.variants.map((v) => v.id), ['brown', 'polar']);
+});
+
+// Update this list as each Milestone 2 species is finished (see PLAN.md).
+test('data: Milestone 2 so far: the Tiger is playable, the species whose step is not built stay locked', () => {
+  assert.equal(TUNING.currentMilestone, 2);
+  const now = SPECIES.filter((s) => isPlayable(s, TUNING.currentMilestone)).map((s) => s.id).sort();
+  assert.deepEqual(now, ['bear', 'lion', 'tiger', 'wolf']);
+  for (const id of ['elephant', 'crocodile', 'eagle']) {
+    assert.equal(SPECIES.find((s) => s.id === id)?.unfinished, true, `${id} must stay "Coming soon" until its step is built`);
+  }
+});
+
+test('data: the Tiger has stripes at every stage, and Ambush Strike and Stalk have real effects', () => {
+  const tiger = SPECIES.find((s) => s.id === 'tiger');
+  assert.ok(tiger);
+  for (const stage of ['juvenile', 'adult', 'alpha'] as const) {
+    assert.ok(tiger.stageFeatures[stage].includes('stripes'), `a ${stage} Tiger has stripes`);
+  }
+  assert.deepEqual(tiger.variants[0].abilities, ['tiger_ambush_strike', 'tiger_rend', 'tiger_double_claw', 'tiger_stalk']);
+  const ambush = ABILITIES.tiger_ambush_strike.effect;
+  assert.ok(ambush.kind === 'melee' && (ambush.behindBonus ?? 0) > 0, 'Ambush Strike hits harder from behind');
+  const stalk = ABILITIES.tiger_stalk.effect;
+  assert.ok(stalk.kind === 'passive' && stalk.whileUnseen === true && (stalk.mods?.length ?? 0) > 0, 'Stalk only works while unseen');
 });
 
 test('data: every ability a species lists exists, with exactly one signature', () => {
@@ -36,7 +60,7 @@ test('data: every ability a species lists exists, with exactly one signature', (
 });
 
 test('data: playable species have at least 3 unlockable abilities with no TODO effects', () => {
-  for (const species of SPECIES.filter((s) => isPlayable(s, 1))) {
+  for (const species of SPECIES.filter((s) => isPlayable(s, TUNING.currentMilestone))) {
     for (const variant of species.variants) {
       const unlockable = variant.abilities.map((id) => ABILITIES[id]).filter((d) => !d.signature);
       assert.ok(unlockable.length >= 3, `${species.id}/${variant.id} has ${unlockable.length} unlockables`);
@@ -66,7 +90,7 @@ test('data: biome order, forest boss and spawn zones are consistent', () => {
 });
 
 test('data: every playable species can run down every animal that flees', () => {
-  const playable = SPECIES.filter((s) => isPlayable(s, 1));
+  const playable = SPECIES.filter((s) => isPlayable(s, TUNING.currentMilestone));
   const slowestSprint = Math.min(...playable.map((s) => s.baseStats.sprintSpeed));
   const slowestWalk = Math.min(...playable.map((s) => s.baseStats.moveSpeed));
   const runners = Object.values(ENEMIES).filter((e) => e.behavior.fleeOnSight || e.behavior.fleeHealthPct > 0);
@@ -84,7 +108,7 @@ test('data: every playable species can run down every animal that flees', () => 
 const MAX_RIVALS_MET = 5;
 
 test('data: rival predators: every playable species meets 1 to 5 of the others and can outrun them', () => {
-  const playable = SPECIES.filter((s) => isPlayable(s, 1));
+  const playable = SPECIES.filter((s) => isPlayable(s, TUNING.currentMilestone));
   const slowestSprint = Math.min(...playable.map((s) => s.baseStats.sprintSpeed));
   const rivalZones = FOREST_SPAWNS.filter((z) => z.rivalOf);
   assert.ok(rivalZones.length >= 2);
@@ -162,6 +186,14 @@ test('save: the wounded mark round-trips, and a save from before it existed load
   assert.equal(parseSave(JSON.stringify({ ...goodSave(), progress: { ...goodSave().progress, wounded: true } }))?.progress.wounded, false, 'a Juvenile is never wounded');
 });
 
+test('save: a Tiger save loads, and keeps the free signature ability', () => {
+  const loaded = sanitizeSave({ ...goodSave(), speciesId: 'tiger', variantId: 'default' });
+  assert.ok(loaded);
+  assert.equal(loaded.speciesId, 'tiger');
+  assert.equal(loaded.progress.abilityRanks.tiger_ambush_strike, 1);
+  assert.equal(loaded.progress.abilityRanks.bear_heavy_swipe, undefined, 'abilities of another species are dropped');
+});
+
 test('save: corrupt, empty, old-version or locked-species saves are rejected', () => {
   assert.equal(parseSave(null), null);
   assert.equal(parseSave(''), null);
@@ -170,7 +202,7 @@ test('save: corrupt, empty, old-version or locked-species saves are rejected', (
   assert.equal(parseSave('"hello"'), null);
   assert.equal(sanitizeSave({ ...goodSave(), version: 0 }), null);
   assert.equal(sanitizeSave({ ...goodSave(), speciesId: 'dragon' }), null);
-  assert.equal(sanitizeSave({ ...goodSave(), speciesId: 'tiger', variantId: 'default' }), null);
+  assert.equal(sanitizeSave({ ...goodSave(), speciesId: 'elephant', variantId: 'default' }), null);
   assert.equal(sanitizeSave({ ...goodSave(), progress: null }), null);
   assert.equal(sanitizeSave({ ...goodSave(), progress: { ...goodSave().progress, stage: 'elder' } }), null);
 });

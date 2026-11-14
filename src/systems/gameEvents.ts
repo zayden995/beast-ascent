@@ -6,7 +6,8 @@ export type Tone = 'good' | 'bad' | 'info';
 
 /** Everything systems announce to each other and to the UI. */
 export interface GameEvents {
-  damage: { target: Actor; attacker: Actor | null; amount: number; kind: 'hit' | 'bleed' };
+  /** `ambush` is set when a hit from behind earned its bonus damage. */
+  damage: { target: Actor; attacker: Actor | null; amount: number; kind: 'hit' | 'bleed'; ambush?: boolean };
   dodged: { target: Actor };
   death: { actor: Actor; killer: Actor | null };
   heal: { target: Actor; amount: number };

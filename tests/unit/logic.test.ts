@@ -6,9 +6,10 @@ import { STAGES, previousStage } from '../../src/data/stages.ts';
 import { TUNING } from '../../src/data/tuning.ts';
 import { getSpecies, getVariant } from '../../src/data/species.ts';
 import { activeBiomeMods, describeMod, toStatMods } from '../../src/logic/biome.ts';
-import { lowHealthMultiplier, mitigate } from '../../src/logic/damage.ts';
+import { isBehind, lowHealthMultiplier, mitigate } from '../../src/logic/damage.ts';
 import { describeDeath } from '../../src/logic/deathText.ts';
 import { createForestHeight } from '../../src/logic/heightfield.ts';
+import { playerIsUnseen } from '../../src/logic/stealth.ts';
 import {
   abilityPower, addGrowth, addXp, applyDeath, evolve, evolveStatus, newProgress,
   summarizePassives, threatLevel, upgradeAbility, xpToNext,
@@ -80,6 +81,43 @@ test('damage: defense reduces damage but never below 1', () => {
   assert.equal(lowHealthMultiplier(0.3, { threshold: 0.4, pct: 0.25 }), 1.25);
   assert.equal(lowHealthMultiplier(0.5, { threshold: 0.4, pct: 0.25 }), 1);
   assert.equal(lowHealthMultiplier(0.1, null), 1);
+});
+
+test('damage: a hit lands from behind only when the attacker is in the rear arc of the target', () => {
+  // Yaw 0 faces +z, yaw PI faces -z (see Actor.faceToward).
+  assert.equal(isBehind(0, 0, 0, 0, -2), true, 'directly behind');
+  assert.equal(isBehind(0, 0, 0, 0, 2), false, 'directly in front');
+  assert.equal(isBehind(0, 0, 0, 2, 0), false, 'level with the target is a flank, not behind');
+  const deg = (d: number) => (d * Math.PI) / 180;
+  assert.equal(isBehind(0, 0, 0, 2 * Math.sin(deg(115)), 2 * Math.cos(deg(115))), false, '115 degrees from its facing is still a flank');
+  assert.equal(isBehind(0, 0, 0, 2 * Math.sin(deg(125)), 2 * Math.cos(deg(125))), true, '125 degrees from its facing is inside the rear arc');
+  assert.equal(isBehind(0, 0, 0, 2 * Math.sin(deg(-125)), 2 * Math.cos(deg(-125))), true, 'the arc is symmetric');
+  assert.equal(isBehind(Math.PI, 5, 5, 5, 8), true, 'a target facing -z has its back to +z');
+  assert.equal(isBehind(Math.PI / 2, 0, 0, -3, 0), true, 'a target facing +x has its back to -x');
+  assert.equal(isBehind(0, 3, 3, 3, 3), false, 'standing on the target is not behind it');
+});
+
+test('stealth: the player is unseen only while no animal is chasing, fighting or fleeing from it', () => {
+  assert.equal(playerIsUnseen([]), true);
+  assert.equal(playerIsUnseen(['idle', 'wander', 'return']), true, 'animals that have not noticed you, or gave up');
+  for (const reacting of ['chase', 'windup', 'charging', 'recover', 'flee']) {
+    assert.equal(playerIsUnseen(['idle', reacting, 'wander']), false, `an animal in "${reacting}" has noticed you`);
+  }
+});
+
+test('passives: Stalk speeds the Tiger up only while unseen, and grows with rank', () => {
+  const tiger = getVariant(getSpecies('tiger'), 'default');
+  const p = newProgress(tiger.abilities);
+  assert.deepEqual(summarizePassives(p, tiger.abilities).unseenMods, [], 'locked: nothing');
+  p.abilityRanks.tiger_stalk = 1;
+  const rank1 = summarizePassives(p, tiger.abilities);
+  assert.deepEqual(rank1.mods, [], 'it must never be an always-on bonus');
+  assert.equal(rank1.unseenMods.length, 1);
+  assert.equal(rank1.unseenMods[0].stat, 'speed');
+  p.abilityRanks.tiger_stalk = 3;
+  const rank3 = summarizePassives(p, tiger.abilities);
+  assert.ok((rank3.unseenMods[0].pct ?? 0) > (rank1.unseenMods[0].pct ?? 0), 'a higher rank is faster');
+  assert.ok(Math.abs((rank3.unseenMods[0].pct ?? 0) - (rank1.unseenMods[0].pct ?? 0) * 1.4) < 1e-9);
 });
 
 test('progression: new game starts as a level 1 juvenile with only the signature ability', () => {

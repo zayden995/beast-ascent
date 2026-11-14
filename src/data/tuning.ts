@@ -89,5 +89,6 @@ export const TUNING = {
   },
   /** The highest life stage the game allows: Alpha, built in Milestone 2. */
   maxPlayableStage: 'alpha' as StageId,
-  currentMilestone: 1,
+  /** Species also need to be finished (`unfinished` in species.ts) to be playable. */
+  currentMilestone: 2,
 };

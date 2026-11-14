@@ -1,7 +1,7 @@
 import type { EventBus } from '../core/events.ts';
 import { angleDelta } from '../core/math.ts';
 import { TUNING } from '../data/tuning.ts';
-import { lowHealthMultiplier, mitigate } from '../logic/damage.ts';
+import { isBehind, lowHealthMultiplier, mitigate } from '../logic/damage.ts';
 import type { Actor } from './actor.ts';
 import type { GameEvents } from './gameEvents.ts';
 
@@ -13,6 +13,8 @@ export interface HitOptions {
   slow?: { pct: number; duration: number };
   bleed?: { dps: number; duration: number };
   lowHealthBonus?: { threshold: number; pct: number } | null;
+  /** Extra damage (0.75 = +75%) when the target has its back to the attacker. */
+  behindBonus?: number;
 }
 
 const BLEED_TICK = 0.5;
@@ -66,7 +68,8 @@ export class Combat {
       this.events.emit('dodged', { target });
       return 0;
     }
-    const bonus = lowHealthMultiplier(target.hp / target.stats.maxHealth, opts.lowHealthBonus ?? null);
+    const ambush = !!opts.behindBonus && isBehind(target.yaw, target.pos.x, target.pos.z, fromX, fromZ);
+    const bonus = lowHealthMultiplier(target.hp / target.stats.maxHealth, opts.lowHealthBonus ?? null) * (ambush ? 1 + (opts.behindBonus ?? 0) : 1);
     const amount = mitigate(opts.damage * bonus, target.stats.defense, TUNING.combat.defenseK);
     if (amount <= 0) return 0;
 
@@ -88,15 +91,15 @@ export class Combat {
     if (opts.slow) target.applySlow(opts.slow.pct, opts.slow.duration);
     if (opts.bleed) target.bleeds.push({ dps: opts.bleed.dps, time: opts.bleed.duration, acc: 0 });
 
-    this.applyRaw(attacker, target, amount, 'hit');
+    this.applyRaw(attacker, target, amount, 'hit', ambush);
     return amount;
   }
 
-  private applyRaw(attacker: Actor | null, target: Actor, amount: number, kind: 'hit' | 'bleed'): void {
+  private applyRaw(attacker: Actor | null, target: Actor, amount: number, kind: 'hit' | 'bleed', ambush = false): void {
     target.hp = Math.max(0, target.hp - amount);
     target.lastHitTime = this.clock.time;
     target.anim.hitFlash = 1;
-    this.events.emit('damage', { target, attacker, amount, kind });
+    this.events.emit('damage', { target, attacker, amount, kind, ambush });
     if (target.hp <= 0) {
       target.alive = false;
       target.deathTime = this.clock.time;

@@ -148,6 +148,7 @@ export class AbilitySystem {
           knockback: fx.knockback,
           bleed: fx.bleed ? { dps: o.stats.damage * fx.bleed.dpsMult * c.power, duration: fx.bleed.duration } : undefined,
           lowHealthBonus,
+          behindBonus: fx.behindBonus,
         });
       }
       if (c.t >= fx.windup + (hits - 1) * interval + SWING - LEAD) this.finish();

@@ -199,6 +199,7 @@ export class Hud {
     const status: string[] = [];
     if (g.world.inRefuge(a.pos.x, a.pos.z)) status.push('Safe at the den');
     if (p.wounded) status.push('Wounded');
+    if (g.player.stalking) status.push('Unseen');
     for (const s of g.player.abilities.slots) {
       const t = a.buffTime(s.def.id);
       if (t > 0) status.push(`${s.def.name} ${Math.ceil(t)}s`);

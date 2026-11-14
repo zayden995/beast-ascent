@@ -7,6 +7,7 @@ import { getBoss } from '../data/bosses.ts';
 import { FOODS, canEat } from '../data/food.ts';
 import { TUNING } from '../data/tuning.ts';
 import { enemyXp, growthNeeded } from '../logic/progression.ts';
+import { playerIsUnseen } from '../logic/stealth.ts';
 import type { Actor } from '../systems/actor.ts';
 import { EnemyActor, updateEnemy } from '../systems/ai.ts';
 import type { ThirdPersonCamera } from '../systems/camera.ts';
@@ -102,10 +103,10 @@ export class Game {
     const cam = this.ctx.cam.camera;
     const playerActor = this.player.actor;
 
-    ev.on('damage', ({ target, amount, kind }) => {
+    ev.on('damage', ({ target, amount, kind, ambush }) => {
       if (target instanceof EnemyActor) target.onDamaged();
-      const cls = target === playerActor ? 'hurt' : kind === 'bleed' ? 'bleed' : '';
-      this.labels.number(cam, target.pos, target.model.height, String(amount), cls);
+      const cls = target === playerActor ? 'hurt' : kind === 'bleed' ? 'bleed' : ambush ? 'ambush' : '';
+      this.labels.number(cam, target.pos, target.model.height, ambush ? `${amount}!` : String(amount), cls);
     });
     ev.on('dodged', ({ target }) => this.labels.number(cam, target.pos, target.model.height, 'Dodged', 'miss'));
     ev.on('heal', ({ target, amount }) => this.labels.number(cam, target.pos, target.model.height, `+${amount}`, 'heal'));
@@ -169,12 +170,16 @@ export class Game {
     this.player.update(dt);
 
     const ai = { player: pa, world, combat: this.combat, fx: this.fx, rand: this.rand };
+    const awakeStates: string[] = [];
     for (const e of this.spawner.enemies) {
       // Distant animals are hidden and stop thinking (the boss always stays awake).
       const awake = e.isBoss || e.distanceTo(pa) < TUNING.enemies.sleepDistance;
       e.model.root.visible = awake;
       if (awake) updateEnemy(e, dt, ai);
+      if (awake && e.alive) awakeStates.push(e.state);
     }
+    // The Tiger's Stalk works while no awake animal has noticed the player.
+    this.player.setUnseen(playerIsUnseen(awakeStates));
 
     this.separate();
     this.combat.update(dt, pa);

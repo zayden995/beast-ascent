@@ -42,6 +42,8 @@ export class PlayerController {
   /** Biome buffs/nerfs applying right now (shown on the HUD). */
   activeMods: BiomeModDef[] = [];
   sprinting = false;
+  /** No wild animal has noticed the player (set by the game each frame). Powers the Tiger's Stalk. */
+  unseen = true;
 
   private d: PlayerDeps;
   private swing: { t: number; duration: number; hit: boolean } | null = null;
@@ -82,6 +84,17 @@ export class PlayerController {
     events.on('evolved', () => this.rebuildModel());
   }
 
+  /** True while a Stalk-style passive is boosting the animal because nobody has noticed it. */
+  get stalking(): boolean {
+    return this.unseen && this.d.growth.getPassives().unseenMods.length > 0;
+  }
+
+  setUnseen(unseen: boolean): void {
+    if (unseen === this.unseen) return;
+    this.unseen = unseen;
+    if (this.d.growth.getPassives().unseenMods.length > 0) this.actor.refreshStats();
+  }
+
   private statInputs(): StatInputs {
     const { growth } = this.d;
     const stage = STAGES[growth.progress.stage];
@@ -90,7 +103,11 @@ export class PlayerController {
       sizeScale: stage.sizeScale,
       powerMult: stage.powerMult,
       levelBonus: T.levelBonusPct * (growth.progress.level - 1),
-      mods: [...toStatMods(this.activeMods), ...growth.getPassives().mods],
+      mods: [
+        ...toStatMods(this.activeMods),
+        ...growth.getPassives().mods,
+        ...(this.unseen ? growth.getPassives().unseenMods : []),
+      ],
     };
   }
 

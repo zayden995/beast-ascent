@@ -99,7 +99,9 @@ export const SPECIES: SpeciesDef[] = [
     ],
   },
 
-  // ---------- Playable from Milestone 2. Numbers are placeholders until then. ----------
+  // ---------- Milestone 2 ----------
+  // Tiger is finished (M2 step 2). Elephant, Crocodile and Eagle are `unfinished`: placeholder
+  // numbers, locked as "Coming soon" until their own steps are built (see PLAN.md).
   {
     id: 'tiger', name: 'Tiger', role: 'High damage, stealthy ambusher', diet: 'carnivore',
     playableFrom: 2, rig: 'quadruped',
@@ -108,7 +110,7 @@ export const SPECIES: SpeciesDef[] = [
       attackSpeed: 1.5, defense: 5, size: 1,
     },
     body: { ...bigCatBody, bodyLength: 1.45, tail: 'thin', tailLength: 0.95 },
-    stageFeatures: { juvenile: [], adult: [], alpha: ['scar'] }, // TODO(M2): stripes
+    stageFeatures: { juvenile: ['stripes'], adult: ['stripes', 'tailTipDark'], alpha: ['stripes', 'tailTipDark', 'scar'] },
     attack: { range: 1.7, arcDeg: 110, knockback: 4 },
     variants: [
       {
@@ -124,7 +126,7 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'elephant', name: 'Elephant', role: 'Huge health, slow, charges and stomps', diet: 'herbivore',
-    playableFrom: 2, rig: 'quadruped',
+    playableFrom: 2, unfinished: true, rig: 'quadruped', // TODO(M2 step 3)
     baseStats: {
       maxHealth: 220, stamina: 80, staminaRegen: 12, damage: 18, moveSpeed: 4.2, sprintSpeed: 7.2,
       attackSpeed: 0.9, defense: 14, size: 1,
@@ -151,7 +153,7 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'crocodile', name: 'Crocodile', role: 'Ambusher, strong near water, death roll', diet: 'carnivore',
-    playableFrom: 2, rig: 'quadruped',
+    playableFrom: 2, unfinished: true, rig: 'quadruped', // TODO(M2 step 4)
     baseStats: {
       maxHealth: 130, stamina: 90, staminaRegen: 14, damage: 17, moveSpeed: 4.4, sprintSpeed: 7.6,
       attackSpeed: 1.2, defense: 12, size: 1,
@@ -186,7 +188,7 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'eagle', name: 'Eagle', role: 'Flying, dive attacks, fragile', diet: 'carnivore',
-    playableFrom: 2, rig: 'winged', // TODO(M2): winged rig and flight
+    playableFrom: 2, unfinished: true, rig: 'winged', // TODO(M2 step 5): winged rig and flight
     baseStats: {
       maxHealth: 65, stamina: 130, staminaRegen: 24, damage: 12, moveSpeed: 6.5, sprintSpeed: 12,
       attackSpeed: 1.6, defense: 2, size: 1,
@@ -223,5 +225,5 @@ export function getVariant(species: SpeciesDef, variantId: string) {
 }
 
 export function isPlayable(species: SpeciesDef, milestone: number): boolean {
-  return species.playableFrom <= milestone;
+  return species.playableFrom <= milestone && !species.unfinished;
 }
