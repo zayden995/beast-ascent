@@ -3,9 +3,11 @@ import { createAnimState } from '../animals/AnimalModel.ts';
 import type { AnimalModel, AnimState } from '../animals/AnimalModel.ts';
 import type { StatMod, Stats } from '../core/types.ts';
 import { TUNING } from '../data/tuning.ts';
+import { climbStep, slideStep } from '../logic/climb.ts';
+import { depthGrip } from '../logic/river.ts';
 import { computeStats } from '../logic/stats.ts';
 import type { StatInputs } from '../logic/stats.ts';
-import type { ForestWorld } from '../world/forest.ts';
+import type { BiomeWorld } from '../world/world.ts';
 
 export type Team = 'player' | 'wild';
 
@@ -181,23 +183,56 @@ export class Actor {
 /**
  * Moves an actor by its velocity, keeps it out of obstacles and inside the world,
  * and resolves ground, gravity and swimming. Large steps are split so nothing tunnels.
+ * A river's current carries an animal that is in its water, and (in a biome with cliffs) ground too steep
+ * to climb stops one that walks into it.
  */
-export function integrate(a: Actor, dt: number, world: ForestWorld): void {
-  const mx = (a.vx + a.knock.x) * dt;
-  const mz = (a.vz + a.knock.z) * dt;
+export function integrate(a: Actor, dt: number, world: BiomeWorld): void {
+  let mx = (a.vx + a.knock.x) * dt;
+  let mz = (a.vz + a.knock.z) * dt;
+  if (world.rivers.length && !a.flying) {
+    // The current pushes whatever is in the river: fully in deep water, barely where it only paddles.
+    const surface = world.waterSurface(a.pos.x, a.pos.z);
+    if (surface !== null && a.pos.y < surface + 0.2) {
+      const grip = depthGrip(surface - world.heightAt(a.pos.x, a.pos.z), TUNING.river.fullCurrentDepth);
+      if (grip > 0) {
+        const flow = world.currentAt(a.pos.x, a.pos.z);
+        mx += flow.x * grip * dt;
+        mz += flow.z * grip * dt;
+      }
+    }
+  }
   const steps = Math.min(6, Math.max(1, Math.ceil(Math.hypot(mx, mz) / 0.35)));
   // A flier passes over every trunk and rock that is lower than it is.
   const height = a.flying ? a.pos.y - world.heightAt(a.pos.x, a.pos.z) : 0;
+  const maxSlope = a.flying ? undefined : world.layout.terrain.maxClimbSlope;
   for (let i = 0; i < steps; i++) {
-    a.pos.x += mx / steps;
-    a.pos.z += mz / steps;
+    let sx = mx / steps;
+    let sz = mz / steps;
+    if (maxSlope !== undefined) {
+      const feet = Math.max(a.pos.y, world.heightAt(a.pos.x, a.pos.z));
+      const step = climbStep(world.heightAt, a.pos.x, a.pos.z, feet, sx, sz, maxSlope);
+      sx = step.dx;
+      sz = step.dz;
+    }
+    a.pos.x += sx;
+    a.pos.z += sz;
     world.constrain(a.pos, a.radius, height);
+  }
+  // Nothing can stand on a cliff face: whatever lands there (over the waterfall, off the top) slides to the bottom.
+  if (maxSlope !== undefined && a.grounded && !a.swimming) {
+    const slide = slideStep(world.heightAt, a.pos.x, a.pos.z, maxSlope, TUNING.cliff.slideSpeed, dt);
+    if (slide) {
+      a.pos.x += slide.dx;
+      a.pos.z += slide.dz;
+      world.constrain(a.pos, a.radius, height);
+    }
   }
   a.knock.multiplyScalar(Math.exp(-TUNING.combat.knockbackDecay * dt));
 
   const ground = world.heightAt(a.pos.x, a.pos.z);
-  const floatY = world.layout.waterY - a.model.height * 0.5;
-  const depth = world.waterDepth(a.pos.x, a.pos.z);
+  const surface = world.waterSurface(a.pos.x, a.pos.z);
+  const floatY = (surface ?? world.layout.waterY) - a.model.height * 0.5;
+  const depth = surface === null ? 0 : Math.max(0, surface - ground);
   a.wet = depth > 0;
   const canFloat = depth > 0 && ground < floatY;
   const floor = canFloat ? floatY : ground;

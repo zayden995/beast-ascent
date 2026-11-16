@@ -3,7 +3,8 @@ import { createAnimalModel } from '../animals/AnimalModel.ts';
 import type { BossDef, EnemyDef, SpawnZoneDef } from '../core/types.ts';
 import { getEnemy } from '../data/enemies.ts';
 import { TUNING } from '../data/tuning.ts';
-import type { ForestWorld } from '../world/forest.ts';
+import { isGuardZone } from '../logic/foxReserve.ts';
+import type { BiomeWorld } from '../world/world.ts';
 import { EnemyActor } from './ai.ts';
 
 const DEATH_SECONDS = 1.8;
@@ -14,12 +15,12 @@ export class Spawner {
   boss: EnemyActor | null = null;
 
   private scene: THREE.Scene;
-  private world: ForestWorld;
+  private world: BiomeWorld;
   private rand: () => number;
   private clock: { time: number };
   private respawns: { zone: SpawnZoneDef; at: number }[] = [];
 
-  constructor(scene: THREE.Scene, world: ForestWorld, rand: () => number, clock: { time: number }) {
+  constructor(scene: THREE.Scene, world: BiomeWorld, rand: () => number, clock: { time: number }) {
     this.scene = scene;
     this.world = world;
     this.rand = rand;
@@ -32,7 +33,7 @@ export class Spawner {
 
   private create(def: EnemyDef, level: number, sizeScale: number, isBoss: boolean, zone: SpawnZoneDef | null): EnemyActor {
     const size = def.baseStats.size * sizeScale;
-    const model = createAnimalModel({ body: def.body, colors: def.colors, features: def.features, size, headScale: 1 });
+    const model = createAnimalModel({ body: def.body, colors: def.colors, features: def.features, size, headScale: 1, rig: def.rig });
     const E = TUNING.enemies;
     // Bosses use their listed stats as-is; wild animals scale with level.
     const mods = isBoss
@@ -44,7 +45,7 @@ export class Spawner {
     const enemy = new EnemyActor(def, model, () => ({ base: def.baseStats, sizeScale, powerMult: 1, levelBonus: 0, mods }), isBoss, zone);
     enemy.level = level;
     // The guards of a fox food reserve ignore the player until the reserve is raided.
-    enemy.calm = zone?.guardOf !== undefined;
+    enemy.calm = isGuardZone(zone);
     this.scene.add(model.root);
     this.enemies.push(enemy);
     return enemy;
@@ -72,14 +73,16 @@ export class Spawner {
       const cx = zone.x + Math.cos(a) * d;
       const cz = zone.z + Math.sin(a) * d;
       if (this.world.waterDepth(cx, cz) > 0 || this.world.colliders.blocked(cx, cz, 1)) continue;
-      if (!this.world.isOpenGround(cx, cz, 1) || this.world.inRefuge(cx, cz, 2)) continue;
+      // The cave is built over, so only its own nest may stand inside it.
+      const clear = this.world.isOpenGround(cx, cz, 1) || (zone.lair === true && this.world.inCave(cx, cz));
+      if (!clear || this.world.inRefuge(cx, cz, 2)) continue;
       x = cx;
       z = cz;
       if (!avoid || Math.hypot(cx - avoid.x, cz - avoid.z) > 28) break;
     }
     this.place(e, x, z);
-    // A guard of a fox food reserve calls the middle of the reserve home, not the spot it happened to appear at.
-    if (zone.guardOf !== undefined) {
+    // A guard of a fox food reserve (or a lair) calls the middle of it home, not the spot it happened to appear at.
+    if (isGuardZone(zone)) {
       e.homeX = zone.x;
       e.homeZ = zone.z;
     }

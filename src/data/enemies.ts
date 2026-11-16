@@ -89,6 +89,91 @@ const list: EnemyDef[] = [
   },
 ];
 
+// ---------- The Jungle (Milestone 3) ----------
+list.push(
+  {
+    // Prey: a heavy, short-legged rodent that lives by the water. Runs on sight, in bursts, then tires.
+    id: 'capybara', name: 'Capybara',
+    baseStats: {
+      maxHealth: 70, stamina: 100, staminaRegen: 10, damage: 0, moveSpeed: 2.4, sprintSpeed: 6.8,
+      attackSpeed: 1, defense: 2, size: 1,
+    },
+    body: {
+      bodyLength: 1.05, bodyHeight: 0.5, bodyWidth: 0.44, legLength: 0.25, legThickness: 0.08,
+      neckLength: 0.12, neckAngle: 0.3, headSize: 0.32, snoutLength: 0.27,
+      ears: 'round', earSize: 0.04, tail: 'stub', tailLength: 0.04, chestBulk: 1.0,
+    },
+    colors: { body: 0x9a6b3f, belly: 0xb98a5a, accent: 0x6b4a2b },
+    features: [],
+    behavior: {
+      aggroRadius: 11, aggressive: false, fleeOnSight: true, fleeHealthPct: 1,
+      leashRadius: 55, wanderRadius: 14, fleeBurst: 3.2, windedSeconds: 5, windedSpeedMult: 0.45,
+      woundedSpeedMult: 0.65,
+      senses: { front: 1.3 },
+    },
+    attacks: [],
+    xp: 14, carcassGrowth: 18,
+  },
+  {
+    // Small, quick and bold in a troop: bites at close range, bolts when badly hurt.
+    id: 'monkey', name: 'Monkey',
+    baseStats: {
+      maxHealth: 46, stamina: 100, staminaRegen: 10, damage: 7, moveSpeed: 3.2, sprintSpeed: 7.6,
+      attackSpeed: 1, defense: 0, size: 1,
+    },
+    body: {
+      bodyLength: 0.55, bodyHeight: 0.24, bodyWidth: 0.2, legLength: 0.34, legThickness: 0.045,
+      neckLength: 0.1, neckAngle: 0.9, headSize: 0.2, snoutLength: 0.07,
+      ears: 'round', earSize: 0.07, tail: 'thin', tailLength: 0.62, chestBulk: 1.1,
+    },
+    colors: { body: 0x7a5a3a, belly: 0xd9c29a, accent: 0x4a3524 },
+    features: [],
+    behavior: {
+      aggroRadius: 8, aggressive: true, fleeOnSight: false, fleeHealthPct: 0.35,
+      leashRadius: 32, wanderRadius: 14, fleeBurst: 2.5, windedSeconds: 4.5, windedSpeedMult: 0.45,
+      woundedSpeedMult: 0.7,
+    },
+    attacks: [
+      {
+        id: 'bite', kind: 'melee', range: 0.8, windup: 0.28, recover: 0.45, damageMult: 1,
+        arcDeg: 100, knockback: 2, cooldown: 0.9,
+      },
+    ],
+    xp: 12, carcassGrowth: 9,
+  },
+  {
+    // Fighter: a big, thick-skinned browser with a pale saddle. Attacks on sight, charges from range, never runs.
+    id: 'tapir', name: 'Tapir',
+    baseStats: {
+      maxHealth: 110, stamina: 100, staminaRegen: 10, damage: 10, moveSpeed: 2.4, sprintSpeed: 6.6,
+      attackSpeed: 1, defense: 7, size: 1,
+    },
+    body: {
+      bodyLength: 1.3, bodyHeight: 0.66, bodyWidth: 0.5, legLength: 0.5, legThickness: 0.11,
+      neckLength: 0.2, neckAngle: 0.25, headSize: 0.36, snoutLength: 0.42,
+      ears: 'round', earSize: 0.08, tail: 'stub', tailLength: 0.06, chestBulk: 1.1,
+    },
+    colors: { body: 0x35302d, belly: 0x4a433e, accent: 0x242120, saddle: 0xe4dfd2 },
+    features: ['saddle'],
+    behavior: {
+      aggroRadius: 10, aggressive: true, fleeOnSight: false, fleeHealthPct: 0,
+      leashRadius: 38, wanderRadius: 12, fleeBurst: 0, windedSeconds: 0, windedSpeedMult: 1,
+      woundedSpeedMult: 1,
+    },
+    attacks: [
+      {
+        id: 'shove', kind: 'melee', range: 1.1, windup: 0.5, recover: 0.7, damageMult: 1,
+        arcDeg: 100, knockback: 6, cooldown: 1.5,
+      },
+      {
+        id: 'charge', kind: 'charge', range: 12, minRange: 5, windup: 0.7, recover: 1.0,
+        damageMult: 1.6, knockback: 9, cooldown: 7, speed: 13, duration: 0.8,
+      },
+    ],
+    xp: 28, carcassGrowth: 24,
+  },
+);
+
 /** A wild predator that looks like a playable species: the adult body, colours and features. */
 function rival(speciesId: string, variantId: string, def: Omit<EnemyDef, 'body' | 'colors' | 'features'>): EnemyDef {
   const species = getSpecies(speciesId);
@@ -161,6 +246,114 @@ list.push(
       },
     ],
     xp: 50, carcassGrowth: 30,
+  }),
+);
+
+// The Jungle's snakes: a few of them lie about in the undergrowth, and a nest of bigger, darker ones guards the cave
+// next to the boss's arena. They are slow to chase, quick to strike, and they strike from a rearing start.
+const snakeStats = { staminaRegen: 10, stamina: 100, attackSpeed: 1 };
+list.push(
+  {
+    id: 'snake', name: 'Snake', rig: 'serpent',
+    baseStats: { ...snakeStats, maxHealth: 48, damage: 9, moveSpeed: 1.8, sprintSpeed: 5.6, defense: 1, size: 1 },
+    // bodyLength is the length of the whole snake, bodyWidth how thick it is, headSize how wide its head is.
+    body: {
+      bodyLength: 1.9, bodyHeight: 0.12, bodyWidth: 0.12, legLength: 0, legThickness: 0,
+      neckLength: 0, neckAngle: 0, headSize: 0.14, snoutLength: 0, ears: 'none', earSize: 0, tail: 'thin', tailLength: 0, chestBulk: 1,
+    },
+    colors: { body: 0xb89a3c, belly: 0xf0e6b4, accent: 0x4d3318 },
+    features: [],
+    behavior: {
+      aggroRadius: 6, aggressive: true, fleeOnSight: false, fleeHealthPct: 0,
+      leashRadius: 22, wanderRadius: 8, fleeBurst: 0, windedSeconds: 0, windedSpeedMult: 1,
+      woundedSpeedMult: 1,
+    },
+    attacks: [
+      {
+        id: 'bite', kind: 'melee', range: 0.9, windup: 0.32, recover: 0.6, damageMult: 1,
+        arcDeg: 90, knockback: 1, cooldown: 1.2,
+      },
+      {
+        id: 'strike', kind: 'charge', range: 5, minRange: 2, windup: 0.5, recover: 0.9,
+        damageMult: 1.4, knockback: 3, cooldown: 4.5, speed: 11, duration: 0.35,
+      },
+    ],
+    xp: 18, carcassGrowth: 10,
+  },
+  {
+    // The nest's snakes: darker, longer and thicker, with pale bands, and they hit harder.
+    id: 'cave_snake', name: 'Cave Snake', rig: 'serpent',
+    baseStats: { ...snakeStats, maxHealth: 66, damage: 10, moveSpeed: 1.9, sprintSpeed: 5.8, defense: 4, size: 1.35 },
+    body: {
+      bodyLength: 2.3, bodyHeight: 0.16, bodyWidth: 0.16, legLength: 0, legThickness: 0,
+      neckLength: 0, neckAngle: 0, headSize: 0.19, snoutLength: 0, ears: 'none', earSize: 0, tail: 'thin', tailLength: 0, chestBulk: 1,
+    },
+    colors: { body: 0x2b2733, belly: 0xcfc8dd, accent: 0xb9aedd },
+    features: [],
+    behavior: {
+      aggroRadius: 7, aggressive: true, fleeOnSight: false, fleeHealthPct: 0,
+      leashRadius: 24, wanderRadius: 4, fleeBurst: 0, windedSeconds: 0, windedSpeedMult: 1,
+      woundedSpeedMult: 1,
+    },
+    attacks: [
+      {
+        id: 'bite', kind: 'melee', range: 1.1, windup: 0.34, recover: 0.6, damageMult: 1.1,
+        arcDeg: 90, knockback: 2, cooldown: 1.3,
+      },
+      {
+        id: 'strike', kind: 'charge', range: 6, minRange: 2.2, windup: 0.5, recover: 0.9,
+        damageMult: 1.6, knockback: 4, cooldown: 4.5, speed: 12, duration: 0.35,
+      },
+    ],
+    xp: 40, carcassGrowth: 22,
+  },
+);
+
+// The Jungle's rivals: a tiger, alone in its territory, and a crocodile that lives in the river.
+list.push(
+  rival('tiger', 'default', {
+    // Fast claws and a long pounce.
+    id: 'rival_tiger', name: 'Tiger',
+    baseStats: {
+      maxHealth: 95, stamina: 100, staminaRegen: 10, damage: 12, moveSpeed: 2.8, sprintSpeed: 7.0,
+      attackSpeed: 1, defense: 5, size: 1,
+    },
+    behavior: { ...stands, aggroRadius: 13, leashRadius: 42, wanderRadius: 15 },
+    attacks: [
+      {
+        id: 'claw', kind: 'melee', range: 1.3, windup: 0.4, recover: 0.6, damageMult: 1,
+        arcDeg: 130, knockback: 6, cooldown: 1.4,
+      },
+      {
+        id: 'pounce', kind: 'charge', range: 10, minRange: 5, windup: 0.6, recover: 0.9,
+        damageMult: 1.6, knockback: 9, cooldown: 6.5, speed: 15, duration: 0.55,
+      },
+    ],
+    xp: 45, carcassGrowth: 26,
+  }),
+  rival('crocodile', 'default', {
+    // Slow and armoured. It wanders in the water, bites hard, and sweeps its tail at anything close.
+    id: 'rival_crocodile', name: 'Crocodile',
+    baseStats: {
+      maxHealth: 130, stamina: 100, staminaRegen: 10, damage: 12, moveSpeed: 2.2, sprintSpeed: 6.4,
+      attackSpeed: 1, defense: 9, size: 1,
+    },
+    behavior: { ...stands, aggroRadius: 10, leashRadius: 34, wanderRadius: 10, aquatic: true },
+    attacks: [
+      {
+        id: 'bite', kind: 'melee', range: 1.4, windup: 0.5, recover: 0.8, damageMult: 1.2,
+        arcDeg: 110, knockback: 5, cooldown: 1.7,
+      },
+      {
+        id: 'tail_sweep', kind: 'aoe', range: 1.8, radius: 4, windup: 0.8, recover: 1.0,
+        damageMult: 1.0, knockback: 8, cooldown: 8,
+      },
+      {
+        id: 'lunge', kind: 'charge', range: 8, minRange: 4, windup: 0.55, recover: 0.9,
+        damageMult: 1.5, knockback: 7, cooldown: 7, speed: 13, duration: 0.5,
+      },
+    ],
+    xp: 55, carcassGrowth: 32,
   }),
 );
 

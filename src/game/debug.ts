@@ -63,6 +63,13 @@ export function installDebug(app: App): void {
       const steps = Math.round(seconds / dt);
       for (let i = 0; i < steps; i++) app.titleLife?.update(dt);
     },
+    /** Takes the animal through a gate to another biome, as pressing E at the gate would. */
+    travel(biome: 'forest' | 'jungle', arrival: 'den' | 'onward' | 'return' = 'return') {
+      const g = app.game;
+      if (!g) return;
+      g.growth.profile.biome = biome;
+      app.startGame(g.growth.profile, g.slot, false, arrival);
+    },
     /** 0 = midnight, 0.5 = noon. */
     setTimeOfDay(time: number) {
       app.sky.setTime(time);
@@ -81,6 +88,8 @@ export function installDebug(app: App): void {
       return {
         screen: app.screen,
         ...sky,
+        biome: g.world.biome.id,
+        savedBiome: g.growth.profile.biome,
         time: g.clock.time,
         prompt: g.prompt,
         gateOpen: g.world.isGateOpen(),
@@ -95,7 +104,7 @@ export function installDebug(app: App): void {
           x: a.pos.x, y: a.pos.y, z: a.pos.z, yaw: a.yaw,
           hp: a.hp, maxHp: a.stats.maxHealth, stamina: a.stamina, maxStamina: a.stats.stamina,
           damage: a.stats.damage, moveSpeed: a.stats.moveSpeed, defense: a.stats.defense, size: a.stats.size,
-          speed: Math.hypot(a.vx, a.vz), alive: a.alive, dead: g.player.dead, safe: g.world.inRefuge(a.pos.x, a.pos.z), grounded: a.grounded, swimming: a.swimming, wet: a.wet, flying: a.flying, altitude: a.altitude, vy: a.vy, invuln: a.invuln,
+          speed: Math.hypot(a.vx, a.vz), current: g.world.currentAt(a.pos.x, a.pos.z), waterDepth: g.world.waterDepth(a.pos.x, a.pos.z), alive: a.alive, dead: g.player.dead, safe: g.world.inRefuge(a.pos.x, a.pos.z), grounded: a.grounded, swimming: a.swimming, wet: a.wet, flying: a.flying, altitude: a.altitude, vy: a.vy, invuln: a.invuln,
           level: p.level, xp: p.xp, abilityPoints: p.abilityPoints, stage: p.stage, growth: p.growth,
           ranks: { ...p.abilityRanks },
           mods: g.player.activeMods.map((m) => `${m.stat}:${m.pct}`),
@@ -108,7 +117,7 @@ export function installDebug(app: App): void {
           state: e.state, drinking: e.drinking, calm: e.calm, provoked: e.provoked, alive: e.alive, boss: e.isBoss, stun: e.stun, slow: e.slowTime, bleeds: e.bleeds.length,
           dist: e.distanceTo(a),
         })),
-        food: g.food.items.map((f) => ({ kind: f.kind, x: f.pos.x, z: f.pos.z, available: f.available, label: f.label, reserve: f.reserve })),
+        food: g.food.items.map((f) => ({ kind: f.kind, x: f.pos.x, z: f.pos.z, available: f.available, label: f.label, reserve: f.reserve, bait: f.bait })),
       };
     },
   };

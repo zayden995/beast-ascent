@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { FOREST_TITLE } from '../data/biomes.ts';
+import type { BiomeId } from '../core/types.ts';
+import { BIOMES, BIOME_LAYOUTS, BIOME_ORDER, FOREST_TITLE } from '../data/biomes.ts';
 import { getSpecies, getVariant } from '../data/species.ts';
 import { TUNING } from '../data/tuning.ts';
 import { adminProgress, setGrowth, setLevel, setWounded } from '../logic/admin.ts';
@@ -8,6 +9,7 @@ import { hasAnySave } from '../logic/saveSlots.ts';
 import { loadSlots, migrateOldSave } from '../systems/save.ts';
 import { ThirdPersonCamera } from '../systems/camera.ts';
 import { newProfile, profileFromSave } from '../systems/growth.ts';
+import type { Arrival } from '../systems/gameEvents.ts';
 import type { Profile } from '../systems/growth.ts';
 import { Input } from '../systems/input.ts';
 import { createAdminPanel } from '../ui/adminPanel.ts';
@@ -16,7 +18,7 @@ import { GrowthMenu } from '../ui/growthMenu.ts';
 import { createPauseMenu, createSlotScreen, createTitleScreen } from '../ui/menus.ts';
 import type { SlotMode } from '../ui/menus.ts';
 import { SpeciesPreview, SpeciesSelect } from '../ui/speciesSelect.ts';
-import { ForestWorld } from '../world/forest.ts';
+import { BiomeWorld } from '../world/world.ts';
 import { Sky } from '../world/sky.ts';
 import { Game } from './Game.ts';
 
@@ -35,7 +37,8 @@ export class App {
 
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
-  readonly world: ForestWorld;
+  /** The biome that is built right now: the Forest behind the title, otherwise the one the animal is in. */
+  world: BiomeWorld;
   readonly sky: Sky;
   readonly cam: ThirdPersonCamera;
   readonly input: Input;
@@ -52,6 +55,8 @@ export class App {
   private pausedAt = 0;
   private elapsed = 0;
   private titleFocus = new THREE.Vector3();
+  /** A journey through a gate, asked for in the middle of a game step and made once the step is over. */
+  private pendingTravel: { biome: BiomeId; arrival: Arrival } | null = null;
   /** Animals roaming behind the title screen. Gone while a game is running. */
   titleLife: AmbientLife | null = null;
 
@@ -65,7 +70,7 @@ export class App {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
     const aspect = window.innerWidth / window.innerHeight;
-    this.world = new ForestWorld(this.scene);
+    this.world = new BiomeWorld(this.scene, 'forest');
     this.sky = new Sky(this.scene, this.world.biome);
     this.cam = new ThirdPersonCamera(aspect);
     this.preview = new SpeciesPreview(aspect);
@@ -117,7 +122,8 @@ export class App {
       this.sky.update(this.cam.camera.position, this.titleFocus);
     } else if (this.game) {
       if (this.screen === 'playing' && this.autoStep) this.game.update(dt);
-      this.game.present();
+      this.flushTravel();
+      this.game?.present();
     }
     if (this.renderEnabled) this.renderer.render(this.scene, this.cam.camera);
   }
@@ -125,6 +131,29 @@ export class App {
   /** Advance the simulation by one fixed step (used by tests). */
   step(dt: number): void {
     if (this.screen === 'playing' && this.game) this.game.update(dt);
+    this.flushTravel();
+  }
+
+  /** Builds another biome's world in place of the current one (nothing happens if it is already built). */
+  private setBiome(id: BiomeId): void {
+    if (this.world.biome.id === id) return;
+    this.titleLife?.dispose();
+    this.titleLife = null;
+    this.world.dispose();
+    this.world = new BiomeWorld(this.scene, id);
+    this.sky.setBiome(BIOMES[id]);
+    this.world.setUnlitTint(this.sky.unlitTint);
+  }
+
+  /** Makes the journey a gate asked for: the same animal, in the same slot, in the other biome. */
+  private flushTravel(): void {
+    const trip = this.pendingTravel;
+    const game = this.game;
+    if (!trip || !game) return;
+    this.pendingTravel = null;
+    const profile = game.growth.profile;
+    profile.biome = trip.biome;
+    this.startGame(profile, game.slot, false, trip.arrival);
   }
 
   private resize(): void {
@@ -164,6 +193,8 @@ export class App {
   showTitle(): void {
     this.clearOverlay();
     this.screen = 'title';
+    // The title is always the Forest, whichever biome the last game was in.
+    this.setBiome('forest');
     this.titleLife ??= new AmbientLife(this.scene, this.world, FOREST_TITLE.animals, FOREST_TITLE.shyDistance);
     this.overlay = createTitleScreen(this.ui, hasAnySave(loadSlots()), {
       newGame: () => this.showSlots('new'),
@@ -202,18 +233,26 @@ export class App {
     });
   }
 
-  /** Starts the game and saves at once, so the new animal replaces whatever the slot held. */
-  startGame(profile: Profile, slot: number | null, lockPointer = true): void {
+  /**
+   * Starts the game in the animal's biome and saves at once, so the new animal replaces whatever the slot held.
+   * `arrival` is how it comes in: waking at the den (a new game, Continue Game), or through a gate.
+   */
+  startGame(profile: Profile, slot: number | null, lockPointer = true, arrival: Arrival = 'den'): void {
     this.clearOverlay();
     this.adminBadge?.remove();
     this.adminBadge = null;
     this.game?.dispose();
+    this.pendingTravel = null;
     this.titleLife?.dispose();
     this.titleLife = null;
-    // Every session starts in the morning; the time of day is not saved.
-    this.sky.setTime(TUNING.dayNight.startAt);
+    this.setBiome(profile.biome);
+    // A session starts in the morning (the time of day is not saved); a journey through a gate keeps the time.
+    if (arrival === 'den') this.sky.setTime(TUNING.dayNight.startAt);
     this.world.setUnlitTint(this.sky.unlitTint);
-    this.game = new Game({ scene: this.scene, world: this.world, sky: this.sky, cam: this.cam, input: this.input, ui: this.ui }, profile, slot);
+    this.game = new Game({
+      scene: this.scene, world: this.world, sky: this.sky, cam: this.cam, input: this.input, ui: this.ui,
+      travel: (biome, how) => (this.pendingTravel = { biome, arrival: how }),
+    }, profile, slot, arrival);
     this.game.save();
     if (slot === null) {
       this.adminBadge = el('div', 'admin-badge plaque', 'Admin sandbox: nothing is saved. J opens the panel.');
@@ -273,6 +312,9 @@ export class App {
       biomeName: this.world.biome.name,
       isRuled: () => game.biomeRuled,
       setRuled: (ruled) => game.adminSetRuled(ruled),
+      // Every biome that has a map, whether or not the animal has unlocked it.
+      biomes: BIOME_ORDER.filter((id) => BIOME_LAYOUTS[id]).map((id) => ({ id, name: BIOMES[id].name, current: id === this.world.biome.id })),
+      goToBiome: (id) => this.adminTravel(id),
       switchAnimal: (speciesId, variantId) => this.adminSwitch(speciesId, variantId),
       close: () => this.closeAdmin(),
     });
@@ -301,7 +343,18 @@ export class App {
       progress,
       unlockedBiomes: [...old.unlockedBiomes],
       ruledBiomes: [...old.ruledBiomes],
+      biome: old.biome,
     }, null, false);
+    this.openAdmin();
+  }
+
+  /** Admin sandbox only: puts the animal at the den of any biome that is built, unlocked or not. */
+  private adminTravel(biome: BiomeId): void {
+    const profile = this.game?.growth.profile;
+    if (!profile || this.game?.slot !== null || !BIOME_LAYOUTS[biome]) return;
+    profile.biome = biome;
+    if (!profile.unlockedBiomes.includes(biome)) profile.unlockedBiomes.push(biome);
+    this.startGame(profile, null, false);
     this.openAdmin();
   }
 

@@ -39,6 +39,12 @@ export const TUNING = {
     distancePerSize: 3.4,
     followLambda: 10,
     fov: 62,
+    /** A trunk or rock between the camera and the animal pulls the camera in, never closer than this (metres). */
+    minDistance: 1.6,
+    /** How much room the camera keeps from a trunk or rock. */
+    clearance: 0.3,
+    /** Ground this far (metres) above the line from the animal to the camera is a wall (a cliff): the camera stays in front of it. */
+    wallDepth: 1.5,
   },
   enemies: {
     respawnSeconds: 30,
@@ -69,6 +75,16 @@ export const TUNING = {
     dartCooldown: 2.5,
     returnSpeed: 1.0,
     shoreMargin: 0.6,
+  },
+  /** Rivers. Each river has its own current (in its biome's layout); this is what the current does to an animal. */
+  river: {
+    /** Water this deep (metres) or deeper pushes with the full current; shallower water pushes less. */
+    fullCurrentDepth: 1.0,
+  },
+  /** Cliffs (a biome whose terrain has a `maxClimbSlope`). */
+  cliff: {
+    /** An animal that ends up on a cliff face slides down it at this speed (m/s). */
+    slideSpeed: 7,
   },
   /** Wild animals now and then walk to a pond and drink instead of just wandering. */
   drink: {

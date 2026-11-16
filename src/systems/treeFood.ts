@@ -4,18 +4,19 @@ import { TAU, mulberry32 } from '../core/math.ts';
 import { TREE_FOOD } from '../data/food.ts';
 import { assignTreeFood, availableFood, newTreeState, takeFood } from '../logic/treeFood.ts';
 import type { TreeFoodState, TreeKind, TreePick } from '../logic/treeFood.ts';
-import type { ForestWorld } from '../world/forest.ts';
+import type { BiomeWorld, TreeSpot } from '../world/world.ts';
 
 const MARKERS = 6;
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 
 /**
- * Food on the Forest's trees: every tree has leaves, some broadleaf trees bear fruit (red dots among the
- * leaves) and some pines bear nuts (cones). Plant-eaters take it with E at the trunk; a bare tree grows it
- * back after a minute. Which trees bear what is decided once from the Forest's seed (`assignTreeFood`).
+ * Food on a biome's trees: every tree has leaves, some trees of the first kind bear fruit (red dots among the
+ * leaves) and some of the second kind bear nuts (a pine's cones in the Forest, a palm's coconuts in the Jungle).
+ * Plant-eaters take it with E at the trunk; a bare tree grows it back after a minute. Which trees bear what is
+ * decided once from the biome's seed (`assignTreeFood`).
  */
 export class TreeFoodSystem {
-  private spots: ForestWorld['treeSpots'];
+  private spots: TreeSpot[];
   private states: TreeFoodState[];
   private clock: { time: number };
   private scene: THREE.Scene;
@@ -27,7 +28,7 @@ export class TreeFoodSystem {
   private bare = new Set<number>();
   private nextCheck = 0;
 
-  constructor(scene: THREE.Scene, world: ForestWorld, clock: { time: number }) {
+  constructor(scene: THREE.Scene, world: BiomeWorld, clock: { time: number }) {
     this.scene = scene;
     this.clock = clock;
     this.spots = world.treeSpots;
@@ -54,12 +55,16 @@ export class TreeFoodSystem {
       const mesh = kind === 'fruit' ? this.fruitMesh : this.nutMesh;
       const first = kind === 'fruit' ? fruitAt : nutAt;
       const matrices: THREE.Matrix4[] = [];
+      // Where the food hangs depends on the biome's trees (see `BiomeWorld.treeMarkers`): among a round crown,
+      // under a pine's lowest tier, or at the top of a leaning palm (whose crown is off to one side).
+      const ring = world.treeMarkers[kind];
+      const cx = t.x + Math.cos(t.yaw) * ring.lean * t.s;
+      const cz = t.z - Math.sin(t.yaw) * ring.lean * t.s;
       for (let k = 0; k < MARKERS; k++) {
         const a = rand() * TAU;
-        // Fruit hangs among the round crown; nuts (cones) hang from the lowest tier of a pine.
-        const r = (kind === 'fruit' ? 1.5 + rand() * 0.5 : 1.3 + rand() * 0.35) * t.s;
-        const h = (kind === 'fruit' ? 3.5 + rand() * 1.5 : 2.5 + rand() * 0.9) * t.tall;
-        matrices.push(new THREE.Matrix4().makeTranslation(t.x + Math.cos(a) * r, t.y + h, t.z + Math.sin(a) * r));
+        const r = (ring.r0 + rand() * ring.rSpan) * t.s;
+        const h = (ring.h0 + rand() * ring.hSpan) * t.tall;
+        matrices.push(new THREE.Matrix4().makeTranslation(cx + Math.cos(a) * r, t.y + h, cz + Math.sin(a) * r));
       }
       this.slots.set(i, { mesh, first, matrices });
       matrices.forEach((m, k) => mesh.setMatrixAt(first + k, m));
@@ -79,7 +84,7 @@ export class TreeFoodSystem {
     let bestD = Infinity;
     for (let i = 0; i < this.spots.length; i++) {
       const t = this.spots[i];
-      const d = Math.hypot(t.x - pos.x, t.z - pos.z) - 0.4 * t.s;
+      const d = Math.hypot(t.x - pos.x, t.z - pos.z) - t.r;
       if (d <= range && d < bestD) {
         best = i;
         bestD = d;

@@ -32,6 +32,7 @@ export function writeSave(slot: number, profile: Profile): boolean {
     progress: profile.progress,
     unlockedBiomes: profile.unlockedBiomes,
     ruledBiomes: profile.ruledBiomes,
+    biome: profile.biome,
   };
   try {
     writeSlot(window.localStorage, slot, data);

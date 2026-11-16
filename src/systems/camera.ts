@@ -7,7 +7,15 @@ import { titleCameraPose } from '../logic/titleView.ts';
 
 const T = TUNING.camera;
 
-/** Third-person orbit camera that follows a target smoothly and stays above the terrain. */
+/** What the camera needs to know about trunks and rocks: is this spot, this high above the ground, inside one? */
+export interface CameraObstacles {
+  blocked(x: number, z: number, radius: number, height?: number): boolean;
+}
+
+/**
+ * Third-person orbit camera that follows a target smoothly, stays above the terrain, and moves in closer
+ * when a tree trunk or a rock would otherwise stand between it and the animal.
+ */
 export class ThirdPersonCamera {
   readonly camera: THREE.PerspectiveCamera;
   /** Orbit angle around the target. Forward on the ground is (sin yaw, cos yaw). */
@@ -16,6 +24,8 @@ export class ThirdPersonCamera {
 
   private focus = new THREE.Vector3();
   private distance = 6;
+  /** How far out the camera can sit right now without a trunk or rock in the way. */
+  private clear = 6;
   private desired = new THREE.Vector3();
   private snapNext = true;
 
@@ -35,7 +45,7 @@ export class ThirdPersonCamera {
     this.snapNext = true;
   }
 
-  update(dt: number, target: THREE.Vector3, targetHeight: number, size: number, heightAt: HeightFn): void {
+  update(dt: number, target: THREE.Vector3, targetHeight: number, size: number, heightAt: HeightFn, obstacles?: CameraObstacles): void {
     const wantDistance = T.baseDistance + T.distancePerSize * size;
     const lambda = this.snapNext ? 1e6 : T.followLambda;
     this.distance = damp(this.distance, wantDistance, this.snapNext ? 1e6 : 4, dt);
@@ -46,11 +56,30 @@ export class ThirdPersonCamera {
     this.focus.set(damp(this.focus.x, fx, lambda, dt), damp(this.focus.y, fy, lambda, dt), damp(this.focus.z, fz, lambda, dt));
 
     const cp = Math.cos(this.pitch);
-    this.desired.set(
-      this.focus.x - Math.sin(this.yaw) * cp * this.distance,
-      this.focus.y + Math.sin(this.pitch) * this.distance,
-      this.focus.z - Math.cos(this.yaw) * cp * this.distance,
-    );
+    const sx = -Math.sin(this.yaw) * cp;
+    const sy = Math.sin(this.pitch);
+    const sz = -Math.cos(this.yaw) * cp;
+
+    // Walk out from the animal toward where the camera wants to be; stop short of the first trunk or rock.
+    let reach = this.distance;
+    if (obstacles) {
+      const steps = Math.ceil(this.distance / 0.35);
+      for (let i = 1; i <= steps; i++) {
+        const k = (i / steps) * this.distance;
+        const x = this.focus.x + sx * k;
+        const z = this.focus.z + sz * k;
+        const above = this.focus.y + sy * k - heightAt(x, z);
+        // A cliff or a steep bank counts too: ground that stands well above the line of sight would hide the animal.
+        if (above < -T.wallDepth || obstacles.blocked(x, z, T.clearance, above)) {
+          reach = Math.max(Math.min(T.minDistance, this.distance), k - 0.35);
+          break;
+        }
+      }
+    }
+    // Move in at once (so the trunk never hides the animal), and back out gently.
+    this.clear = reach < this.clear || this.snapNext ? reach : damp(this.clear, reach, 3, dt);
+
+    this.desired.set(this.focus.x + sx * this.clear, this.focus.y + sy * this.clear, this.focus.z + sz * this.clear);
     const floor = heightAt(this.desired.x, this.desired.z) + 0.5;
     if (this.desired.y < floor) this.desired.y = floor;
 

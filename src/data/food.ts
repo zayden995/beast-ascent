@@ -47,6 +47,16 @@ export const RESERVE_PRODUCE: { name: string; kind: FoodKind; color: number; sha
   { name: 'cherry tomato', kind: 'fruit', color: 0xe3342f, shape: 'small' },
 ];
 
+/**
+ * The carcasses in the Jungle's cave. They lie there for good (a carnivore or an omnivore can eat them), come back
+ * `respawnSeconds` after being eaten, and eating one wakes the snakes of the nest within `provokeRange` metres.
+ */
+export const CAVE_FOOD = {
+  baitGrowth: 22,
+  respawnSeconds: 180,
+  provokeRange: 24,
+};
+
 export function canEat(diet: Diet, kind: FoodKind): boolean {
   return DIET_FOODS[diet].includes(kind);
 }

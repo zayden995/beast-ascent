@@ -18,6 +18,8 @@ export interface Profile {
   progress: Progress;
   unlockedBiomes: BiomeId[];
   ruledBiomes: BiomeId[];
+  /** The biome the animal is in. */
+  biome: BiomeId;
 }
 
 export function newProfile(speciesId: string, variantId: string): Profile {
@@ -28,6 +30,7 @@ export function newProfile(speciesId: string, variantId: string): Profile {
     progress: newProgress(variant.abilities),
     unlockedBiomes: ['forest'],
     ruledBiomes: [],
+    biome: 'forest',
   };
 }
 
@@ -38,6 +41,7 @@ export function profileFromSave(save: SaveData): Profile {
     progress: save.progress,
     unlockedBiomes: save.unlockedBiomes,
     ruledBiomes: save.ruledBiomes,
+    biome: save.biome,
   };
 }
 

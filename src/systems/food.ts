@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 import { toonMaterial } from '../animals/toon.ts';
 import type { FoodKind, WaterBody } from '../core/types.ts';
-import { FOODS, RESERVE_PRODUCE, TREE_FOOD } from '../data/food.ts';
+import { CAVE_FOOD, FOODS, RESERVE_PRODUCE, TREE_FOOD } from '../data/food.ts';
 import { TUNING } from '../data/tuning.ts';
 import { newFish, stepFish } from '../logic/fish.ts';
+import { caveBaitSpots } from '../logic/cave.ts';
+import { surfaceOf } from '../logic/heightfield.ts';
 import type { FishState } from '../logic/fish.ts';
-import type { ForestWorld } from '../world/forest.ts';
+import type { BiomeWorld } from '../world/world.ts';
 
 export interface FoodItem {
   kind: FoodKind;
@@ -20,8 +22,10 @@ export interface FoodItem {
   respawnAt: number;
   /** What to call it when it is not the usual name of its kind (a reserve's carrots and apples). */
   label?: string;
-  /** The fox food reserve it belongs to (an index into `FOREST_LAYOUT.foxReserves`), if any: eating it angers the foxes. */
+  /** The food reserve it belongs to (an index into the layout's `foxReserves`), if any: eating it angers its guards. */
   reserve?: number;
+  /** A carcass in the cave: it stays until eaten, comes back later, and eating it wakes the nest. */
+  bait?: boolean;
   /**
    * Fish only: the circle they swim around, a clock for it (it stops while the fish flees), how far a wading
    * animal has pushed the fish off its circle, and the pond it lives in.
@@ -33,7 +37,7 @@ export interface FoodItem {
 export class FoodSystem {
   items: FoodItem[] = [];
   private scene: THREE.Scene;
-  private world: ForestWorld;
+  private world: BiomeWorld;
   private clock: { time: number };
   private meat = toonMaterial({ color: 0xb0483c });
   private bone = toonMaterial({ color: 0xf1ead2 });
@@ -59,7 +63,7 @@ export class FoodSystem {
   private produceMats = new Map<number, THREE.Material>();
   private reserveDecor: THREE.Object3D[] = [];
 
-  constructor(scene: THREE.Scene, world: ForestWorld, rand: () => number, clock: { time: number }) {
+  constructor(scene: THREE.Scene, world: BiomeWorld, rand: () => number, clock: { time: number }) {
     this.scene = scene;
     this.world = world;
     this.clock = clock;
@@ -78,6 +82,7 @@ export class FoodSystem {
 
     this.growPlants(rand);
     this.buildReserves();
+    if (world.layout.cave) for (const spot of caveBaitSpots(world.layout.cave)) this.addBait(spot.x, spot.z, rand);
 
     // Fish swim in every pond, in circles around spots spread across it.
     for (const water of world.layout.waters) {
@@ -215,8 +220,17 @@ export class FoodSystem {
     return item;
   }
 
-  /** Leaves a carcass where an animal died. */
-  dropCarcass(pos: THREE.Vector3, growth: number, size: number): void {
+  /** A carcass lying in the cave as bait. It never rots, and it comes back a while after it has been eaten. */
+  private addBait(x: number, z: number, rand: () => number): void {
+    const g = this.carcassMesh(1.5);
+    g.position.set(x, this.world.heightAt(x, z), z);
+    g.rotation.y = rand() * Math.PI * 2;
+    const item = this.add({ kind: 'carcass', growth: CAVE_FOOD.baitGrowth, mesh: g, respawnSeconds: CAVE_FOOD.respawnSeconds });
+    item.bait = true;
+  }
+
+  /** The model of a carcass: a body and three ribs. */
+  private carcassMesh(size: number): THREE.Group {
     const g = new THREE.Group();
     const s = Math.max(0.5, size);
     const body = new THREE.Mesh(this.geos.blob, this.meat);
@@ -231,6 +245,12 @@ export class FoodSystem {
       rib.scale.setScalar(s);
       g.add(rib);
     }
+    return g;
+  }
+
+  /** Leaves a carcass where an animal died. */
+  dropCarcass(pos: THREE.Vector3, growth: number, size: number): void {
+    const g = this.carcassMesh(size);
     g.position.set(pos.x, this.world.heightAt(pos.x, pos.z), pos.z);
     const item = this.add({ kind: 'carcass', growth, mesh: g, respawnSeconds: 0 });
     item.expiresAt = this.clock.time + TUNING.food.carcassSeconds;
@@ -286,7 +306,7 @@ export class FoodSystem {
         const alarmed = stepFish(s.fish, base, wader, s.water, dt, TUNING.fish);
         // The calm circle only turns while the fish is left alone; an alarmed fish swims straight away.
         if (!alarmed) s.clock += dt;
-        item.mesh.position.set(base.x + s.fish.ox, this.world.layout.waterY - 0.3, base.z + s.fish.oz);
+        item.mesh.position.set(base.x + s.fish.ox, surfaceOf(s.water, this.world.layout.waterY) - 0.3, base.z + s.fish.oz);
         const heading = Math.hypot(s.fish.ox - before.x, s.fish.oz - before.z) > 1e-6 && alarmed ? Math.atan2(s.fish.ox - before.x, s.fish.oz - before.z) : -a;
         item.mesh.rotation.y = heading;
       }

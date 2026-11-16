@@ -25,6 +25,8 @@ export interface StatMod {
 }
 
 export type StageId = 'juvenile' | 'adult' | 'alpha';
+/** Which body-building code draws an animal: four legs, wings, or no legs at all. */
+export type RigId = 'quadruped' | 'winged' | 'serpent';
 export type BiomeId = 'forest' | 'jungle' | 'plains' | 'winter';
 export type Diet = 'carnivore' | 'herbivore' | 'omnivore';
 export type FoodKind = 'carcass' | 'fish' | 'fruit' | 'plant' | 'leaf' | 'nut';
@@ -62,6 +64,9 @@ export type FeatureId =
   | 'antlers'
   | 'tusks'
   | 'ridge'
+  | 'saddle'
+  | 'knuckle'
+  | 'brow'
   | 'stripes'
   | 'trunk'
   | 'jaw'
@@ -77,6 +82,8 @@ export interface BodyColors {
   head?: number;
   /** Tail feathers, if different from the body (the Bald Eagle's white tail). */
   tail?: number;
+  /** The `saddle` marking's colour, if it is not the accent colour (a silverback's silver back). */
+  saddle?: number;
 }
 
 /** Parametric quadruped proportions, in metres at size 1.0. */
@@ -272,11 +279,15 @@ export interface EnemyBehavior {
   woundedSpeedMult: number;
   /** Overrides `TUNING.enemies.senses.front` / `.rear`: how far it notices the player ahead and behind (x aggro radius). */
   senses?: { front?: number; rear?: number };
+  /** At home in the water: it wanders into rivers and ponds instead of keeping to dry ground (the wild crocodile). */
+  aquatic?: boolean;
 }
 
 export interface EnemyDef {
   id: string;
   name: string;
+  /** Which rig draws it. Left out: the four-legged one. */
+  rig?: RigId;
   baseStats: Stats;
   body: BodyPlan;
   colors: BodyColors;
@@ -347,8 +358,10 @@ export interface SpawnZoneDef {
   rivalOf?: string;
   /** Seconds before a dead animal from this zone comes back (default: TUNING.enemies.respawnSeconds). */
   respawnSeconds?: number;
-  /** Guards the fox food reserve with this index (`FOREST_LAYOUT.foxReserves`): calm until the reserve is raided. */
+  /** Guards the food reserve with this index (the layout's `foxReserves`): calm until the reserve is raided. */
   guardOf?: number;
+  /** The animals of a lair (the snakes in the Jungle's cave): calm until the bait is eaten or one of them is hurt, then they all attack. */
+  lair?: boolean;
 }
 
 export interface BiomePalette {
@@ -364,6 +377,11 @@ export interface BiomePalette {
   skyHorizon: number;
   fog: number;
   sun: number;
+  /** The ground at the water's edge (left out: pale sand) and under deep water (left out: grey-green). */
+  shore?: number;
+  deepWater?: number;
+  /** The colour grass blades lighten toward (left out: a yellow-green). */
+  grassTip?: number;
 }
 
 export interface BiomeDef {
@@ -387,7 +405,7 @@ export interface FoodDef {
   healPct: number;
 }
 
-/** A round pond or lake in a biome. Positions and sizes are in metres; the water surface is at `FOREST_LAYOUT.waterY`. */
+/** A round pond or lake in a biome. Positions and sizes are in metres; the water surface is at the layout's `waterY`. */
 export interface WaterBody {
   x: number;
   z: number;
@@ -396,4 +414,8 @@ export interface WaterBody {
   depth: number;
   /** How many fish swim in it. */
   fish: number;
+  /** Height of its surface, for a pond on raised ground. Left out: the biome's usual water level. */
+  surfaceY?: number;
+  /** How many lily pads float on it. */
+  lilyPads?: number;
 }

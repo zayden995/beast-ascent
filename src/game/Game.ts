@@ -1,11 +1,12 @@
 import type * as THREE from 'three';
 import { EventBus } from '../core/events.ts';
-import type { BossDef, FoodKind } from '../core/types.ts';
+import type { BiomeId, BossDef, FoodKind } from '../core/types.ts';
 import { mulberry32 } from '../core/math.ts';
-import { BIOMES, FOREST_SPAWNS, nextBiome } from '../data/biomes.ts';
+import { BIOMES, BIOME_LAYOUTS, nextBiome, previousBiome, spawnsOf } from '../data/biomes.ts';
 import { getBoss } from '../data/bosses.ts';
-import { FOODS, TREE_FOOD, canEat } from '../data/food.ts';
+import { CAVE_FOOD, FOODS, TREE_FOOD, canEat } from '../data/food.ts';
 import { TUNING } from '../data/tuning.ts';
+import { describeMod } from '../logic/biome.ts';
 import { withinEatingHeight } from '../logic/flight.ts';
 import { foxesToProvoke } from '../logic/foxReserve.ts';
 import { nightVisionFactor } from '../logic/vision.ts';
@@ -19,7 +20,7 @@ import { Combat } from '../systems/combat.ts';
 import { FoodSystem } from '../systems/food.ts';
 import type { FoodItem } from '../systems/food.ts';
 import { Fx } from '../systems/fx.ts';
-import type { GameEvents } from '../systems/gameEvents.ts';
+import type { Arrival, GameEvents } from '../systems/gameEvents.ts';
 import { Growth } from '../systems/growth.ts';
 import type { Profile } from '../systems/growth.ts';
 import type { Input } from '../systems/input.ts';
@@ -29,7 +30,7 @@ import { Spawner } from '../systems/spawner.ts';
 import { TreeFoodSystem } from '../systems/treeFood.ts';
 import { Hud } from '../ui/hud.ts';
 import { WorldLabels } from '../ui/worldLabels.ts';
-import type { ForestWorld } from '../world/forest.ts';
+import type { BiomeWorld } from '../world/world.ts';
 import type { Sky } from '../world/sky.ts';
 
 /** What the E prompt calls each kind of tree food. */
@@ -37,11 +38,13 @@ const TREE_LABELS = { leaf: 'leaves', fruit: 'fruit', nut: 'nuts' } as const;
 
 export interface GameContext {
   scene: THREE.Scene;
-  world: ForestWorld;
+  world: BiomeWorld;
   sky: Sky;
   cam: ThirdPersonCamera;
   input: Input;
   ui: HTMLElement;
+  /** Takes the animal to another biome, arriving through that biome's gate (the app builds the new world). */
+  travel: (biome: BiomeId, arrival: Arrival) => void;
 }
 
 export interface Prompt {
@@ -53,7 +56,7 @@ export interface Prompt {
 export class Game {
   readonly events = new EventBus<GameEvents>();
   readonly clock = { time: 0 };
-  readonly world: ForestWorld;
+  readonly world: BiomeWorld;
   readonly sky: Sky;
   readonly growth: Growth;
   readonly player: PlayerController;
@@ -80,7 +83,8 @@ export class Game {
   /** The save slot (1 to 4) this animal lives in; every save goes there. null is the admin sandbox, which saves nothing. */
   readonly slot: number | null;
 
-  constructor(ctx: GameContext, profile: Profile, slot: number | null) {
+  /** `arrival` is how the animal comes into the biome: waking at the den, or through a gate from the biome next door. */
+  constructor(ctx: GameContext, profile: Profile, slot: number | null, arrival: Arrival = 'den') {
     this.ctx = ctx;
     this.slot = slot;
     this.world = ctx.world;
@@ -90,12 +94,13 @@ export class Game {
     this.growth = new Growth(profile, this.events);
     this.combat = new Combat(() => this.actors, this.events, this.clock);
     this.fx = new Fx(scene);
+    const start = arrival === 'den' ? world.layout.playerSpawn : world.gateSpot(arrival);
     this.player = new PlayerController({
-      scene, world, input, cam, combat: this.combat, fx: this.fx, growth: this.growth, events: this.events, clock: this.clock,
+      scene, world, input, cam, combat: this.combat, fx: this.fx, growth: this.growth, events: this.events, clock: this.clock, start,
     });
     this.spawner = new Spawner(scene, world, this.rand, this.clock);
     // Rival predators of the player's own species are left out.
-    this.spawner.spawnZones(FOREST_SPAWNS.filter((zone) => zone.rivalOf !== profile.speciesId));
+    this.spawner.spawnZones(spawnsOf(world.biome.id).filter((zone) => zone.rivalOf !== profile.speciesId));
     this.food = new FoodSystem(scene, world, this.rand, this.clock);
     this.trees = new TreeFoodSystem(scene, world, this.clock);
 
@@ -109,10 +114,19 @@ export class Game {
     this.labels = new WorldLabels(ctx.ui);
     this.wireEvents();
 
-    cam.snap(world.layout.playerSpawn.yaw);
+    cam.snap(start.yaw);
     this.refreshActors();
     this.player.actor.syncModel(0);
-    this.events.emit('toast', { text: `You are a ${this.growth.variant.name}. Hunt, eat and grow.`, tone: 'info' });
+    if (arrival === 'den') {
+      this.events.emit('toast', { text: `You are a ${this.growth.variant.name}. Hunt, eat and grow.`, tone: 'info' });
+    } else {
+      // Through a gate: say where this is, and what the biome does to this kind of animal.
+      const mods = this.player.activeMods;
+      this.events.emit('banner', {
+        title: `The ${world.biome.name}`,
+        subtitle: mods.length > 0 ? `${this.growth.variant.name}: ${mods.map(describeMod).join(', ')}` : 'Your kind has no advantage or weakness here.',
+      });
+    }
   }
 
   private wireEvents(): void {
@@ -122,6 +136,8 @@ export class Game {
 
     ev.on('damage', ({ target, amount, kind, ambush }) => {
       if (target instanceof EnemyActor) target.onDamaged();
+      // Hurting one snake of the nest wakes all of them.
+      if (target instanceof EnemyActor && target.zone?.lair) this.wakeLair(target.pos, 'The whole nest stirs!');
       const cls = target === playerActor ? 'hurt' : kind === 'bleed' ? 'bleed' : ambush ? 'ambush' : '';
       this.labels.number(cam, target.pos, target.model.height, ambush ? `${amount}!` : String(amount), cls);
     });
@@ -210,7 +226,7 @@ export class Game {
     pa.syncModel(dt);
     for (const e of this.spawner.enemies) if (e.model.root.visible) e.syncModel(dt);
 
-    cam.update(dt, pa.pos, pa.model.height, pa.stats.size, world.heightAt);
+    cam.update(dt, pa.pos, pa.model.height, pa.stats.size, world.heightAt, world.colliders);
     world.update(this.clock.time, cam.camera.position);
     sky.advance(dt);
     world.setUnlitTint(sky.unlitTint);
@@ -280,7 +296,8 @@ export class Game {
     if (tree >= 0) {
       const pick = this.trees.pick(tree);
       if (pick && canEat(this.growth.species.diet, pick)) {
-        const label = TREE_LABELS[pick];
+        // A palm's nuts are coconuts.
+        const label = pick === 'nut' && this.world.layout.style === 'jungle' ? 'coconuts' : TREE_LABELS[pick];
         this.prompt = { key: 'E', text: `Eat ${label}` };
         if (pressed) {
           this.trees.take(tree, pick);
@@ -290,19 +307,31 @@ export class Game {
       }
     }
 
-    const { gate } = this.world.layout;
-    if (Math.hypot(pa.pos.x - gate.x, pa.pos.z - (gate.z + 3)) < 6) {
-      const next = nextBiome(this.world.biome.id);
-      const nextName = next ? BIOMES[next].name : '';
+    const here = this.world.biome;
+    const at = this.world.gateAt(pa.pos.x, pa.pos.z);
+    if (at === 'onward') {
+      const next = nextBiome(here.id);
+      if (!next) return;
+      const nextName = BIOMES[next].name;
       if (!this.world.isGateOpen()) {
-        this.prompt = { key: '', text: `Sealed. Defeat the ${this.world.biome.name} boss to open this gate.` };
+        this.prompt = { key: '', text: `Sealed. Defeat the ${here.name} boss to open this gate.` };
+      } else if (BIOME_LAYOUTS[next]) {
+        this.prompt = { key: 'E', text: `Enter the ${nextName}` };
+        // An animal that goes on arrives through the next biome's gate back.
+        if (pressed) this.ctx.travel(next, 'return');
       } else {
         this.prompt = { key: 'E', text: `Enter the ${nextName}` };
         if (pressed) {
-          // TODO(M3): travel to the next biome.
-          this.events.emit('toast', { text: `The ${nextName} arrives in Milestone 3. The ${this.world.biome.name} is yours for now.`, tone: 'info' });
+          // TODO(M3): the Plains and Winter are not built yet.
+          this.events.emit('toast', { text: `The way to the ${nextName} is not open yet. The ${here.name} is yours for now.`, tone: 'info' });
         }
       }
+    } else if (at === 'return') {
+      const back = previousBiome(here.id);
+      if (!back) return;
+      this.prompt = { key: 'E', text: `Return to the ${BIOMES[back].name}` };
+      // An animal that goes back arrives at the gate it once left by.
+      if (pressed) this.ctx.travel(back, 'onward');
     }
   }
 
@@ -310,6 +339,19 @@ export class Game {
     this.eatKind(item.kind, item.growth, item.label ?? FOODS[item.kind].name);
     this.food.consume(item);
     if (item.reserve !== undefined) this.raidReserve(item);
+    if (item.bait) this.wakeLair(item.pos, 'The snakes of the cave rear up: you took their bait!');
+  }
+
+  /** Wakes every calm animal of a lair within range of `at`: they all attack. `text` is what the player is told. */
+  private wakeLair(at: { x: number; z: number }, text: string): void {
+    const guards = this.spawner.enemies.filter((e) => e.zone?.lair && e.calm).map((e) => ({ x: e.pos.x, z: e.pos.z, alive: e.alive, enemy: e }));
+    const woken = foxesToProvoke(guards, at, CAVE_FOOD.provokeRange);
+    for (const { enemy } of woken) {
+      enemy.calm = false;
+      enemy.provoked = true;
+      if (enemy.state === 'idle' || enemy.state === 'wander' || enemy.state === 'return') enemy.state = 'chase';
+    }
+    if (woken.length > 0) this.events.emit('toast', { text, tone: 'bad' });
   }
 
   /** Eating from a fox food reserve angers every fox within range: they all attack. */

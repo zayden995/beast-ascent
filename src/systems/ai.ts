@@ -2,11 +2,10 @@ import type { AnimalModel } from '../animals/AnimalModel.ts';
 import { dampAngle, lerp } from '../core/math.ts';
 import type { EnemyAttackDef, EnemyDef, SpawnZoneDef } from '../core/types.ts';
 import { TUNING } from '../data/tuning.ts';
-import { guardWanderRadius } from '../logic/foxReserve.ts';
+import { guardWanderRadius, isGuardZone } from '../logic/foxReserve.ts';
 import { noticeMultiplier } from '../logic/senses.ts';
-import { shoreStandPoint } from '../logic/water.ts';
 import type { StatInputs } from '../logic/stats.ts';
-import type { ForestWorld } from '../world/forest.ts';
+import type { BiomeWorld } from '../world/world.ts';
 import { Actor, integrate } from './actor.ts';
 import type { Combat } from './combat.ts';
 import type { Fx } from './fx.ts';
@@ -77,7 +76,7 @@ export class EnemyActor extends Actor {
 
 export interface AiContext {
   player: Actor;
-  world: ForestWorld;
+  world: BiomeWorld;
   combat: Combat;
   fx: Fx;
   rand: () => number;
@@ -99,10 +98,10 @@ function moveToward(e: EnemyActor, x: number, z: number, speed: number, dt: numb
 
 function pickWanderTarget(e: EnemyActor, ctx: AiContext): void {
   e.drinkYaw = null;
-  // Now and then the walk is to the nearest pond, to drink (never for a boss or a guard of a fox food reserve,
-  // which stays with its food, and never far from home).
-  if (!e.isBoss && e.zone?.guardOf === undefined && ctx.rand() < TUNING.drink.chance) {
-    const spot = shoreStandPoint(ctx.world.layout.waters, e.pos.x, e.pos.z, TUNING.drink.reach);
+  // Now and then the walk is to the nearest water, to drink (never for a boss or a guard of a fox food reserve,
+  // which stays with its food, never for an animal that lives in the water, and never far from home).
+  if (!e.isBoss && !e.def.behavior.aquatic && !isGuardZone(e.zone) && ctx.rand() < TUNING.drink.chance) {
+    const spot = ctx.world.drinkSpot(e.pos.x, e.pos.z, TUNING.drink.reach);
     if (
       spot
       && Math.hypot(spot.x - e.homeX, spot.z - e.homeZ) <= e.def.behavior.leashRadius * 0.8
@@ -118,14 +117,15 @@ function pickWanderTarget(e: EnemyActor, ctx: AiContext): void {
     }
   }
   // A guard of a fox food reserve stays near its food, so that a raid angers all of them.
-  const r = e.zone?.guardOf !== undefined ? guardWanderRadius(e.def.behavior.wanderRadius, e.zone.radius) : e.def.behavior.wanderRadius;
+  const r = e.zone && isGuardZone(e.zone) ? guardWanderRadius(e.def.behavior.wanderRadius, e.zone.radius) : e.def.behavior.wanderRadius;
   for (let i = 0; i < 6; i++) {
     const a = ctx.rand() * Math.PI * 2;
     const d = Math.sqrt(ctx.rand()) * r;
     const x = e.homeX + Math.cos(a) * d;
     const z = e.homeZ + Math.sin(a) * d;
     if (Math.hypot(x, z) > ctx.world.boundary - 3) continue;
-    if (ctx.world.waterDepth(x, z) > 0.2) continue;
+    // Land animals keep to dry ground; one that lives in the water (the wild crocodile) wanders into it.
+    if (!e.def.behavior.aquatic && ctx.world.waterDepth(x, z) > 0.2) continue;
     if (ctx.world.inRefuge(x, z, 2)) continue;
     e.targetX = x;
     e.targetZ = z;

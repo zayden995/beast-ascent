@@ -24,3 +24,6 @@ export interface GameEvents {
   playerDied: DeathOutcome;
   playerRespawned: null;
 }
+
+/** How an animal comes into a biome: waking at its den, or through one of its two gates. */
+export type Arrival = 'den' | 'onward' | 'return';

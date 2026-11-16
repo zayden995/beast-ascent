@@ -100,9 +100,12 @@ export class ProceduralQuadruped implements AnimalModel {
   /** 0..1: how far the head is lowered to drink. */
   private drink = 0;
   private air = 0;
+  /** A knuckle-walker (the gorilla) carries its chest higher than its hips: the whole body is pitched up at the front by this angle. */
+  private lean = 0;
 
   constructor(look: AnimalAppearance) {
     this.look = look;
+    this.lean = (look.features as string[]).includes('knuckle') ? 0.36 : 0;
     const p = look.body;
     this.size = look.size;
     // Reptiles sprawl: legs splayed out to the sides, and the body hangs low between them.
@@ -142,6 +145,17 @@ export class ProceduralQuadruped implements AnimalModel {
     if (this.has('hump')) {
       b.add(sphere(r * 0.78), c.accent, [0, r * 0.62, halfL * 0.42], [0, 0, 0], [w * 0.8, 0.8, 1.2]);
     }
+    if (this.has('knuckle')) {
+      // A gorilla's build: a mound of shoulder muscle that stands well above the hips, so the back slopes down
+      // to the rump, a deep barrel chest, and a big belly.
+      b.add(sphere(r * 1.02), c.body, [0, r * 0.4, halfL - r * 0.95], [0, 0, 0], [w * 1.3, 1.0, 1.1]);
+      b.add(sphere(r * 1.05), c.body, [0, -r * 0.12, halfL - r * 0.7], [0, 0, 0], [w * 1.2, 1.0, 1.1]);
+      b.add(sphere(r * 0.92), c.belly, [0, -r * 0.2, -halfL * 0.15], [0, 0, 0], [w * 1.1, 1.0, 1.35]);
+    }
+    if (this.has('saddle')) {
+      // A pale patch over the back and flanks (a silverback's back, a tapir's saddle), just proud of the body.
+      b.add(sphere(r * 1.03), c.saddle ?? c.accent, [0, r * 0.2, -halfL * 0.12], [0, 0, 0], [w * 1.05, 1.0, Math.max(1.05, (halfL / r) * 0.6)]);
+    }
     if (this.has('ridge')) {
       for (let i = 0; i < 6; i++) {
         const z = lerp(halfL * 0.75, -halfL * 0.55, i / 5);
@@ -173,8 +187,9 @@ export class ProceduralQuadruped implements AnimalModel {
     // Splayed legs are longer along their own length, so the feet still reach the ground.
     const sprawl = this.has('sprawl') ? 0.85 : 0;
     const stretch = 1 / Math.cos(sprawl);
-    const upperLen = total * 0.5 * stretch;
-    const lowerLen = total * 0.5 * stretch;
+    // A knuckle-walker has big arms and big hands. (Its arms are also longer than its legs: with the body pitched up
+    // at the front, the shoulders stand higher than the hips, and each leg reaches the ground from where it hangs.)
+    const arm = this.has('knuckle') ? 1 : 0;
 
     const defs: { x: number; front: boolean; trot: number; gallop: number }[] = [
       { x: 1, front: true, trot: 0, gallop: 0 },
@@ -183,10 +198,15 @@ export class ProceduralQuadruped implements AnimalModel {
       { x: -1, front: false, trot: 0, gallop: Math.PI + 0.55 },
     ];
     for (const d of defs) {
+      const z0 = d.front ? halfL - r * 0.8 : -halfL + r * 0.8;
+      // How far the hip or shoulder is from the ground: the body's height, and its pitch raises the front and lowers the rear.
+      const reach = total - pivotY + pivotY * Math.cos(this.lean) + z0 * Math.sin(this.lean);
+      const upperLen = reach * 0.5 * stretch;
+      const lowerLen = reach * 0.5 * stretch;
       const upper = new THREE.Group();
-      upper.position.set(d.x * p.bodyWidth * 0.31, pivotY, d.front ? halfL - r * 0.8 : -halfL + r * 0.8);
+      upper.position.set(d.x * p.bodyWidth * (d.front && arm > 0 ? 0.4 : 0.31), pivotY, z0);
       upper.rotation.z = d.x * sprawl;
-      const bulk = d.front ? 1.0 : 1.2;
+      const bulk = d.front ? (arm > 0 ? 1.18 : 1.0) : 1.2;
       const ub = new PartBuilder();
       ub.add(sphere(t * 1.3 * bulk), c.body, [0, 0, 0], [0, 0, 0], [1, 1.25, 1.2]);
       ub.add(new THREE.CylinderGeometry(t * 1.3 * bulk, t * 0.92, upperLen, 8), c.body, [0, -upperLen / 2, 0]);
@@ -209,7 +229,12 @@ export class ProceduralQuadruped implements AnimalModel {
         const rad = lerp(t * 0.9, t * 0.72, 0.3) * 1.08;
         lb.add(new THREE.CylinderGeometry(rad, rad, 0.026, 8, 1, true, outer, 2.5), c.accent, [0, -(lowerLen - t * 0.5) * 0.3, 0]);
       }
-      lb.add(sphere(t * 1.1), c.accent, [0, -lowerLen + t * 0.6, t * 0.35], [0, 0, 0], [1, 0.55, 1.35]);
+      if (arm > 0 && d.front) {
+        // A big hand, knuckles down.
+        lb.add(sphere(t * 1.3), c.accent, [0, -lowerLen + t * 0.75, t * 0.3], [0, 0, 0], [1.0, 0.8, 1.2]);
+      } else {
+        lb.add(sphere(t * 1.1), c.accent, [0, -lowerLen + t * 0.6, t * 0.35], [0, 0, 0], [1, 0.55, 1.35]);
+      }
       lower.add(lb.build(this.material));
       upper.add(lower);
 
@@ -228,7 +253,8 @@ export class ProceduralQuadruped implements AnimalModel {
     const hr = (p.headSize * this.look.headScale) / 2;
     const dir: V3 = [0, Math.sin(a), Math.cos(a)];
 
-    this.neck.position.set(0, r * 0.3, halfL - r * 0.6);
+    // A knuckle-walker's neck is short and starts deep in the shoulder mound: the head sits low between the shoulders.
+    this.neck.position.set(0, r * 0.3, halfL - r * (this.has('knuckle') ? 0.3 : 0.6));
     this.body.add(this.neck);
 
     const nb = new PartBuilder();
@@ -262,6 +288,17 @@ export class ProceduralQuadruped implements AnimalModel {
       } else if (p.ears === 'long') {
         hb.add(new THREE.ConeGeometry(e * 0.42, e * 1.9, 5), c.body, [s * (hr * 0.75 + e * 0.5), hr * 0.62 + e * 0.35, -hr * 0.3], [0, 0, -s * 0.95]);
       }
+    }
+
+    if (this.has('brow')) {
+      // A gorilla's head: a flat, dark face with a heavy bony brow over deep-set eyes, wide nostrils, a broad
+      // mouth, and a dome of muscle on top of the skull (the crest).
+      hb.add(sphere(hr * 0.86), c.accent, [0, -hr * 0.2, hr * 0.62], [0, 0, 0], [1.1, 0.95, 0.95]);
+      hb.add(new THREE.CapsuleGeometry(hr * 0.22, hr * 1.3, 3, 6), c.accent, [0, hr * 0.36, hr * 0.78], [0, 0, Math.PI / 2], [1, 1, 1.2]);
+      hb.add(sphere(hr * 0.9), c.body, [0, hr * 0.6, -hr * 0.3], [0, 0, 0], [0.74, 0.95, 1.3]);
+      hb.add(sphere(hr * 0.52), c.belly, [0, -hr * 0.55, hr * 0.62], [0, 0, 0], [1.0, 0.6, 1.0]);
+      for (const s of [1, -1]) hb.add(sphere(hr * 0.12), DARK, [s * hr * 0.22, -hr * 0.1, hr * 1.42], [0, 0, 0], [1.2, 0.8, 0.6]);
+      hb.add(new THREE.BoxGeometry(hr * 0.7, hr * 0.06, hr * 0.08), DARK, [0, -hr * 0.55, hr * 1.2]);
     }
 
     if (this.has('stripes')) {
@@ -350,7 +387,10 @@ export class ProceduralQuadruped implements AnimalModel {
       this.trunk = root;
     }
 
-    return this.hip + this.neck.position.y + head.position.y + top;
+    if (this.has('brow')) top = Math.max(top, hr * 1.5);
+    const headTop = this.hip + this.neck.position.y + head.position.y + top;
+    // The body is pitched up at the front, which raises the head and the shoulders.
+    return headTop + halfL * Math.sin(this.lean);
   }
 
   private buildTail(): void {
@@ -439,20 +479,21 @@ export class ProceduralQuadruped implements AnimalModel {
       if (leg.front) upper -= attack * 0.9;
       else upper += windup * 0.25;
       upper += death * (leg.front ? -0.3 : 0.3);
-      leg.upper.rotation.x = upper;
+      // The legs hang straight down in the world even though the body is pitched.
+      leg.upper.rotation.x = upper + this.lean;
       leg.lower.rotation.x = lower;
     }
 
     const bob = Math.sin(this.phase * 2) * 0.03 * this.amp * p.legLength;
     this.body.position.y = lerp(this.hip + bob - windup * p.legLength * 0.14, p.bodyWidth * 0.5, death);
     this.body.position.z = attack * p.bodyLength * 0.26 - windup * p.bodyLength * 0.16;
-    this.body.rotation.x = Math.sin(this.phase) * 0.06 * this.run * this.amp - windup * 0.14 + attack * 0.1 + this.drink * 0.1;
+    this.body.rotation.x = Math.sin(this.phase) * 0.06 * this.run * this.amp - windup * 0.14 + attack * 0.1 + this.drink * 0.1 - this.lean * (1 - death);
     this.body.rotation.z = death * (Math.PI / 2) + (s.dodgeT >= 0 ? s.dodgeT * TAU : 0);
 
     const breath = dead ? 0 : Math.sin(this.time * 2.2) * 0.012;
     this.torso.scale.set(1 + breath, 1 + breath, 1);
 
-    this.neck.rotation.x = Math.sin(this.phase * 2 + 0.6) * 0.05 * this.amp + attack * 0.45 - windup * 0.3 + death * 0.3 + this.drink * 1.0;
+    this.neck.rotation.x = Math.sin(this.phase * 2 + 0.6) * 0.05 * this.amp + attack * 0.45 - windup * 0.3 + death * 0.3 + this.drink * 1.0 + this.lean * 0.9;
     this.neck.rotation.z = s.stunned && !dead ? Math.sin(this.time * 13) * 0.2 : 0;
 
     if (this.trunk) {

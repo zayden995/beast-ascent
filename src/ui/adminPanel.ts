@@ -1,3 +1,4 @@
+import type { BiomeId } from '../core/types.ts';
 import { getAbility } from '../data/abilities.ts';
 import { SPECIES, isPlayable } from '../data/species.ts';
 import { STAGES, STAGE_ORDER } from '../data/stages.ts';
@@ -12,6 +13,10 @@ export interface AdminHooks {
   biomeName: string;
   isRuled: () => boolean;
   setRuled: (ruled: boolean) => void;
+  /** Every biome that is built, and which one the sandbox is in. */
+  biomes: { id: BiomeId; name: string; current: boolean }[];
+  /** Restarts the sandbox at that biome's den. */
+  goToBiome: (id: BiomeId) => void;
   /** Starts the sandbox again as another animal (species and skin cannot change while the game runs). */
   switchAnimal: (speciesId: string, variantId: string) => void;
   close: () => void;
@@ -63,6 +68,13 @@ export function createAdminPanel(parent: HTMLElement, growth: Growth, hooks: Adm
       }
     }
 
+    const biomes = el('div', 'admin-chips');
+    for (const b of hooks.biomes) {
+      biomes.append(chip(b.name, b.current, () => {
+        if (!b.current) hooks.goToBiome(b.id);
+      }));
+    }
+
     const stages = el('div', 'admin-chips');
     for (const id of STAGE_ORDER) stages.append(chip(STAGES[id].name, p.stage === id, () => edit((pr, ids) => setStage(pr, id, ids), true)));
 
@@ -72,6 +84,8 @@ export function createAdminPanel(parent: HTMLElement, growth: Growth, hooks: Adm
       el('p', 'admin-hint', 'Nothing here is saved to your slots. Press Esc or J to close.'),
       el('h3', '', 'Animal'),
       animals,
+      el('h3', '', 'Biome'),
+      biomes,
       el('h3', '', 'Life stage'),
       stages,
       el('h3', '', 'Progress'),

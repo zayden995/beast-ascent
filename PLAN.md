@@ -1,6 +1,6 @@
 # Beast Ascent — Implementation Plan
 
-Spec: [CLAUDE.md](CLAUDE.md) (the game bible). This plan covers **Milestone 1** (done) and the task list for **Milestone 2** (in progress, at the end of this file).
+Spec: [CLAUDE.md](CLAUDE.md) (the game bible). This plan covers **Milestone 1** and **Milestone 2** (both done and accepted) and the task list for **Milestone 3** (in progress, at the end of this file).
 
 **Goal:** a playable vertical slice — pick Wolf, Lion or Bear, roam the Forest, fight, level up, eat, evolve to Adult, beat the Forest boss — with no console errors.
 
@@ -24,6 +24,7 @@ src/
   style.css                HUD and menu styles
   core/
     types.ts               shared data types (Stats, SpeciesDef, AbilityDef, EnemyDef ...)
+    layout.ts              the shape of a biome's map as data (BiomeLayout: terrain, ponds, rivers, hill, gates ...)
     math.ts                clamp/lerp/angles, seeded RNG, value noise
     events.ts              tiny typed event bus
   data/                    pure data, no three.js imports
@@ -31,9 +32,10 @@ src/
     stages.ts              life stages, XP curve, growth requirements
     species.ts             all 7 species and their variants (ONE file, as the bible requires)
     abilities.ts           ability definitions (effect kind + numbers)
-    biomes.ts              4 biomes (Forest complete, the rest palette stubs), forest layout, spawn zones
-    enemies.ts             forest wild animals
-    bosses.ts              forest boss
+    biomes.ts              4 biomes (Forest and Jungle built, Plains and Winter palette stubs), the Forest's layout and spawn zones, the registry of built biomes
+    jungle.ts              the Jungle's layout and spawn zones
+    enemies.ts             wild animals of the Forest and the Jungle
+    bosses.ts              the Forest's and the Jungle's boss
     food.ts                food types and diet rules
   logic/                   pure functions, unit-tested with node --test
     stats.ts               final stats = base x stage x level x biome/ability modifiers
@@ -46,14 +48,20 @@ src/
     growthText.ts          the words on the growth meter, including "Fully fed, level 8 needed (340/525 XP)"
     vision.ts              night vision: how much an animal sees as it gets dark, and the level-tag range
     dayNight.ts            time of day -> sun height, daylight, twilight, phase name
-    heightfield.ts         forest terrain height function
+    heightfield.ts         any biome's terrain height from its layout (rolls, bumps, ponds, river channels, a hill with a cliff)
+    river.ts               rivers: the smoothed course, "in the river", the current, drinking spots on the bank
+    water.ts               ponds and rivers together: the water surface at a point, "near water", where to drink
+    waterfall.ts           where a layout's waterfall leaves the cliff and where it lands
+    cave.ts                the Jungle's cave: its ring of boulders and mouth, its roof, where the bait lies
+    climb.ts               cliffs: ground too steep to walk up, sliding along its foot, sliding down a cliff face
   animals/
     AnimalModel.ts         interface gameplay code talks to (glTF can replace it later)
     ProceduralQuadruped.ts parametric rig + procedural animation
+    ProceduralSnake.ts     the legless rig: a snake that slithers, rears back, strikes and rolls over when it dies
     toon.ts                toon materials, rim light, faceted shading helper
   world/
     terrain.ts             terrain mesh from the height function
-    forest.ts              instanced trees/rocks/grass, pond, den, arena, gate, world queries
+    world.ts               BiomeWorld: one biome built from its layout (instanced trees/rocks/grass, ponds, rivers, waterfall, den, arena, gates), and the world queries
     sky.ts                 sky dome, sun, moon, stars, clouds, lights, fog; the day and night cycle
     colliders.ts           static circle colliders in a grid
   systems/
@@ -84,8 +92,8 @@ src/
     Game.ts                one play session: owns the systems and the update loop
     debug.ts               test hooks (dev / ?debug only)
 tests/
-  unit/*.test.ts           32 logic and data tests (node --test, no extra dependency)
-  e2e/smoke.mjs            Playwright: plays the core loop for each species, checks console, screenshots
+  unit/*.test.ts           172 logic and data tests (node --test, no extra dependency)
+  e2e/smoke.mjs            Playwright: plays the core loop for each species and reviews the Jungle, checks console, screenshots
 ```
 
 ## Key decisions
@@ -189,3 +197,24 @@ The user reviewed M2 and sent feedback in pieces (12 items: admin function, bald
 - [x] **3. Water.** Built. 3a: the pond is a list of four water bodies (the old one plus radius 11, 9 and 7), fish in each, the trees moved with the new layout (`src/logic/water.ts`, `FOREST_LAYOUT.waters`). 3b: fish that swim away from a wading animal (`src/logic/fish.ts`, `TUNING.fish`), wild animals and title animals that walk to a pond and drink (`shoreStandPoint`, `TUNING.drink`, a head-down animation), and a title scene with animals on every shore and a camera that swings across the west and north-west shores (`src/logic/titleView.ts`). Checks: 130 unit tests, 231 browser checks. Committed as `bc230a2`; pushed.
 - [x] **4. Food.** Built. Leaves (3 growth), fruit (8) and nuts (10) on trees for the Elephant and the Bear (`treeFood.ts`, `TREE_FOOD`, the new `leaf` and `nut` kinds); two fox food reserves with six kinds of fruit and vegetable (12 growth each), guarded by calm foxes that all attack when one is raided (`foxReserve.ts`, `EnemyActor.calm`, `guardOf`). Checks: 142 unit tests, 252 browser checks. Committed as `4f574a9`; pushed.
 - [x] **5. Docs and final checks.** Done. The bible and this file are up to date; the final run is 142 unit tests, 252 browser checks (several runs in a row), typecheck and production build. Everything is committed and pushed (2026-11-15). Waiting for the user's review; the handover notes are in the bible, section 16.
+
+---
+
+# Milestone 3 task list
+
+Scope: the Jungle, the Plains and Winter, with bosses, and the buffs and nerfs active across biomes. Agreed with the user on 2026-11-17: **one biome at a time**, each reviewed before the next, the groundwork and the Jungle first. The decisions and their reasons are in the bible's Decisions Log; how to add the next biome is in its "Notes for the rest of Milestone 3".
+
+- [x] **1. Groundwork and the Jungle.** Built on 2026-11-17; waiting for the user's review; not committed yet.
+  - One world class for every biome (`BiomeWorld`, `BiomeLayout`, `BIOME_LAYOUTS`, `createHeight`); the Forest checked to be exactly as it was (a fingerprint of its trees and terrain, identical before and after).
+  - Rivers with a current (`river.ts`, `water.ts`), water at more than one height, cliffs (`climb.ts`), a waterfall (`waterfall.ts`).
+  - Travel through the gates both ways, the biome saved with the animal, the title always the Forest, a Biome row in the admin panel.
+  - The Jungle's map (`src/data/jungle.ts`): hill, cliff, spring, stream, waterfall, plunge pool, river with a ford, lagoon; canopy trees, palms with coconuts, vines, ferns, lily pads, mist.
+  - Its animals (capybara, monkey, snake, tapir; rival tigers and crocodiles) and its boss (the Great Silverback, level 20, a gorilla).
+  - Added after the first look: **snakes** (a third rig, `ProceduralSnake`), a **gorilla-shaped Silverback** (the `knuckle` and `brow` markings), and a **cave** deep in the trees east of the boss's arena (62 m from it, with a trail kept clear of trees leading to it) with four carcasses as bait and a calm nest of three Cave Snakes that all attack once the bait is eaten or one is hurt (`cave.ts`, `lair` zones, `CAVE_FOOD`). After the cave was added the full browser run was made four times: three passed all 310 checks, and one failed a single Forest check ("carnivore is told it cannot eat berries": a leafy plant had grown beside the berry bush and was the nearest food, a flake of the kind the bear's check had already been fixed for; the wolf's check now clears plants near the bush the same way, and the run after that passed all 310).
+  - The camera moves in front of trunks and rocks (the Forest too).
+  - Checks at the first review: 172 unit tests (30 new: rivers, climbing, the Jungle's map and animals), 301 browser checks (50 new or changed: the gates there and back, Continue Game in the Jungle, the current, the ford, the cliff, the ride over the waterfall, coconuts, drinking at the river, each animal's Jungle buff or nerf, a hunt, two fights, the Silverback, "Jungle Ruled", death in the Jungle), typecheck, production build. Screenshots looked at.
+- [ ] **2. The Plains.** Wide and open, golden grass, scattered acacia-style trees. Its animals (the bible suggests zebra or antelope, hyena, buffalo), rivals (the Elephant lives here), boss (giant buffalo or hyena pack leader). To discuss with the user first.
+- [ ] **3. Winter.** Snow, pines, cold haze. Its animals (arctic hare, seal, arctic fox), rivals, boss (mammoth-like beast or ice-wolf alpha), and what happens when the last biome is ruled (the win condition). To discuss with the user first.
+- [ ] **4. Wrap-up of M3.** The docs, a clean test run, and the user's acceptance.
+
+Review focus for M3: the Forest must not change; a save from before M3 still loads (in the Forest); every place on a new map can be reached; an animal can always get out of the water; no console errors in any biome.

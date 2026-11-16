@@ -1,7 +1,8 @@
 import type * as THREE from 'three';
-import type { BodyColors, BodyPlan, FeatureId } from '../core/types.ts';
+import type { BodyColors, BodyPlan, FeatureId, RigId } from '../core/types.ts';
 import { ProceduralBird } from './ProceduralBird.ts';
 import { ProceduralQuadruped } from './ProceduralQuadruped.ts';
+import { ProceduralSnake } from './ProceduralSnake.ts';
 
 /** What gameplay tells a model each frame. Models never read game state directly. */
 export interface AnimState {
@@ -64,10 +65,12 @@ export interface AnimalAppearance {
   /** Relative head size; juveniles have bigger heads. */
   headScale: number;
   /** Which rig draws the animal (default: the four-legged one). */
-  rig?: 'quadruped' | 'winged';
+  rig?: RigId;
 }
 
 export function createAnimalModel(appearance: AnimalAppearance): AnimalModel {
   // TODO(M5): optional glTF models.
-  return appearance.rig === 'winged' ? new ProceduralBird(appearance) : new ProceduralQuadruped(appearance);
+  if (appearance.rig === 'winged') return new ProceduralBird(appearance);
+  if (appearance.rig === 'serpent') return new ProceduralSnake(appearance);
+  return new ProceduralQuadruped(appearance);
 }

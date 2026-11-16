@@ -41,6 +41,46 @@ const list: BossDef[] = [
       xp: 300, carcassGrowth: 60,
     },
   },
+  {
+    // The Jungle's boss: a giant silverback. Wide fist swings, a ground pound that reaches far, and a charge.
+    id: 'silverback', biome: 'jungle', title: 'Great Silverback, Lord of the Jungle', level: 20, repeatXp: 80,
+    enemy: {
+      id: 'silverback', name: 'Great Silverback',
+      baseStats: {
+        maxHealth: 2000, stamina: 100, staminaRegen: 10, damage: 46, moveSpeed: 3.0, sprintSpeed: 7.2,
+        attackSpeed: 1, defense: 12, size: 2.3,
+      },
+      // A gorilla: long arms and a high, heavy shoulder mound, short hind legs, a head sunk between the shoulders
+      // with a flat dark face, a heavy brow and a crest, no tail, and a silver saddle over the back.
+      body: {
+        bodyLength: 1.2, bodyHeight: 0.7, bodyWidth: 0.64, legLength: 0.5, legThickness: 0.15,
+        neckLength: 0.2, neckAngle: 0.3, headSize: 0.46, snoutLength: 0.05,
+        ears: 'round', earSize: 0.045, tail: 'stub', tailLength: 0.02, chestBulk: 1.25,
+      },
+      colors: { body: 0x3b3b43, belly: 0x3d3d45, accent: 0x18181b, saddle: 0xc3c8d2 },
+      features: ['knuckle', 'brow', 'saddle', 'scar'],
+      behavior: {
+        aggroRadius: 18, aggressive: true, fleeOnSight: false, fleeHealthPct: 0,
+        leashRadius: 22, wanderRadius: 6, fleeBurst: 0, windedSeconds: 0, windedSpeedMult: 1,
+        woundedSpeedMult: 1,
+      },
+      attacks: [
+        {
+          id: 'fist_swing', kind: 'melee', range: 2.0, windup: 0.65, recover: 0.85, damageMult: 1,
+          arcDeg: 150, knockback: 10, cooldown: 1.9,
+        },
+        {
+          id: 'charge', kind: 'charge', range: 28, minRange: 8, windup: 0.9, recover: 1.3,
+          damageMult: 1.6, knockback: 14, cooldown: 9, speed: 16, duration: 1.0,
+        },
+        {
+          id: 'ground_pound', kind: 'aoe', range: 3, radius: 7, windup: 1.0, recover: 1.0,
+          damageMult: 1.25, knockback: 10, cooldown: 8,
+        },
+      ],
+      xp: 700, carcassGrowth: 80,
+    },
+  },
 ];
 
 export const BOSSES: Record<string, BossDef> = Object.fromEntries(list.map((b) => [b.id, b]));

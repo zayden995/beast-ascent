@@ -6,8 +6,7 @@ import { getEnemy } from '../data/enemies.ts';
 import { getSpecies, getVariant } from '../data/species.ts';
 import { STAGES } from '../data/stages.ts';
 import { TUNING } from '../data/tuning.ts';
-import { shoreStandPoint } from '../logic/water.ts';
-import type { ForestWorld } from '../world/forest.ts';
+import type { BiomeWorld } from '../world/world.ts';
 import { Actor, integrate } from './actor.ts';
 
 interface Roamer {
@@ -37,11 +36,11 @@ const STROLL = 2.2;
  */
 export class AmbientLife {
   private roamers: Roamer[] = [];
-  private world: ForestWorld;
+  private world: BiomeWorld;
   private rand = mulberry32(4242);
   private shyDistance: number;
 
-  constructor(scene: THREE.Scene, world: ForestWorld, animals: TitleAnimalDef[], shyDistance: number) {
+  constructor(scene: THREE.Scene, world: BiomeWorld, animals: TitleAnimalDef[], shyDistance: number) {
     this.world = world;
     this.shyDistance = shyDistance;
     for (const def of animals) {
@@ -92,7 +91,7 @@ export class AmbientLife {
     // Now and then the walk is to the water's edge, to drink (not for the animals that wade in).
     if (allowDrink && !def.wades && this.rand() < TUNING.drink.chance) {
       const here = r.actor.pos;
-      const spot = shoreStandPoint(this.world.layout.waters, here.x, here.z, TUNING.drink.reach);
+      const spot = this.world.drinkSpot(here.x, here.z, TUNING.drink.reach);
       if (spot && !this.world.colliders.blocked(spot.x, spot.z, 1) && this.world.waterDepth(spot.x, spot.z) <= 0.1) {
         this.walkTo(r, spot.x, spot.z, r.stroll, false);
         r.drinkYaw = spot.yaw;

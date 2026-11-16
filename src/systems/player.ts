@@ -12,7 +12,7 @@ import { abilityRank } from '../logic/progression.ts';
 import type { DeathOutcome } from '../logic/progression.ts';
 import { swimSpeedFactor } from '../logic/stats.ts';
 import type { StatInputs } from '../logic/stats.ts';
-import type { ForestWorld } from '../world/forest.ts';
+import type { BiomeWorld } from '../world/world.ts';
 import { AbilitySystem } from './abilities.ts';
 import { Actor, integrate } from './actor.ts';
 import type { ThirdPersonCamera } from './camera.ts';
@@ -26,7 +26,7 @@ const T = TUNING.player;
 
 export interface PlayerDeps {
   scene: THREE.Scene;
-  world: ForestWorld;
+  world: BiomeWorld;
   input: Input;
   cam: ThirdPersonCamera;
   combat: Combat;
@@ -34,6 +34,8 @@ export interface PlayerDeps {
   growth: Growth;
   events: EventBus<GameEvents>;
   clock: { time: number };
+  /** Where the animal starts (the den's spawn point, or just inside a gate it came through). */
+  start: { x: number; z: number; yaw: number };
 }
 
 /** Turns input into movement, attacks, dodges and ability use for the player's animal. */
@@ -77,7 +79,7 @@ export class PlayerController {
     );
     this.abilities.setLoadout(growth.variant.abilities);
 
-    const spawn = world.layout.playerSpawn;
+    const spawn = deps.start;
     this.actor.pos.set(spawn.x, world.heightAt(spawn.x, spawn.z), spawn.z);
     this.actor.yaw = spawn.yaw;
 

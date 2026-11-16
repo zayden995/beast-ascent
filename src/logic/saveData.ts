@@ -1,6 +1,6 @@
 import type { BiomeId, StageId } from '../core/types.ts';
 import { ABILITIES } from '../data/abilities.ts';
-import { BIOME_ORDER } from '../data/biomes.ts';
+import { BIOME_LAYOUTS, BIOME_ORDER } from '../data/biomes.ts';
 import { SPECIES, isPlayable } from '../data/species.ts';
 import { STAGE_ORDER } from '../data/stages.ts';
 import { TUNING } from '../data/tuning.ts';
@@ -14,6 +14,8 @@ export interface SaveData {
   progress: Progress;
   unlockedBiomes: BiomeId[];
   ruledBiomes: BiomeId[];
+  /** The biome the animal is in: where Continue Game puts it (at that biome's den). */
+  biome: BiomeId;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -63,6 +65,9 @@ export function sanitizeSave(raw: unknown): SaveData | null {
 
   const unlocked = biomeList(raw.unlockedBiomes);
   if (!unlocked.includes('forest')) unlocked.unshift('forest');
+  // Saves from before the Jungle name no biome: those animals are in the Forest. A biome that is not
+  // unlocked, or has no map yet, is not a place to wake up in.
+  const biome = BIOME_ORDER.find((b) => b === raw.biome && unlocked.includes(b) && BIOME_LAYOUTS[b] !== undefined) ?? 'forest';
 
   return {
     version: TUNING.save.version,
@@ -80,6 +85,7 @@ export function sanitizeSave(raw: unknown): SaveData | null {
     },
     unlockedBiomes: unlocked,
     ruledBiomes: biomeList(raw.ruledBiomes),
+    biome,
   };
 }
 

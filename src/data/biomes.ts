@@ -1,4 +1,6 @@
+import type { BiomeLayout } from '../core/layout.ts';
 import type { BiomeDef, BiomeId, SpawnZoneDef, TitleAnimalDef, TitleViewDef, WaterBody } from '../core/types.ts';
+import { JUNGLE_LAYOUT, JUNGLE_SPAWNS } from './jungle.ts';
 
 /** Order in which biomes unlock (bible section 4.5, tunable). */
 export const BIOME_ORDER: BiomeId[] = ['forest', 'jungle', 'plains', 'winter'];
@@ -13,16 +15,18 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
     },
     fogNear: 45, fogFar: 190,
   },
-  // TODO(M3): these three biomes are palette stubs only. No terrain, enemies or bosses yet.
+  // The Jungle (Milestone 3): its map is `JUNGLE_LAYOUT` in jungle.ts.
   jungle: {
-    id: 'jungle', name: 'Jungle', order: 1, implemented: false, bossId: null,
+    id: 'jungle', name: 'Jungle', order: 1, implemented: true, bossId: 'silverback',
     palette: {
       ground: 0x3f7f3a, groundAlt: 0x2f6b35, dirt: 0x5b4a33, rock: 0x6f7468,
       foliage: 0x1f6b33, foliageAlt: 0x2f8040, trunk: 0x4f3b28, water: 0x3d8f7f,
       skyTop: 0x5fa8c8, skyHorizon: 0xcfe6d2, fog: 0xa9d2b8, sun: 0xfff3d6,
+      shore: 0x6b5a3c, deepWater: 0x3f5f4c, grassTip: 0x6fbf4a,
     },
     fogNear: 25, fogFar: 120,
   },
+  // TODO(M3): the Plains and Winter are palette stubs only. No terrain, enemies or bosses yet.
   plains: {
     id: 'plains', name: 'Plains', order: 2, implemented: false, bossId: null,
     palette: {
@@ -48,10 +52,19 @@ export function nextBiome(id: BiomeId): BiomeId | null {
   return i >= 0 && i < BIOME_ORDER.length - 1 ? BIOME_ORDER[i + 1] : null;
 }
 
+/** The biome an animal came from to reach this one (null for the first). */
+export function previousBiome(id: BiomeId): BiomeId | null {
+  const i = BIOME_ORDER.indexOf(id);
+  return i > 0 ? BIOME_ORDER[i - 1] : null;
+}
+
 /** Forest map layout. North is -Z. All positions in metres. */
-export const FOREST_LAYOUT = {
+export const FOREST_LAYOUT: BiomeLayout = {
   seed: 1337,
+  style: 'forest',
   worldRadius: 108,
+  // Rolling hills with a few small bumps; every slope can be walked.
+  terrain: { base: 1.6, rollHeight: 4.4, rollScale: 0.02, rollOctaves: 3, bumpHeight: 0.45, bumpScale: 0.09, bumpOctaves: 2, segments: 190 },
   // Wild animals never enter `refugeRadius`, and ignore a player who is inside it. It was 18 m
   // until the user found it too big (2026-11-14, Milestone 2). The player spawns 9 m from the den.
   den: { x: 0, z: 52, radius: 8, refugeRadius: 12 },
@@ -69,6 +82,7 @@ export const FOREST_LAYOUT = {
     { x: -26, z: -26, radius: 9, depth: 1.8, fish: 2 },
     { x: 56, z: -74, radius: 7, depth: 1.6, fish: 2 },
   ] as WaterBody[],
+  rivers: [],
   arena: { x: 0, z: -58, radius: 18 },
   gate: { x: 0, z: -101, radius: 6 },
   trees: 430,
@@ -89,6 +103,15 @@ export const FOREST_LAYOUT = {
   nearWaterMargin: 8,
 };
 
+/** The map of every biome that is built. The Plains and Winter have none yet. */
+export const BIOME_LAYOUTS: Partial<Record<BiomeId, BiomeLayout>> = { forest: FOREST_LAYOUT, jungle: JUNGLE_LAYOUT };
+
+export function layoutOf(id: BiomeId): BiomeLayout {
+  const layout = BIOME_LAYOUTS[id];
+  if (!layout) throw new Error(`The ${id} biome has no map yet`);
+  return layout;
+}
+
 export const FOREST_SPAWNS: SpawnZoneDef[] = [
   { enemyId: 'deer', count: 4, x: -42, z: 12, radius: 22, levelMin: 1, levelMax: 3 },
   { enemyId: 'deer', count: 3, x: 44, z: -40, radius: 20, levelMin: 2, levelMax: 4 },
@@ -105,6 +128,13 @@ export const FOREST_SPAWNS: SpawnZoneDef[] = [
   { enemyId: 'rival_lion', count: 1, x: 74, z: 10, radius: 10, levelMin: 5, levelMax: 6, rivalOf: 'lion', respawnSeconds: 150 },
   { enemyId: 'rival_bear', count: 1, x: 56, z: 50, radius: 12, levelMin: 6, levelMax: 7, rivalOf: 'bear', respawnSeconds: 150 },
 ];
+
+/** The wild animals of every biome that is built. */
+export const BIOME_SPAWNS: Partial<Record<BiomeId, SpawnZoneDef[]>> = { forest: FOREST_SPAWNS, jungle: JUNGLE_SPAWNS };
+
+export function spawnsOf(id: BiomeId): SpawnZoneDef[] {
+  return BIOME_SPAWNS[id] ?? [];
+}
 
 /**
  * Title screen: the animals of the forest gathered around the big pond (from Milestone 2 with a tiger, an

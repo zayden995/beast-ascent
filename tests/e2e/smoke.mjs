@@ -1,4 +1,4 @@
-// End-to-end check of Milestones 1 and 2: boots the real game in a headless browser, plays the core
+// End-to-end check of Milestones 1 and 2 and the Jungle of Milestone 3: boots the real game in a headless browser, plays the core
 // loop through real key/mouse events, and fails on any console error.
 // The simulation is stepped through the debug hook so the run is deterministic and fast.
 // Run with: npm run test:e2e
@@ -407,7 +407,12 @@ try {
   check('Q dodges with invulnerability and stamina cost', s.player.invuln > 0 && s.player.stamina < stBefore - 20);
   await B.advance(1);
 
-  // Wolf cannot eat berries.
+  // Wolf cannot eat berries. (Leafy plants grow in random places: one beside the bush would be the nearest food,
+  // and the message would name the plant, so clear any plant near the bush first, as the bear's check below does.)
+  await page.evaluate(() => {
+    const food = window.__beast.app.game.food;
+    for (const item of [...food.items]) if (item.kind === 'plant' && Math.hypot(item.pos.x + 14, item.pos.z - 31.5) < 8) food.consume(item);
+  });
   await B.teleport(-14, 31.5);
   await B.advance(0.1);
   s = await B.state();
@@ -470,7 +475,20 @@ try {
   check('eating fills the growth meter and uses up the carcass', s.player.growth > 0 && s.food.filter((f) => f.kind === 'carcass').length === carcass.length - 1, `growth ${s.player.growth}`);
 
   // Signature ability.
-  const prey = nearest(s, 'boar') ?? nearest(s);
+  // An animal with open ground south of it (no tree, rock or water in the 6 m the wolf leaps across) and no
+  // other animal near that line: a trunk in the way stops the leap, and aim assist turns toward a nearer animal.
+  const clearPreyId = await page.evaluate(() => {
+    const g = window.__beast.app.game;
+    const w = g.world;
+    const live = g.spawner.enemies.filter((e) => e.alive && !e.isBoss);
+    const clear = (e) => {
+      for (let dz = -1; dz <= 8; dz += 0.5) if (w.colliders.blocked(e.pos.x, e.pos.z + dz, 1.4) || w.waterDepth(e.pos.x, e.pos.z + dz) > 0) return false;
+      return Math.hypot(e.pos.x, e.pos.z + 8) < w.boundary - 2 && !w.inRefuge(e.pos.x, e.pos.z + 6, 3);
+    };
+    const alone = (e) => live.every((o) => o === e || Math.hypot(o.pos.x - e.pos.x, o.pos.z - (e.pos.z + 3)) > 9);
+    return (live.filter((e) => e.def.id === 'boar').find((e) => clear(e) && alone(e)) ?? live.find((e) => clear(e) && alone(e)))?.id ?? null;
+  });
+  const prey = s.enemies.find((e) => e.id === clearPreyId) ?? nearest(s, 'boar') ?? nearest(s);
   // Held still and stunned, so that where it faces or whether it notices the wolf cannot change the result.
   await hold(prey.id, 0);
   await page.evaluate((id) => { window.__beast.app.game.spawner.enemies.find((e) => e.id === id).stun = 3; }, prey.id);
@@ -617,11 +635,70 @@ try {
   await B.teleport(0, -97, Math.PI);
   await B.advance(0.2);
   s = await B.state();
-  check('gate offers the (stubbed) next biome', s.prompt?.key === 'E' && /Enter the Jungle/.test(s.prompt.text), s.prompt?.text);
-  await tap('KeyE');
-  await page.waitForTimeout(100);
-  check('gate stub says the Jungle is not built yet', /Milestone 3/.test(await page.locator('.hud-toasts').innerText()));
+  check('the open gate offers the next biome', s.prompt?.key === 'E' && /Enter the Jungle/.test(s.prompt.text), s.prompt?.text);
   await shot('13-gate-open');
+
+  // ---------- Through the gate to the Jungle (Milestone 3), and back ----------
+  {
+  const levelAtGate = s.player.level;
+  await tap('KeyE');
+  await B.advance(0.2);
+  await settle();
+  s = await B.state();
+  const jungle = await page.evaluate(() => {
+    const w = window.__beast.app.world;
+    return { spawn: w.layout.playerSpawn, returnGate: w.layout.returnGate, gate: w.layout.gate, arrive: w.gateSpot('return') };
+  });
+  check('pressing E at the gate takes the animal to the Jungle, just inside its gate back, facing in',
+    s.biome === 'jungle' && s.screen === 'playing' && s.player.alive && Math.hypot(s.player.x - jungle.arrive.x, s.player.z - jungle.arrive.z) < 1.5 && Math.abs(Math.cos(s.player.yaw) + 1) < 0.01,
+    `${s.biome} at ${s.player.x.toFixed(1)}, ${s.player.z.toFixed(1)}`);
+  check('the journey keeps the animal as it was: level, abilities, ruled biomes, save slot',
+    s.player.level === levelAtGate && s.player.stage === 'adult' && Object.keys(s.player.ranks).length === 4 && s.ruled.join() === 'forest' && s.slot === 1 && s.species === 'wolf');
+  const hudText = await page.locator('.hud').innerText();
+  check('a banner names the biome and says what it does to this animal', /The Jungle/.test(hudText) && /-15% speed/i.test(hudText), hudText.replace(/\n/g, ' ').slice(0, 160));
+  check('the HUD names the Jungle and shows the Wolf\'s nerf there (-15% speed)', /Jungle/.test(await page.locator('.hud-biome').innerText()) && s.player.mods.join() === 'speed:-0.15', s.player.mods.join());
+  check('no prompt nags the animal the moment it arrives', s.prompt === null, s.prompt?.text);
+  const jungleKinds = new Set(s.enemies.map((e) => e.kind));
+  check('the Jungle has its own animals, its own rivals and its own boss',
+    ['capybara', 'monkey', 'tapir', 'rival_tiger', 'rival_crocodile', 'silverback'].every((k) => jungleKinds.has(k)) && !jungleKinds.has('deer') && !jungleKinds.has('ancient_stag'),
+    [...jungleKinds].join(', '));
+  check('the Jungle\'s gate onward is sealed until its boss is beaten', !s.gateOpen);
+  check('the journey is saved: slot 1 says the animal is in the Jungle', JSON.parse(await page.evaluate(() => localStorage.getItem('beastAscent.save.slot1'))).biome === 'jungle' && s.savedBiome === 'jungle');
+  await shot('13b-jungle-arrival');
+
+  // Quitting from the Jungle: the title is the Forest as always, and Continue Game wakes the animal at the Jungle's den.
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: /return to title/ }).click();
+  await page.locator('.title').waitFor();
+  check('the title screen is the Forest, whichever biome the game was in',
+    (await page.evaluate(() => window.__beast.app.world.biome.id)) === 'forest' && (await B.call('titleAnimals')).length >= 8);
+  await page.getByRole('button', { name: /Continue Game/ }).click();
+  await page.locator('.save-slot[data-slot="1"]').click();
+  await page.locator('.hud').waitFor();
+  await B.call('setAutoStep', false);
+  await B.call('setRender', false);
+  await B.advance(0.2);
+  s = await B.state();
+  check('Continue Game wakes the animal in the Jungle, safe at its den',
+    s.biome === 'jungle' && Math.hypot(s.player.x - jungle.spawn.x, s.player.z - jungle.spawn.z) < 1 && s.player.safe && s.player.level === levelAtGate,
+    `${s.biome} at ${s.player.x.toFixed(1)}, ${s.player.z.toFixed(1)}`);
+  await shot('13c-jungle-den');
+
+  // The gate back, at the south edge.
+  await B.teleport(jungle.returnGate.x, jungle.returnGate.z - 5, 0);
+  await B.advance(0.2);
+  s = await B.state();
+  check('the gate back offers the Forest', s.prompt?.key === 'E' && /Return to the Forest/.test(s.prompt.text), s.prompt?.text);
+  await tap('KeyE');
+  await B.advance(0.2);
+  s = await B.state();
+  boss = s.enemies.find((e) => e.boss);
+  check('it leads to the Forest\'s gate, the Forest is still ruled and its gate still open',
+    s.biome === 'forest' && Math.hypot(s.player.x, s.player.z + 91) < 1.5 && s.ruled.join() === 'forest' && s.gateOpen && s.savedBiome === 'forest',
+    `${s.biome} at ${s.player.x.toFixed(1)}, ${s.player.z.toFixed(1)}`);
+  check('the Forest\'s boss is back, because the animal left the biome and returned', !!boss && boss.alive && boss.kind === 'ancient_stag' && boss.hp === boss.maxHp);
+  check('the Wolf has its Forest buff again (+20% speed)', s.player.mods.join() === 'speed:0.2', s.player.mods.join());
+  }
 
   // ---------- Pause, quit, continue ----------
   await page.keyboard.press('Escape');
@@ -1783,6 +1860,390 @@ try {
   check('wild animals walk to a pond and drink at its edge, never in the water', drinkingSeen > 0 && wrongPlace.length === 0, `${drinkingSeen} drinking samples in 300 s; wrong place: ${wrongPlace.slice(0, 3).join('; ')}`);
   await B.advance(1);
   await shot('14h-admin-elephant');
+
+  // ---------- The Jungle (Milestone 3), reviewed from the admin sandbox ----------
+  {
+  await page.keyboard.press('KeyJ');
+  await page.locator('.admin-card').waitFor();
+  check('admin: the panel lists the biomes that are built, with the Forest as the current one',
+    (await page.getByRole('button', { name: 'Forest', exact: true }).getAttribute('aria-pressed')) === 'true'
+    && (await page.getByRole('button', { name: 'Jungle', exact: true }).getAttribute('aria-pressed')) === 'false'
+    && (await page.getByRole('button', { name: 'Plains', exact: true }).count()) === 0);
+  await page.getByRole('button', { name: 'Jungle', exact: true }).click();
+  await page.locator('.admin-card').waitFor();
+  await B.advance(0.2);
+  s = await B.state();
+  check('admin: the Jungle button puts the same animal at the Jungle\'s den, with the panel still open and nothing saved',
+    s.biome === 'jungle' && s.screen === 'admin' && s.slot === null && s.species === 'elephant' && s.player.level === 23 && s.unlocked.includes('jungle')
+    && (await page.getByRole('button', { name: 'Jungle', exact: true }).getAttribute('aria-pressed')) === 'true',
+    `${s.biome}, ${s.screen}, ${s.species} level ${s.player.level}`);
+  await shot('20-jungle-admin-panel');
+  await page.keyboard.press('Escape');
+  await page.locator('.admin-card').waitFor({ state: 'detached' });
+  await B.advance(0.2);
+  s = await B.state();
+  check('jungle: the Elephant is at home here (+20% max health)', s.player.mods.join() === 'maxHealth:0.2', s.player.mods.join());
+  check('jungle: every wild animal is level 8 or higher (the Forest stops at 7)', s.enemies.filter((e) => !e.boss).every((e) => e.level >= 8) && s.enemies.length >= 20, `${s.enemies.length} animals`);
+  await shot('20b-jungle-den');
+
+  // What the tests need to know about the map.
+  const J = await page.evaluate(() => {
+    const w = window.__beast.app.world;
+    const river = w.rivers.find((r) => r.id === 'river');
+    const stream = w.rivers.find((r) => r.id === 'stream');
+    const dry = (pts) => pts.map((p, i) => ({ ...p, i, bed: w.heightAt(p.x, p.z), pond: w.layout.waters.some((q) => Math.hypot(p.x - q.x, p.z - q.z) < q.radius + 4) })).filter((p) => !p.pond);
+    const open = dry(river.points);
+    const dir = (r, i) => { const a = r.points[i - 1], b = r.points[i + 1], l = Math.hypot(b.x - a.x, b.z - a.z); return { x: (b.x - a.x) / l, z: (b.z - a.z) / l }; };
+    // A deep, straight reach of the river well away from the crocodiles: between the ford and the lagoon.
+    const deep = open.filter((p) => p.bed < -1.5 && p.z > 30 && p.z < 46).sort((a, b) => a.i - b.i)[2];
+    const ford = open.slice().sort((a, b) => b.bed - a.bed)[0];
+    const onStream = stream.points[Math.floor(stream.points.length * 0.55)];
+    return {
+      layout: w.layout, fall: w.waterfall, current: river.current, streamY: stream.surfaceY,
+      deep: { x: deep.x, z: deep.z, dir: dir(river, deep.i) }, ford: { x: ford.x, z: ford.z, bed: ford.bed }, onStream: { x: onStream.x, z: onStream.z },
+    };
+  });
+  // Nobody picks a fight while the map itself is being tested.
+  const calmAll = () => page.evaluate(() => { for (const e of window.__beast.app.game.spawner.enemies) { e.calm = true; e.provoked = false; if (e.state === 'chase') e.state = 'return'; } });
+  await calmAll();
+
+  // The current.
+  await B.teleport(J.deep.x, J.deep.z, Math.atan2(J.deep.dir.x, J.deep.dir.z));
+  await B.advance(0.4);
+  s = await B.state();
+  const flow0 = Math.hypot(s.player.current.x, s.player.current.z);
+  check('jungle: an animal in the middle of the river swims, and the water there flows at the river\'s full speed', s.player.swimming && s.player.wet && Math.abs(flow0 - J.current) < 0.25, `swimming ${s.player.swimming}, current ${flow0.toFixed(2)} m/s`);
+  const along = (p, from) => (p.x - from.x) * J.deep.dir.x + (p.z - from.z) * J.deep.dir.z;
+  let from = { x: s.player.x, z: s.player.z };
+  await B.advance(3);
+  s = await B.state();
+  const drift = along(s.player, from);
+  check('jungle: left alone, the current carries the animal downstream, gently', drift > 2 && drift < J.current * 3 + 0.5, `${drift.toFixed(2)} m in 3 s`);
+
+  const swim = async (yaw) => {
+    await B.teleport(J.deep.x, J.deep.z, yaw);
+    await B.advance(0.3);
+    const a = (await B.state()).player;
+    await page.keyboard.down('KeyW');
+    await B.advance(2);
+    await page.keyboard.up('KeyW');
+    const b = (await B.state()).player;
+    return along(b, a);
+  };
+  const down = await swim(Math.atan2(J.deep.dir.x, J.deep.dir.z));
+  const up = await swim(Math.atan2(-J.deep.dir.x, -J.deep.dir.z));
+  check('jungle: swimming against the current is slower than swimming with it, but an animal still makes headway', up < -1 && down > -up + 2.5, `${down.toFixed(1)} m downstream against ${(-up).toFixed(1)} m upstream in 2 s`);
+  await shot('21-jungle-river');
+
+  await B.teleport(J.ford.x, J.ford.z);
+  await B.advance(0.4);
+  s = await B.state();
+  check('jungle: at the ford the river is shallow enough for a big animal to wade', s.player.wet && !s.player.swimming && s.player.waterDepth > 0.1 && s.player.waterDepth < 0.8, `depth ${s.player.waterDepth.toFixed(2)} m, swimming ${s.player.swimming}`);
+
+  // The cliff.
+  const hill = J.layout.hill;
+  const polar = (deg, dist) => ({ x: hill.x + Math.cos((deg * Math.PI) / 180) * dist, z: hill.z + Math.sin((deg * Math.PI) / 180) * dist });
+  const foot = polar(hill.cliff.towardDeg + 27, hill.plateauRadius + hill.cliff.width + 2);
+  await B.teleport(foot.x, foot.z);
+  await B.lookAt(hill.x, hill.z);
+  await page.keyboard.down('KeyW');
+  await page.keyboard.down('ShiftLeft');
+  await B.advance(4);
+  await page.keyboard.up('ShiftLeft');
+  await page.keyboard.up('KeyW');
+  s = await B.state();
+  check('jungle: the cliff cannot be climbed: sprinting at it for 4 s gets nowhere',
+    s.player.y < hill.top - 8 && Math.hypot(s.player.x - hill.x, s.player.z - hill.z) > hill.plateauRadius + 1,
+    `height ${s.player.y.toFixed(1)} m of ${hill.top}, ${Math.hypot(s.player.x - hill.x, s.player.z - hill.z).toFixed(1)} m from the middle`);
+  await shot('22-jungle-cliff');
+
+  // The back of the hill can be walked: pick a lane with no tree or rock in it.
+  const lane = await page.evaluate(([h, toward]) => {
+    const w = window.__beast.app.world;
+    for (let off = 180; off <= 320; off += 10) {
+      for (const sign of [1, -1]) {
+        const a = ((toward + 180 + (off - 180) * sign) * Math.PI) / 180;
+        let clear = true;
+        for (let d = h.plateauRadius - 2; d <= h.plateauRadius + 22 && clear; d += 0.5) clear = !w.colliders.blocked(h.x + Math.cos(a) * d, h.z + Math.sin(a) * d, 2.4) && w.waterDepth(h.x + Math.cos(a) * d, h.z + Math.sin(a) * d) === 0;
+        if (clear) return { x: h.x + Math.cos(a) * (h.plateauRadius + 20), z: h.z + Math.sin(a) * (h.plateauRadius + 20) };
+      }
+    }
+    return null;
+  }, [hill, hill.cliff.towardDeg]);
+  if (lane) {
+    await B.teleport(lane.x, lane.z);
+    const startY = (await B.state()).player.y;
+    await B.lookAt(hill.x, hill.z);
+    await page.keyboard.down('KeyW');
+    await page.keyboard.down('ShiftLeft');
+    await B.advance(6);
+    await page.keyboard.up('ShiftLeft');
+    await page.keyboard.up('KeyW');
+    s = await B.state();
+    check('jungle: the other sides of the hill are walked up to its flat top', s.player.y > hill.top - 1.5 && startY < hill.top - 4, `from ${startY.toFixed(1)} m up to ${s.player.y.toFixed(1)} m`);
+  } else {
+    check('jungle: a clear lane up the back of the hill exists for the test', false);
+  }
+
+  // Over the waterfall.
+  await B.teleport(J.onStream.x, J.onStream.z);
+  await B.advance(0.4);
+  s = await B.state();
+  const hpBefore = s.player.hp;
+  check('jungle: the stream on the hill is shallow: an animal wades it, up at the height of the top', s.player.wet && !s.player.swimming && s.player.y > hill.top - 2, `depth ${s.player.waterDepth.toFixed(2)} m at ${s.player.y.toFixed(1)} m`);
+  let rode = 0;
+  let highest = 0;
+  while (rode < 60 && (await B.state()).player.y > 2) {
+    await B.advance(0.5);
+    rode += 0.5;
+    highest = Math.max(highest, (await B.state()).player.y);
+  }
+  await B.advance(1.5);
+  s = await B.state();
+  const fromFoot = Math.hypot(s.player.x - J.fall.bottomX, s.player.z - J.fall.bottomZ);
+  check('jungle: the stream carries an animal that stands in it over the waterfall, down into the plunge pool, unhurt',
+    rode < 60 && s.player.y < 1 && s.player.wet && fromFoot < 9 && s.player.alive && s.player.hp >= hpBefore - 0.5,
+    `${rode} s to go over, now ${s.player.y.toFixed(1)} m high, ${fromFoot.toFixed(1)} m from the foot of the fall, hp ${Math.round(s.player.hp)}/${Math.round(hpBefore)}`);
+  await shot('23-jungle-plunge-pool');
+
+  // Palms bear coconuts.
+  const palm = await pickTree('nut');
+  if (palm) {
+    await B.teleport(palm.x + 2.6, palm.z);
+    await B.advance(0.2);
+    s = await B.state();
+    check('jungle: an Elephant at a palm is offered its coconuts', s.prompt?.key === 'E' && /Eat coconuts/.test(s.prompt.text), s.prompt?.text);
+    await tap('KeyE');
+    await B.advance(0.2);
+    check('jungle: eating them says so', /Coconuts/.test(await page.locator('.hud-toasts').innerText()));
+  } else {
+    check('jungle: a palm with coconuts and clear ground beside it exists for the test', false);
+  }
+
+  // Animals drink at the river's banks as well as at the ponds, and the wild crocodiles are at home in the water.
+  await B.teleport(J.layout.playerSpawn.x, J.layout.playerSpawn.z);
+  let jungleDrinks = 0;
+  let riverDrinks = 0;
+  let crocsInWater = 0;
+  const badDrinks = [];
+  for (let i = 0; i < 100; i++) {
+    await B.advance(2.5);
+    const seen = await page.evaluate(() => {
+      const g = window.__beast.app.game;
+      const w = g.world;
+      return g.spawner.enemies.filter((e) => e.alive).map((e) => ({
+        kind: e.def.id, drinking: e.drinking, x: e.pos.x, z: e.pos.z, depth: w.waterDepth(e.pos.x, e.pos.z), near: w.nearWater(e.pos.x, e.pos.z),
+        pond: w.layout.waters.some((q) => Math.hypot(e.pos.x - q.x, e.pos.z - q.z) < q.radius + 4),
+      }));
+    });
+    for (const e of seen) {
+      if (e.kind === 'rival_crocodile' && e.depth > 0.2) crocsInWater++;
+      if (!e.drinking) continue;
+      jungleDrinks++;
+      if (!e.pond) riverDrinks++;
+      if (e.depth > 0.25 || !e.near) badDrinks.push(`${e.kind} at ${e.x.toFixed(0)}, ${e.z.toFixed(0)} (depth ${e.depth.toFixed(2)})`);
+    }
+  }
+  check('jungle: wild animals drink at the water\'s edge, at river banks as well as ponds, never in the water',
+    jungleDrinks > 0 && riverDrinks > 0 && badDrinks.length === 0, `${jungleDrinks} drinking samples in 250 s, ${riverDrinks} of them at a river; wrong place: ${badDrinks.slice(0, 3).join('; ')}`);
+  check('jungle: the wild crocodiles spend time in the water', crocsInWater > 0, `${crocsInWater} samples`);
+
+  // Each animal's Jungle buff or nerf (bible section 4.4).
+  const modsAs = async (variantName, x, z) => {
+    await page.keyboard.press('KeyJ');
+    await page.locator('.admin-card').waitFor();
+    await page.getByRole('button', { name: variantName, exact: true }).click();
+    await page.locator('.admin-card').waitFor();
+    await page.keyboard.press('Escape');
+    await page.locator('.admin-card').waitFor({ state: 'detached' });
+    await calmAll();
+    if (x !== undefined) await B.teleport(x, z);
+    await B.advance(0.3);
+    const st = await B.state();
+    return { biome: st.biome, mods: st.player.mods.join() };
+  };
+  const dryLand = { x: J.layout.playerSpawn.x, z: J.layout.playerSpawn.z };
+  let m = await modsAs('Bald Eagle');
+  check('jungle: switching animal in the sandbox stays in the Jungle', m.biome === 'jungle');
+  check('jungle: the Eagle is slowed by the dense canopy (-20% speed)', m.mods === 'speed:-0.2', m.mods);
+  m = await modsAs('Brown Bear');
+  check('jungle: the Bear has less stamina here (-20%)', m.mods === 'stamina:-0.2', m.mods);
+  m = await modsAs('Savanna Lion');
+  check('jungle: the Lion has no modifier here', m.mods === '', m.mods);
+  m = await modsAs('Crocodile', dryLand.x, dryLand.z);
+  check('jungle: the Crocodile has no buff away from the water...', m.mods === '', m.mods);
+  await B.teleport(J.ford.x, J.ford.z);
+  await B.advance(0.3);
+  s = await B.state();
+  check('jungle: ...and +25% damage in and near it, rivers included', s.player.mods.join() === 'damage:0.25', s.player.mods.join());
+  check('jungle: a Crocodile player meets no wild crocodiles, only the tigers', !s.enemies.some((e) => e.kind === 'rival_crocodile') && s.enemies.filter((e) => e.kind === 'rival_tiger').length === 2);
+  m = await modsAs('Bengal Tiger');
+  check('jungle: the Tiger is at home here (+20% damage)', m.mods === 'damage:0.2', m.mods);
+  s = await B.state();
+  check('jungle: a Tiger player meets no wild tigers, only the crocodiles', !s.enemies.some((e) => e.kind === 'rival_tiger') && s.enemies.filter((e) => e.kind === 'rival_crocodile').length === 2);
+
+  // A hunt and two fights, as an Alpha Tiger.
+  await page.keyboard.press('KeyJ');
+  await page.locator('.admin-card').waitFor();
+  await page.getByRole('button', { name: 'Alpha', exact: true }).click();
+  await page.getByRole('button', { name: 'Max all' }).click();
+  await page.keyboard.press('Escape');
+  await page.locator('.admin-card').waitFor({ state: 'detached' });
+  await B.advance(0.2);
+  const capy = await hunt('capybara', 60);
+  check('jungle: a capybara flees and can be run down', capy.killed && capy.fled, `${capy.seconds}s, level ${capy.level}`);
+  const tapirFight = await fight('tapir', { maxSeconds: 60, keepAlive: true });
+  check('jungle: a tapir fights back and can be beaten', tapirFight.killed && tapirFight.hurt, `${tapirFight.seconds}s`);
+  const crocFight = await fight('rival_crocodile', { maxSeconds: 90, keepAlive: true });
+  check('jungle: a wild crocodile fights back and can be beaten', crocFight.killed && crocFight.hurt, `${crocFight.seconds}s`);
+
+  // A snake, out in the Jungle.
+  const snakeFight = await fight('snake', { maxSeconds: 60, keepAlive: true });
+  check('jungle: a snake rears back, strikes and can be beaten', snakeFight.killed && (snakeFight.states.has('windup') || snakeFight.states.has('charging')), `${snakeFight.seconds}s, states ${[...snakeFight.states].join(', ')}`);
+
+  // ---------- The snakes' cave, next to the boss's arena ----------
+  {
+    const cave = J.layout.cave;
+    const arena = J.layout.arena;
+    const nest = async () => (await B.state()).enemies.filter((e) => e.kind === 'cave_snake' && e.alive);
+    const bait = async () => (await B.state()).food.filter((f) => f.bait);
+    const insideCave = (p, r) => Math.hypot(p.x - cave.x, p.z - cave.z) < r;
+    let snakes = await nest();
+    let baits = await bait();
+    check('cave: it is on the right of the boss\'s arena, with four carcasses lying inside it and three calm snakes of an Adult\'s level',
+      cave.x > arena.x + arena.radius + 8 && baits.length === 4 && baits.every((f) => f.kind === 'carcass' && f.available && insideCave(f, cave.radius))
+      && snakes.length === 3 && snakes.every((e) => e.calm && e.level >= 12 && e.level <= 14 && insideCave(e, cave.radius)),
+      `${baits.length} carcasses, ${snakes.length} snakes at levels ${snakes.map((e) => e.level).join(', ')}, calm ${snakes.map((e) => e.calm).join(', ')}`);
+
+    // The trail kept clear of trees: an animal walks from the arena's ring to the cave's mouth without being held up.
+    await B.teleport(arena.x + arena.radius + 6, arena.z, Math.PI / 2);
+    await B.advance(0.3);
+    await page.keyboard.down('KeyW');
+    for (let t = 0; t < 14 && (await B.state()).player.x < cave.x - 8; t += 0.25) await B.advance(0.25);
+    await page.keyboard.up('KeyW');
+    s = await B.state();
+    check('cave: a trail leads from the arena through the trees to the cave\'s mouth, and an animal walks it without being held up',
+      cave.z === arena.z && s.player.x >= cave.x - 8 && Math.abs(s.player.z - cave.z) < 3, `at ${s.player.x.toFixed(1)}, ${s.player.z.toFixed(1)}; the mouth is at ${cave.x - 7}, ${cave.z}`);
+    await shot('27a-cave-trail');
+
+    // Walk in through the mouth: even the biggest animal fits.
+    await B.teleport(cave.x - 15, cave.z, Math.PI / 2);
+    await B.advance(0.3);
+    await page.keyboard.down('KeyW');
+    for (let t = 0; t < 5 && (await B.state()).player.x < cave.x - 2; t += 0.2) await B.advance(0.2);
+    await page.keyboard.up('KeyW');
+    await B.advance(0.2);
+    s = await B.state();
+    check('cave: an animal can walk in through the mouth, onto the dark floor, and nothing blocks the way', insideCave(s.player, cave.radius - 1) && !s.player.swimming, `at ${s.player.x.toFixed(1)}, ${s.player.z.toFixed(1)}, the middle is ${cave.x}, ${cave.z}`);
+    await shot('27-cave-inside');
+    const hpInside = s.player.hp;
+    await B.advance(4);
+    s = await B.state();
+    snakes = await nest();
+    check('cave: standing among sleeping snakes is safe: they stay calm and nobody is hurt', snakes.length === 3 && snakes.every((e) => e.calm && e.state !== 'chase' && e.state !== 'windup') && s.player.hp >= hpInside, snakes.map((e) => `${e.state}${e.calm ? '' : ' angry'}`).join(', '));
+
+    // The bait: a carnivore is offered a carcass; taking it wakes the nest.
+    baits = await bait();
+    await B.teleport(baits[0].x, baits[0].z + 1.4, 0);
+    await B.advance(0.1);
+    s = await B.state();
+    check('cave: next to a carcass the animal is offered it to eat', s.prompt?.key === 'E' && /Eat carcass/.test(s.prompt.text), s.prompt?.text);
+    await tap('KeyE');
+    await B.advance(0.3);
+    snakes = await nest();
+    baits = await bait();
+    check('cave: eating the bait wakes the whole nest: every snake is angry and comes for the animal',
+      snakes.length === 3 && snakes.every((e) => !e.calm && ['chase', 'windup', 'charging', 'recover'].includes(e.state)) && baits.filter((f) => f.available).length === 3 && /bait/.test(await page.locator('.hud-toasts').innerText()),
+      snakes.map((e) => `${e.state}${e.calm ? ' calm' : ''}`).join(', '));
+    await shot('28-cave-nest-awake');
+
+    // The fight: stand and fight them as they come.
+    const seen = new Set();
+    let hurt = false;
+    await page.mouse.move(640, 360);
+    await page.mouse.down();
+    for (let t = 0; t < 60; t += 0.25) {
+      s = await B.state();
+      const alive = s.enemies.filter((e) => e.kind === 'cave_snake' && e.alive).sort((a, b) => a.dist - b.dist);
+      for (const e of alive) seen.add(e.state);
+      if (s.player.hp < s.player.maxHp) hurt = true;
+      if (s.player.hp < s.player.maxHp * 0.6) await B.call('setHp', s.player.maxHp);
+      if (alive.length === 0) break;
+      await B.lookAt(alive[0].x, alive[0].z);
+      await B.advance(0.25);
+    }
+    await page.mouse.up();
+    snakes = await nest();
+    check('cave: the nest can be beaten, and its snakes rear back, strike and bite', snakes.length === 0 && hurt && seen.has('windup') && seen.has('charging'), `left ${snakes.length}, hurt ${hurt}, seen ${[...seen].join(', ')}`);
+
+    // They come back, and so does the bait.
+    await B.teleport(cave.x - 25, cave.z, Math.PI / 2);
+    await B.advance(190);
+    snakes = await nest();
+    baits = await bait();
+    check('cave: three minutes later the nest is back, calm again, and the eaten carcass has been replaced',
+      snakes.length === 3 && snakes.every((e) => e.calm) && baits.length === 4 && baits.every((f) => f.available), `${snakes.length} snakes, ${baits.filter((f) => f.available).length} carcasses`);
+
+    // Hurting one snake of a sleeping nest wakes all of them, without the bait being touched.
+    await page.evaluate(() => {
+      const g = window.__beast.app.game;
+      const one = g.spawner.enemies.find((e) => e.def.id === 'cave_snake' && e.alive);
+      g.combat.damage(g.player.actor, one, { damage: 1, knockback: 0 });
+    });
+    await B.advance(0.2);
+    snakes = await nest();
+    check('cave: hurting one snake wakes the others too', snakes.length === 3 && snakes.every((e) => !e.calm), snakes.map((e) => `${e.state}${e.calm ? ' calm' : ''}`).join(', '));
+    await B.teleport(arena.x, arena.z + 14, Math.PI);
+    await calmAll();
+    await B.advance(0.3);
+  }
+
+  // The boss.
+  s = await B.state();
+  boss = s.enemies.find((e) => e.boss);
+  check('jungle: the Great Silverback waits in its arena', !!boss && boss.kind === 'silverback' && Math.hypot(boss.x - J.layout.arena.x, boss.z - J.layout.arena.z) < J.layout.arena.radius && boss.level === 20, boss ? `level ${boss.level}` : 'no boss');
+  await B.teleport(J.layout.arena.x, J.layout.arena.z + 10, Math.PI);
+  await B.advance(0.5);
+  await shot('24-jungle-boss');
+  await B.teleport(J.layout.gate.x, J.layout.gate.z + 4, Math.PI);
+  await B.advance(0.2);
+  check('jungle: the gate onward is sealed while the Silverback lives', /Sealed. Defeat the Jungle boss/.test((await B.state()).prompt?.text ?? ''), (await B.state()).prompt?.text);
+  await B.teleport(boss.x, boss.z + 5);
+  await watchXp();
+  const silverback = await fight('boss', { maxSeconds: 300, keepAlive: true });
+  s = await B.state();
+  check('jungle: the Silverback can be defeated, and it uses its attacks', silverback.killed && silverback.hurt, `${silverback.seconds}s, states ${[...silverback.states].join(', ')}`);
+  check('jungle: the first win pays 700 XP', (await page.evaluate(() => window.__xp)).includes(700), (await page.evaluate(() => window.__xp)).join());
+  check('"Jungle Ruled": the Jungle is ruled, the Plains are unlocked and the gate is open', s.ruled.includes('jungle') && s.unlocked.includes('plains') && s.gateOpen && /Jungle Ruled/.test(await page.locator('.hud').innerText()), `ruled ${s.ruled.join()}, unlocked ${s.unlocked.join()}`);
+  await shot('25-jungle-ruled');
+  await B.teleport(J.layout.gate.x, J.layout.gate.z + 4, Math.PI);
+  await B.advance(0.2);
+  s = await B.state();
+  check('jungle: the open gate offers the Plains', s.prompt?.key === 'E' && /Enter the Plains/.test(s.prompt.text), s.prompt?.text);
+  await tap('KeyE');
+  await B.advance(0.2);
+  await page.waitForTimeout(100);
+  s = await B.state();
+  check('jungle: the Plains are not built yet: the gate says so and the animal stays in the Jungle', s.biome === 'jungle' && /The way to the Plains is not open yet/.test(await page.locator('.hud-toasts').innerText()));
+
+  // Death in the Jungle: the animal wakes at the Jungle's den.
+  await page.evaluate(() => {
+    const g = window.__beast.app.game;
+    g.combat.damage(g.spawner.enemies.find((e) => e.alive), g.player.actor, { damage: 1e7, knockback: 0 });
+  });
+  await B.advance(5);
+  s = await B.state();
+  check('jungle: an animal that dies here wakes at the Jungle\'s den, and keeps the biomes it rules',
+    s.biome === 'jungle' && s.player.alive && Math.hypot(s.player.x - J.layout.playerSpawn.x, s.player.z - J.layout.playerSpawn.z) < 1 && s.ruled.includes('jungle') && s.gateOpen,
+    `${s.biome} at ${s.player.x.toFixed(1)}, ${s.player.z.toFixed(1)}`);
+
+  // Night falls in the Jungle too.
+  await B.call('setTimeOfDay', 0);
+  await B.advance(0.2);
+  await shot('26-jungle-night');
+  await B.call('setTimeOfDay', 0.5);
+  await B.advance(0.2);
+  }
   await page.keyboard.press('Escape');
   await page.locator('.pause-card').waitFor();
   check('pausing a sandbox offers to leave it, not to save', (await page.getByRole('button', { name: /Leave the sandbox/ }).count()) === 1 && (await page.getByRole('button', { name: /Save and return to title/ }).count()) === 0);

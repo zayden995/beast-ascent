@@ -188,6 +188,19 @@ export class Sky {
     this.setTime(this.time);
   }
 
+  /** Changes to another biome's sky: its day colours and how far its haze lets the eye reach. */
+  setBiome(biome: BiomeDef): void {
+    const p = biome.palette;
+    this.day.top.set(p.skyTop);
+    this.day.horizon.set(p.skyHorizon);
+    this.day.fog.set(p.fog);
+    this.day.sun.set(p.sun);
+    this.fogNear = biome.fogNear;
+    this.fogFar = biome.fogFar;
+    this.setVisibility(1);
+    this.setTime(this.time);
+  }
+
   /**
    * Scales how far the player can see: the fog starts and ends at this fraction of the biome's usual
    * distances (1 = as normal). An animal with limited night vision sets it below 1 in the dark.
