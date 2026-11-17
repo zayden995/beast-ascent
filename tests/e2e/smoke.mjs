@@ -1361,8 +1361,10 @@ try {
   check('Trunk Whip reaches an animal almost 3 m away', (await hitsOn(line.ids[0])).length >= 1, await duelNote(line.ids[0]));
   await B.teleport(0, 40, Math.PI);
   await B.advance(25);
-  const elephantDeer = await hunt('deer', 90);
-  check('juvenile elephant can run down and kill a fleeing deer', elephantDeer.killed && elephantDeer.fled, JSON.stringify(elephantDeer));
+  // The Elephant is a herbivore and has no reason to hunt: it fights what attacks it. A boar fights back and does not run to the
+  // forest's edge, so this check is not held up by trees the way chasing a fleeing deer was (decided with the user on 2026-11-18).
+  const elephantBoar = await hunt('boar', 60);
+  check('juvenile elephant can fight and kill a boar', elephantBoar.killed, JSON.stringify(elephantBoar));
 
   // ---------- Crocodile ----------
   await page.keyboard.press('Escape');

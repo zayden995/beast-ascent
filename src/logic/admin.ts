@@ -7,6 +7,14 @@ import type { Progress } from './progression.ts';
 // Rules for the admin sandbox (opened with ?admin): edits that keep a hand-made animal consistent with
 // what the game itself could produce. Pure functions on a Progress, so they can be tested without a browser.
 
+/**
+ * Whether the admin sandbox is offered: only with ?admin in the address and only on the dev server (`isDev`), so a
+ * player on the published site cannot open it (decided with the user on 2026-11-18).
+ */
+export function adminEnabled(search: string, isDev: boolean): boolean {
+  return isDev && new URLSearchParams(search).has('admin');
+}
+
 /** The highest level the admin panel can set. The game itself has no cap. */
 export const ADMIN_MAX_LEVEL = 50;
 

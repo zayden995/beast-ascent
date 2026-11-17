@@ -5,6 +5,7 @@ import { getSpecies, getVariant } from '../../src/data/species.ts';
 import { STAGES } from '../../src/data/stages.ts';
 import {
   ADMIN_MAX_LEVEL,
+  adminEnabled,
   adminProgress,
   setAbilityPoints,
   setAbilityRank,
@@ -17,6 +18,13 @@ import {
 const wolfAbilities = getVariant(getSpecies('wolf'), 'default').abilities;
 const signature = wolfAbilities.find((id) => ABILITIES[id].signature)!;
 const optional = wolfAbilities.find((id) => !ABILITIES[id].signature && ABILITIES[id].effect.kind !== 'passive')!;
+
+test('admin: the sandbox opens with ?admin on the dev server only, never on the published site', () => {
+  assert.equal(adminEnabled('?admin', true), true);
+  assert.equal(adminEnabled('', true), false);
+  assert.equal(adminEnabled('?admin', false), false);
+  assert.equal(adminEnabled('?admin&debug', false), false);
+});
 
 test('admin: an animal made for a life stage starts at that stage\'s first level with its points to spend', () => {
   const juvenile = adminProgress(wolfAbilities, 'juvenile');
