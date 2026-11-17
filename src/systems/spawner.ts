@@ -1,6 +1,6 @@
 import type * as THREE from 'three';
 import { createAnimalModel } from '../animals/AnimalModel.ts';
-import type { BossDef, EnemyDef, SpawnZoneDef } from '../core/types.ts';
+import type { BossDef, BossSummon, EnemyDef, SpawnZoneDef } from '../core/types.ts';
 import { getEnemy } from '../data/enemies.ts';
 import { TUNING } from '../data/tuning.ts';
 import { isGuardZone } from '../logic/foxReserve.ts';
@@ -97,6 +97,58 @@ export class Spawner {
     boss.yaw = 0;
     this.boss = boss;
     return boss;
+  }
+
+  /** How many of the boss's called pack are alive. */
+  summonsAlive(): number {
+    return this.enemies.filter((e) => e.summoned && e.alive).length;
+  }
+
+  /**
+   * The boss calls its pack: `rule.count` animals appear a few metres from it inside its arena and go straight for the player.
+   * They belong to no zone, so none of them ever comes back, and they give no XP (see `Game`).
+   */
+  callSummons(rule: BossSummon): EnemyActor[] {
+    const boss = this.boss;
+    if (!boss) return [];
+    const def = getEnemy(rule.enemyId);
+    const { arena } = this.world.layout;
+    const called: EnemyActor[] = [];
+    for (let i = 0; i < rule.count; i++) {
+      const level = rule.levelMin + Math.floor(this.rand() * (rule.levelMax - rule.levelMin + 1));
+      const e = this.create(def, level, 1 + (level - rule.levelMin) * 0.04, false, null);
+      // Spread round the boss, 5 to 9 m out, on open ground in the arena.
+      let x = boss.pos.x;
+      let z = boss.pos.z;
+      const start = this.rand() * Math.PI * 2;
+      for (let k = 0; k < 12; k++) {
+        const a = start + (i / rule.count) * Math.PI * 2 + k * 0.5;
+        const d = 5 + this.rand() * 4;
+        const cx = boss.pos.x + Math.cos(a) * d;
+        const cz = boss.pos.z + Math.sin(a) * d;
+        if (Math.hypot(cx - arena.x, cz - arena.z) > arena.radius - 1) continue;
+        if (this.world.waterDepth(cx, cz) > 0 || this.world.colliders.blocked(cx, cz, 1)) continue;
+        x = cx;
+        z = cz;
+        break;
+      }
+      this.place(e, x, z);
+      // They fight for the boss: home is the arena, and they chase the player from the start.
+      e.homeX = boss.homeX;
+      e.homeZ = boss.homeZ;
+      e.summoned = true;
+      e.calm = false;
+      e.provoked = true;
+      e.state = 'chase';
+      called.push(e);
+    }
+    return called;
+  }
+
+  /** The fight is over: the called pack goes at once (no death, no XP, no carcass). */
+  dismissSummons(): void {
+    for (const e of this.enemies) if (e.summoned) e.model.dispose();
+    this.enemies = this.enemies.filter((e) => !e.summoned);
   }
 
   /** Sends the boss home at full health (after the player dies or leaves). */

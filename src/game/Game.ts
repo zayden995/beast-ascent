@@ -10,6 +10,7 @@ import { describeMod } from '../logic/biome.ts';
 import { withinEatingHeight } from '../logic/flight.ts';
 import { foxesToProvoke } from '../logic/foxReserve.ts';
 import { lairWakes } from '../logic/lair.ts';
+import { newSummonState, stepSummon } from '../logic/summon.ts';
 import { nightVisionFactor } from '../logic/vision.ts';
 import { enemyXp, growthNeeded } from '../logic/progression.ts';
 import { playerIsUnseen } from '../logic/stealth.ts';
@@ -78,6 +79,8 @@ export class Game {
   private actors: Actor[] = [];
   private rand = mulberry32((Date.now() & 0xffff) + 17);
   private bossDef: BossDef | null = null;
+  /** Where the boss is in calling its pack (a boss with a `summon` rule only). */
+  private summonState = newSummonState();
   private dirty = false;
   private lastSave = 0;
 
@@ -158,6 +161,8 @@ export class Game {
       }
       if (!(actor instanceof EnemyActor)) return;
       this.spawner.onDeath(actor);
+      // A boss's called pack gives no XP and leaves no carcass, so that it cannot be farmed.
+      if (actor.summoned) return;
       this.food.dropCarcass(actor.pos, actor.def.carcassGrowth, actor.stats.size);
       // Only the first win over a boss pays its full XP; later wins pay the small repeat amount.
       const repeatWin = actor.isBoss && this.growth.profile.ruledBiomes.includes(this.world.biome.id);
@@ -203,8 +208,9 @@ export class Game {
     this.refreshActors();
     this.player.update(dt);
     this.wakeLairsByCloseness();
+    this.updateSummons(dt);
 
-    const ai ={ player: pa, world, combat: this.combat, fx: this.fx, rand: this.rand };
+    const ai = { player: pa, world, combat: this.combat, fx: this.fx, rand: this.rand };
     const awakeStates: string[] = [];
     for (const e of this.spawner.enemies) {
       // Distant animals are hidden and stop thinking (the boss always stays awake).
@@ -342,6 +348,27 @@ export class Game {
     this.food.consume(item);
     if (item.reserve !== undefined) this.raidReserve(item);
     if (item.bait) this.wakeLair(item.pos, 'The snakes of the cave rear up: you took their bait!');
+  }
+
+  /**
+   * A boss with a `summon` rule calls its pack when the fight starts, calls the next one `waitSeconds` after the last of a pack
+   * has died, and loses the pack when the fight ends: the boss dies, the player dies, or the player is out of its reach
+   * (beyond the distance at which the boss itself gives up the chase, or inside the player's den).
+   */
+  private updateSummons(dt: number): void {
+    const rule = this.bossDef?.summon;
+    const boss = this.spawner.boss;
+    const pa = this.player.actor;
+    let fighting = false;
+    if (rule && boss) {
+      const fromHome = Math.hypot(pa.pos.x - boss.homeX, pa.pos.z - boss.homeZ);
+      fighting = boss.alive && boss.engaged && pa.alive && fromHome <= boss.def.behavior.leashRadius + 6 && !this.world.inRefuge(pa.pos.x, pa.pos.z);
+    }
+    const action = stepSummon(this.summonState, { fighting, summonsAlive: this.spawner.summonsAlive() }, { waitSeconds: rule?.waitSeconds ?? 0 }, dt);
+    if (action === 'dismiss') this.spawner.dismissSummons();
+    else if (action === 'call' && rule) {
+      if (this.spawner.callSummons(rule).length > 0) this.events.emit('toast', { text: rule.text ?? `${boss?.name ?? 'The boss'} calls its pack!`, tone: 'bad' });
+    }
   }
 
   /** The guards of a den (a lair zone with `wakeNear`) all wake, together, when the player comes near the den. */

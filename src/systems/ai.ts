@@ -32,6 +32,8 @@ export class EnemyActor extends Actor {
   provoked = false;
   /** A guard of a fox food reserve: ignores the player until the reserve is raided (or it is attacked). */
   calm = false;
+  /** Called by a boss to fight for it: it gives no XP, leaves no carcass, never comes back, and goes when the fight ends. */
+  summoned = false;
   fleeTime = 0;
   chargeHit = false;
   chargeX = 0;

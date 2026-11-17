@@ -2318,6 +2318,73 @@ try {
     await B.advance(0.3);
   }
 
+  // ---------- A boss that calls a pack (the Plains' Hyena Matriarch) ----------
+  // Switched on for the Silverback at run time, with tapirs as the pack, because the Plains do not exist yet when it is built.
+  // The user's rule: 3 are called when the fight starts; 6 s after all 3 are dead the next 3 come; the pack goes when the fight
+  // ends; the pack gives no XP and drops no carcasses.
+  {
+    const arena = J.layout.arena;
+    await page.evaluate(async () => {
+      const { BOSSES } = await import('/src/data/bosses.ts');
+      BOSSES.silverback.summon = { enemyId: 'tapir', count: 3, waitSeconds: 6, levelMin: 10, levelMax: 11 };
+    });
+    const fullHp = (await B.state()).player.maxHp;
+    // Advances in small steps and keeps the player alive: this checks the boss's pack, not whether the player survives it.
+    const advanceAlive = async (seconds) => {
+      for (let t = 0; t < seconds - 1e-9; t += 0.25) {
+        await B.call('setHp', fullHp);
+        await B.advance(0.25);
+      }
+    };
+    const pack = async () => (await B.state()).enemies.filter((e) => e.summoned);
+    const alivePack = async () => (await pack()).filter((e) => e.alive);
+    const carcasses = async () => (await B.state()).food.filter((f) => f.kind === 'carcass' && !f.bait).length;
+    await page.evaluate(() => { window.__beast.app.game.spawner.boss.calm = false; });
+    await watchXp();
+
+    // The fight starts: the boss notices the player in its arena, and calls a pack of 3.
+    await B.teleport(arena.x, arena.z + 12, Math.PI);
+    await advanceAlive(0.5);
+    let alive = await alivePack();
+    check('summon: when the boss begins to fight it calls a pack of 3, which stand in its arena and attack',
+      alive.length === 3 && alive.every((e) => e.kind === 'tapir' && Math.hypot(e.x - arena.x, e.z - arena.z) < arena.radius + 6 && !e.boss),
+      `${alive.length} called: ${alive.map((e) => `${e.kind} ${e.state}`).join(', ')}`);
+
+    // Kill all 3 the way the player would: no XP and no carcasses come of it.
+    const carcassesBefore = await carcasses();
+    await page.evaluate(() => {
+      const g = window.__beast.app.game;
+      for (const e of g.spawner.enemies.filter((q) => q.summoned && q.alive)) g.combat.damage(g.player.actor, e, { damage: 1e7, knockback: 0 });
+    });
+    await advanceAlive(0.3);
+    check('summon: the pack gives no XP and leaves no carcass', (await page.evaluate(() => window.__xp)).length === 0 && (await carcasses()) === carcassesBefore,
+      `xp ${(await page.evaluate(() => window.__xp)).join() || 'none'}, carcasses ${carcassesBefore} -> ${await carcasses()}`);
+
+    // 5 s after the last one died there is still no new pack; by 7 s there is.
+    await advanceAlive(4.7);
+    alive = await alivePack();
+    check('summon: 5 s after all 3 died the boss has not called again', alive.length === 0, `${alive.length} alive`);
+    await advanceAlive(2.5);
+    alive = await alivePack();
+    check('summon: about 6 s after all 3 died the boss calls the next 3', alive.length === 3, `${alive.length} alive`);
+
+    // The player leaves the arena: the fight ends and the pack goes.
+    await B.teleport(arena.x, arena.z + 80, Math.PI);
+    await B.advance(1);
+    check('summon: when the player leaves the arena the pack is gone within a second, even if the boss is mid-swing', (await pack()).length === 0, `${(await pack()).length} left`);
+    await B.advance(4);
+    check('summon: and the boss goes home', !/chase|windup|charging|recover/.test((await B.state()).enemies.find((e) => e.boss).state), (await B.state()).enemies.find((e) => e.boss).state);
+    await page.evaluate(async () => {
+      const { BOSSES } = await import('/src/data/bosses.ts');
+      delete BOSSES.silverback.summon;
+    });
+    await calmAll();
+    await B.call('setHp', fullHp);
+    await B.advance(15);
+    await B.teleport(arena.x, arena.z + 14, Math.PI);
+    await B.advance(0.3);
+  }
+
   // The boss.
   s = await B.state();
   boss = s.enemies.find((e) => e.boss);

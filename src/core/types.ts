@@ -305,6 +305,20 @@ export interface EnemyDef {
   carcassGrowth: number;
 }
 
+/** A boss that calls a pack to fight for it (the Plains' Hyena Matriarch; the rule is in `logic/summon.ts`). */
+export interface BossSummon {
+  /** The wild animal it calls. */
+  enemyId: string;
+  /** How many it calls each time. */
+  count: number;
+  /** Seconds it waits after the last of a pack has died before it calls the next. */
+  waitSeconds: number;
+  levelMin: number;
+  levelMax: number;
+  /** What the player is told when a pack is called. */
+  text?: string;
+}
+
 export interface BossDef {
   id: string;
   biome: BiomeId;
@@ -313,6 +327,8 @@ export interface BossDef {
   /** XP for beating it again once its biome is already ruled (the first win pays `enemy.xp`). */
   repeatXp: number;
   enemy: EnemyDef;
+  /** Left out: the boss fights alone. */
+  summon?: BossSummon;
 }
 
 // ---------- Biomes ----------
