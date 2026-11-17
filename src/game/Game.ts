@@ -99,8 +99,8 @@ export class Game {
       scene, world, input, cam, combat: this.combat, fx: this.fx, growth: this.growth, events: this.events, clock: this.clock, start,
     });
     this.spawner = new Spawner(scene, world, this.rand, this.clock);
-    // Rival predators of the player's own species are left out.
-    this.spawner.spawnZones(spawnsOf(world.biome.id).filter((zone) => zone.rivalOf !== profile.speciesId));
+    // Every wild animal of the biome is met, rivals of the player's own species included (changed on 2026-11-18).
+    this.spawner.spawnZones(spawnsOf(world.biome.id));
     this.food = new FoodSystem(scene, world, this.rand, this.clock);
     this.trees = new TreeFoodSystem(scene, world, this.clock);
 

@@ -359,10 +359,9 @@ test('jungle: its rivals are tigers and crocodiles; every species meets 1 to 5 a
     assert.ok(def.behavior.aggressive && !def.behavior.fleeOnSight && def.attacks.length >= 2, `${def.id} must be a real fighter`);
     assert.ok(def.baseStats.sprintSpeed < slowestSprint, `${def.id} must be escapable by the slowest playable species`);
   }
-  for (const species of playable) {
-    const count = rivalZones.filter((z) => z.rivalOf !== species.id).reduce((n, z) => n + z.count, 0);
-    assert.ok(count >= 1 && count <= 5, `a ${species.id} meets ${count} rival predators`);
-  }
+  // Every species meets every rival, its own kind included (since 2026-11-18).
+  const count = rivalZones.reduce((n, z) => n + z.count, 0);
+  assert.ok(count >= 1 && count <= 5, `a player meets ${count} rival predators`);
   // The wild crocodile lives in the water: its territories are on the river and the lagoon.
   assert.equal(ENEMIES.rival_crocodile.behavior.aquatic, true);
   for (const zone of rivalZones.filter((z) => z.rivalOf === 'crocodile')) {

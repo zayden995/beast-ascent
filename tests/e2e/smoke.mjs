@@ -288,8 +288,8 @@ try {
   check('juvenile is 0.6 size', Math.abs(s.player.size - 0.6) < 1e-6);
   const kinds = s.enemies.map((e) => e.kind);
   check('3 enemy types + boss are in the world', ['deer', 'boar', 'fox'].every((k) => kinds.includes(k)) && s.enemies.some((e) => e.boss), `${s.enemies.length} animals`);
-  check('a wolf meets rival predators (a lion and a bear), never its own kind',
-    kinds.filter((k) => k === 'rival_lion').length === 1 && kinds.filter((k) => k === 'rival_bear').length === 1 && !kinds.includes('rival_wolf'), kinds.filter((k) => k.startsWith('rival')).join(' '));
+  check('a wolf meets all the Forest\'s rival predators, its own kind included (a pair of wolves, a lion and a bear)',
+    kinds.filter((k) => k === 'rival_lion').length === 1 && kinds.filter((k) => k === 'rival_bear').length === 1 && kinds.filter((k) => k === 'rival_wolf').length === 2, kinds.filter((k) => k.startsWith('rival')).join(' '));
   check('title animals are gone once the game starts', (await B.call('titleAnimals')) === null);
   await shot('05-gameplay-start');
 
@@ -901,7 +901,7 @@ try {
   // Rival predators.
   s = await B.state();
   const lionRivals = s.enemies.map((e) => e.kind).filter((k) => k.startsWith('rival'));
-  check('a lion meets a pair of wolves and a bear, never another lion', lionRivals.sort().join() === 'rival_bear,rival_wolf,rival_wolf', lionRivals.join(' '));
+  check('a lion meets a pair of wolves, a bear and another lion', lionRivals.sort().join() === 'rival_bear,rival_lion,rival_wolf,rival_wolf', lionRivals.join(' '));
   const rivalWolf = nearest(s, 'rival_wolf');
   await hold(rivalWolf.id, 0); // facing the player, who stands 9 m south of it
   await B.teleport(rivalWolf.x, rivalWolf.z + 9);
@@ -989,7 +989,7 @@ try {
   s = await B.state();
   check('brown bear: +20% max health in the Forest', s.player.mods.includes('maxHealth:0.2') && Math.abs(s.player.maxHp - 180) < 0.01, `hp ${s.player.maxHp}`);
   const bearRivals = s.enemies.map((e) => e.kind).filter((k) => k.startsWith('rival'));
-  check('a bear meets a pair of wolves and a lion, never another bear', bearRivals.sort().join() === 'rival_lion,rival_wolf,rival_wolf', bearRivals.join(' '));
+  check('a bear meets a pair of wolves, a lion and another bear', bearRivals.sort().join() === 'rival_bear,rival_lion,rival_wolf,rival_wolf', bearRivals.join(' '));
   const bearTarget = nearest(s, 'boar');
   await B.teleport(bearTarget.x, bearTarget.z + 1.6);
   await B.lookAt(bearTarget.x, bearTarget.z);
@@ -2078,11 +2078,11 @@ try {
   await B.advance(0.3);
   s = await B.state();
   check('jungle: ...and +25% damage in and near it, rivers included', s.player.mods.join() === 'damage:0.25', s.player.mods.join());
-  check('jungle: a Crocodile player meets no wild crocodiles, only the tigers', !s.enemies.some((e) => e.kind === 'rival_crocodile') && s.enemies.filter((e) => e.kind === 'rival_tiger').length === 2);
+  check('jungle: a Crocodile player meets the wild crocodiles too, and the tigers', s.enemies.filter((e) => e.kind === 'rival_crocodile').length === 2 && s.enemies.filter((e) => e.kind === 'rival_tiger').length === 2);
   m = await modsAs('Bengal Tiger');
   check('jungle: the Tiger is at home here (+20% damage)', m.mods === 'damage:0.2', m.mods);
   s = await B.state();
-  check('jungle: a Tiger player meets no wild tigers, only the crocodiles', !s.enemies.some((e) => e.kind === 'rival_tiger') && s.enemies.filter((e) => e.kind === 'rival_crocodile').length === 2);
+  check('jungle: a Tiger player meets the wild tigers too, and the crocodiles', s.enemies.filter((e) => e.kind === 'rival_tiger').length === 2 && s.enemies.filter((e) => e.kind === 'rival_crocodile').length === 2);
 
   // A hunt and two fights, as an Alpha Tiger.
   await page.keyboard.press('KeyJ');

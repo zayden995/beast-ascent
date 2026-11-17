@@ -202,7 +202,8 @@ test('data: an animal can only eat from the air when it is low enough to reach t
 // The user raised the limit from 3 to 5 so that the four Milestone 2 species can meet every rival.
 const MAX_RIVALS_MET = 5;
 
-test('data: rival predators: every playable species meets 1 to 5 of the others and can outrun them', () => {
+// Since 2026-11-18 a player also meets wild animals of their own species, so every species meets every rival.
+test('data: rival predators: every playable species meets 1 to 5 rivals, its own kind included, and can outrun them', () => {
   const playable = SPECIES.filter((s) => isPlayable(s, TUNING.currentMilestone));
   // A fight against a rival can always be escaped: by running, or for a winged animal by flying (see the Eagle test).
   const slowestSprint = Math.min(...playable.map((s) => (s.rig === 'winged' ? s.baseStats.sprintSpeed : groundSprintSpeed(s))));
@@ -215,10 +216,8 @@ test('data: rival predators: every playable species meets 1 to 5 of the others a
     assert.ok(def.baseStats.sprintSpeed < slowestSprint, `${def.id} must be escapable by the slowest playable species`);
   }
   for (const species of playable) {
-    const met = rivalZones.filter((z) => z.rivalOf !== species.id);
-    const count = met.reduce((n, z) => n + z.count, 0);
+    const count = rivalZones.reduce((n, z) => n + z.count, 0);
     assert.ok(count >= 1 && count <= MAX_RIVALS_MET, `a ${species.id} meets ${count} rival predators`);
-    assert.ok(met.every((z) => z.rivalOf !== species.id), 'never its own kind');
   }
 });
 
