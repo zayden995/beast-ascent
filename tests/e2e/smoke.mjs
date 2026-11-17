@@ -1870,7 +1870,8 @@ try {
   check('admin: the panel lists the biomes that are built, with the Forest as the current one',
     (await page.getByRole('button', { name: 'Forest', exact: true }).getAttribute('aria-pressed')) === 'true'
     && (await page.getByRole('button', { name: 'Jungle', exact: true }).getAttribute('aria-pressed')) === 'false'
-    && (await page.getByRole('button', { name: 'Plains', exact: true }).count()) === 0);
+    && (await page.getByRole('button', { name: 'Plains', exact: true }).getAttribute('aria-pressed')) === 'false'
+    && (await page.getByRole('button', { name: 'Winter', exact: true }).count()) === 0);
   await page.getByRole('button', { name: 'Jungle', exact: true }).click();
   await page.locator('.admin-card').waitFor();
   await B.advance(0.2);
@@ -2407,11 +2408,148 @@ try {
   await B.advance(0.2);
   s = await B.state();
   check('jungle: the open gate offers the Plains', s.prompt?.key === 'E' && /Enter the Plains/.test(s.prompt.text), s.prompt?.text);
+  // ---------- The Plains (Milestone 3): through the Jungle's gate ----------
   await tap('KeyE');
   await B.advance(0.2);
   await page.waitForTimeout(100);
   s = await B.state();
-  check('jungle: the Plains are not built yet: the gate says so and the animal stays in the Jungle', s.biome === 'jungle' && /The way to the Plains is not open yet/.test(await page.locator('.hud-toasts').innerText()));
+  check('jungle: the open gate leads to the Plains, and the banner names them', s.biome === 'plains' && /Plains/.test(await page.locator('.hud').innerText()), s.biome);
+  await shot('28-plains-arrival');
+  const PL = await page.evaluate(() => { const w = window.__beast.app.world; return { layout: w.layout, trees: w.treeSpots.length }; });
+  check('plains: the Tiger is slowed to recover its stamina here (-15%)', s.player.mods.join() === 'staminaRegen:-0.15', s.player.mods.join());
+  const plainsKinds = new Set(s.enemies.map((e) => e.kind));
+  check('plains: its own animals, rivals, den guards and boss, and none from the other biomes',
+    ['antelope', 'buffalo', 'hyena', 'den_lion', 'rival_elephant', 'rival_lion', 'alligator', 'hyena_matriarch'].every((k) => plainsKinds.has(k))
+    && !['deer', 'boar', 'capybara', 'tapir', 'rival_tiger', 'silverback'].some((k) => plainsKinds.has(k)), [...plainsKinds].join(', '));
+  check('plains: every wild animal is level 16 or higher; three alligators live in the lakes, and two Elephants and a lion roam as rivals',
+    s.enemies.filter((e) => !e.boss).every((e) => e.level >= 16) && s.enemies.filter((e) => e.kind === 'alligator').length === 3
+    && s.enemies.filter((e) => e.kind === 'rival_elephant').length === 2 && s.enemies.filter((e) => e.kind === 'rival_lion').length === 1,
+    `${s.enemies.length} animals`);
+  check('plains: wide and open: about 90 trees where the Forest has 430', PL.trees >= 60 && PL.trees <= 100, `${PL.trees} trees`);
+  await shot('28b-plains-den');
+  await calmAll();
+
+  // The alligators never leave their lake and a strip of shore, and do spend time in the water.
+  let gatorsOutside = 0;
+  let gatorsInWater = 0;
+  for (let i = 0; i < 48; i++) {
+    await B.advance(2.5);
+    const gators = await page.evaluate(() => {
+      const g = window.__beast.app.game;
+      return g.spawner.enemies.filter((e) => e.alive && e.def.id === 'alligator').map((e) => ({ zone: g.world.inLakeZone(e.pos.x, e.pos.z, 8), depth: g.world.waterDepth(e.pos.x, e.pos.z) }));
+    });
+    for (const a of gators) {
+      if (!a.zone) gatorsOutside++;
+      if (a.depth > 0.2) gatorsInWater++;
+    }
+  }
+  check('plains: the alligators never leave their lake and a strip of shore, and spend time in the water', gatorsOutside === 0 && gatorsInWater > 0, `${gatorsOutside} samples outside, ${gatorsInWater} in the water`);
+
+  // The two dens: four calm guards each, which all wake together when an animal comes within 14 m.
+  const [hyenaDen, lionDen] = PL.layout.caves;
+  const denGuards = async (kind, den) => (await B.state()).enemies.filter((e) => e.kind === kind && e.alive && Math.hypot(e.x - den.x, e.z - den.z) < den.radius + 3);
+  const engaged = ['chase', 'windup', 'charging', 'recover'];
+  for (const [name, kind, den, side] of [['hyena', 'hyena', hyenaDen, 1], ['lion', 'den_lion', lionDen, -1]]) {
+    let guards = await denGuards(kind, den);
+    check(`plains: the ${name}'s den holds four calm guards`, guards.length === 4 && guards.every((e) => e.calm), `${guards.length} guards`);
+    await B.teleport(den.x + side * 17, den.z, -side * (Math.PI / 2));
+    await B.advance(1.5);
+    guards = await denGuards(kind, den);
+    check(`plains: an animal 17 m from the ${name}'s den does not wake its guards`, guards.length === 4 && guards.every((e) => e.calm), guards.map((e) => (e.calm ? 'calm' : e.state)).join(', '));
+    await B.teleport(den.x + side * 12, den.z, -side * (Math.PI / 2));
+    await B.call('setHp', (await B.state()).player.maxHp);
+    await B.advance(1);
+    guards = await denGuards(kind, den);
+    check(`plains: an animal that comes within 14 m of the ${name}'s den wakes all four guards together`,
+      guards.length === 4 && guards.every((e) => !e.calm && engaged.includes(e.state)), guards.map((e) => (e.calm ? 'calm' : e.state)).join(', '));
+    await shot(`28c-plains-${name}-den`);
+    await B.teleport(PL.layout.playerSpawn.x, PL.layout.playerSpawn.z);
+    await calmAll();
+    await B.advance(2);
+  }
+
+  // Each animal's Plains buff or nerf (bible section 4.4).
+  let pm = await modsAs('Savanna Lion');
+  check('plains: the Lion is at home here (+20% damage)', pm.biome === 'plains' && pm.mods === 'damage:0.2', pm.mods);
+  pm = await modsAs('Bush Elephant');
+  check('plains: the Elephant is at home here (+20% max health)', pm.mods === 'maxHealth:0.2', pm.mods);
+  pm = await modsAs('Grey Wolf');
+  check('plains: the Wolf has no modifier here', pm.mods === '', pm.mods);
+
+  // A hunt and a fight, as an Alpha Wolf: an antelope flees faster and for longer than a deer, and a wolf can still run it down.
+  await page.keyboard.press('KeyJ');
+  await page.locator('.admin-card').waitFor();
+  await page.getByRole('button', { name: 'Max all' }).click();
+  await page.keyboard.press('Escape');
+  await page.locator('.admin-card').waitFor({ state: 'detached' });
+  await B.advance(0.2);
+  const antelopeHunt = await hunt('antelope', 150);
+  check('plains: an antelope flees, and an Alpha Wolf can still run it down', antelopeHunt.killed && antelopeHunt.fled, `${antelopeHunt.seconds}s, level ${antelopeHunt.level}`);
+  const buffaloFight = await fight('buffalo', { maxSeconds: 90, keepAlive: true });
+  check('plains: a buffalo fights back and can be beaten', buffaloFight.killed && buffaloFight.hurt, `${buffaloFight.seconds}s`);
+  const hyenaFight = await fight('hyena', { maxSeconds: 60, keepAlive: true });
+  check('plains: a hyena bites and lunges and can be beaten', hyenaFight.killed && hyenaFight.hurt, `${hyenaFight.seconds}s`);
+
+  // The boss: the Hyena Matriarch waits in her arena, calls a pack of 3 when the fight starts, and can be beaten.
+  const arenaP = PL.layout.arena;
+  s = await B.state();
+  const matriarch = s.enemies.find((e) => e.boss);
+  check('plains: the Hyena Matriarch waits in her arena', !!matriarch && matriarch.kind === 'hyena_matriarch' && matriarch.level === 30 && Math.hypot(matriarch.x - arenaP.x, matriarch.z - arenaP.z) < arenaP.radius,
+    matriarch ? `${matriarch.kind} level ${matriarch.level}` : 'no boss');
+  await page.evaluate(() => { window.__beast.app.game.spawner.boss.calm = false; });
+  await B.call('setHp', (await B.state()).player.maxHp);
+  await B.teleport(arenaP.x, arenaP.z + 12, Math.PI);
+  await B.advance(0.6);
+  let pack = (await B.state()).enemies.filter((e) => e.summoned && e.alive);
+  check('plains: when the fight starts the Matriarch calls a pack of 3 hyenas', pack.length === 3 && pack.every((e) => e.kind === 'hyena'), `${pack.length} called: ${pack.map((e) => e.kind).join(', ')}`);
+  await shot('28d-plains-boss');
+  await B.teleport(arenaP.x, arenaP.z + 70, Math.PI);
+  await B.advance(1);
+  check('plains: when the player leaves the arena the pack is gone', (await B.state()).enemies.filter((e) => e.summoned).length === 0);
+  await B.advance(12);
+  await B.teleport(matriarch.x, matriarch.z + 5);
+  await watchXp();
+  const matriarchFight = await fight('boss', { maxSeconds: 420, keepAlive: true });
+  s = await B.state();
+  check('plains: the Hyena Matriarch can be defeated', matriarchFight.killed && matriarchFight.hurt, `${matriarchFight.seconds}s, states ${[...matriarchFight.states].join(', ')}`);
+  const xpEvents = await page.evaluate(() => window.__xp);
+  check('plains: the first win pays 1100 XP, and nothing the Matriarch called paid any', xpEvents.join() === '1100', xpEvents.join());
+  check('"Plains Ruled": the Plains are ruled, Winter is unlocked and the gate is open',
+    s.ruled.includes('plains') && s.unlocked.includes('winter') && s.gateOpen && /Plains Ruled/.test(await page.locator('.hud').innerText()), `ruled ${s.ruled.join()}, unlocked ${s.unlocked.join()}`);
+  await B.advance(1);
+  check('plains: the pack goes with the boss', (await B.state()).enemies.filter((e) => e.summoned).length === 0);
+  await shot('28e-plains-ruled');
+  await B.teleport(PL.layout.gate.x, PL.layout.gate.z + 4, Math.PI);
+  await B.advance(0.2);
+  s = await B.state();
+  check('plains: the open gate offers Winter', s.prompt?.key === 'E' && /Enter the Winter/.test(s.prompt.text), s.prompt?.text);
+  await tap('KeyE');
+  await B.advance(0.2);
+  await page.waitForTimeout(100);
+  s = await B.state();
+  check('plains: Winter is not built yet: the gate says so and the animal stays in the Plains', s.biome === 'plains' && /The way to the Winter is not open yet/.test(await page.locator('.hud-toasts').innerText()));
+
+  // Death in the Plains: the animal wakes at the Plains' den.
+  await page.evaluate(() => {
+    const g = window.__beast.app.game;
+    g.combat.damage(g.spawner.enemies.find((e) => e.alive), g.player.actor, { damage: 1e7, knockback: 0 });
+  });
+  await B.advance(5);
+  s = await B.state();
+  check('plains: an animal that dies here wakes at the Plains\' den, and keeps the biomes it rules',
+    s.biome === 'plains' && s.player.alive && Math.hypot(s.player.x - PL.layout.playerSpawn.x, s.player.z - PL.layout.playerSpawn.z) < 1 && s.ruled.includes('plains') && s.gateOpen,
+    `${s.biome} at ${s.player.x.toFixed(1)}, ${s.player.z.toFixed(1)}`);
+
+  // Back through the gate to the Jungle.
+  await B.teleport(PL.layout.returnGate.x, PL.layout.returnGate.z - 4, 0);
+  await B.advance(0.2);
+  s = await B.state();
+  check('plains: the gate at the south edge offers the way back to the Jungle', s.prompt?.key === 'E' && /Return to the Jungle/.test(s.prompt.text), s.prompt?.text);
+  await tap('KeyE');
+  await B.advance(0.2);
+  await page.waitForTimeout(100);
+  s = await B.state();
+  check('plains: the way back leads to the Jungle', s.biome === 'jungle', s.biome);
 
   // Death in the Jungle: the animal wakes at the Jungle's den.
   await page.evaluate(() => {

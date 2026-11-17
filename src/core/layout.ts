@@ -65,9 +65,11 @@ export interface CaveDef {
   bait: number;
   /** A trail kept clear of trees leads from the mouth to the boss's arena (the Jungle's cave has one; the Plains' dens have none). */
   trail?: boolean;
+  /** The colour of its rocks (the Plains' lion's den is pale stone, the hyena's dark earth). Left out: the biome's rock colour, darkened. */
+  rockColor?: number;
 }
 
-export type BiomeStyle = 'forest' | 'jungle';
+export type BiomeStyle = 'forest' | 'jungle' | 'plains';
 
 /** Everything that is placed on a biome's map. North is -Z. All positions are in metres. */
 export interface BiomeLayout {

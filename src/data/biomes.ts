@@ -1,6 +1,7 @@
 import type { BiomeLayout } from '../core/layout.ts';
 import type { BiomeDef, BiomeId, SpawnZoneDef, TitleAnimalDef, TitleViewDef, WaterBody } from '../core/types.ts';
 import { JUNGLE_LAYOUT, JUNGLE_SPAWNS } from './jungle.ts';
+import { PLAINS_LAYOUT, PLAINS_SPAWNS } from './plains.ts';
 
 /** Order in which biomes unlock (bible section 4.5, tunable). */
 export const BIOME_ORDER: BiomeId[] = ['forest', 'jungle', 'plains', 'winter'];
@@ -26,16 +27,18 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
     },
     fogNear: 25, fogFar: 120,
   },
-  // TODO(M3): the Plains and Winter are palette stubs only. No terrain, enemies or bosses yet.
+  // The Plains (Milestone 3): its map is `PLAINS_LAYOUT` in plains.ts.
   plains: {
-    id: 'plains', name: 'Plains', order: 2, implemented: false, bossId: null,
+    id: 'plains', name: 'Plains', order: 2, implemented: true, bossId: 'hyena_matriarch',
     palette: {
       ground: 0xd6b45a, groundAlt: 0xe2c66c, dirt: 0xb08a52, rock: 0xa39a86,
       foliage: 0x8fa043, foliageAlt: 0xa3ad4f, trunk: 0x6f5435, water: 0x5fb0c8,
       skyTop: 0x4f9fe6, skyHorizon: 0xf7e6c2, fog: 0xf0e2bf, sun: 0xffe9b8,
+      shore: 0xcdb98a, deepWater: 0x4f8a90, grassTip: 0xf0dc8c,
     },
     fogNear: 70, fogFar: 260,
   },
+  // TODO(M3): Winter is a palette stub only. No terrain, enemies or boss yet.
   winter: {
     id: 'winter', name: 'Winter', order: 3, implemented: false, bossId: null,
     palette: {
@@ -103,8 +106,8 @@ export const FOREST_LAYOUT: BiomeLayout = {
   nearWaterMargin: 8,
 };
 
-/** The map of every biome that is built. The Plains and Winter have none yet. */
-export const BIOME_LAYOUTS: Partial<Record<BiomeId, BiomeLayout>> = { forest: FOREST_LAYOUT, jungle: JUNGLE_LAYOUT };
+/** The map of every biome that is built. Winter has none yet. */
+export const BIOME_LAYOUTS: Partial<Record<BiomeId, BiomeLayout>> = { forest: FOREST_LAYOUT, jungle: JUNGLE_LAYOUT, plains: PLAINS_LAYOUT };
 
 export function layoutOf(id: BiomeId): BiomeLayout {
   const layout = BIOME_LAYOUTS[id];
@@ -130,7 +133,7 @@ export const FOREST_SPAWNS: SpawnZoneDef[] = [
 ];
 
 /** The wild animals of every biome that is built. */
-export const BIOME_SPAWNS: Partial<Record<BiomeId, SpawnZoneDef[]>> = { forest: FOREST_SPAWNS, jungle: JUNGLE_SPAWNS };
+export const BIOME_SPAWNS: Partial<Record<BiomeId, SpawnZoneDef[]>> = { forest: FOREST_SPAWNS, jungle: JUNGLE_SPAWNS, plains: PLAINS_SPAWNS };
 
 export function spawnsOf(id: BiomeId): SpawnZoneDef[] {
   return BIOME_SPAWNS[id] ?? [];

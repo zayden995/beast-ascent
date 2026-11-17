@@ -102,17 +102,24 @@ export class BiomeWorld {
     this.heightAt = createHeight(this.layout, this.rivers);
     this.boundary = this.layout.worldRadius - 3;
     const jungle = this.layout.style === 'jungle';
+    const plains = this.layout.style === 'plains';
     this.treeMarkers = jungle
       ? {
           // Fruit hangs under the wide crown of a canopy tree; coconuts cluster at the top of a palm.
           fruit: { r0: 1.2, rSpan: 1.4, h0: 6.1, hSpan: 0.7, lean: 0 },
           nut: { r0: 0.3, rSpan: 0.15, h0: 5.45, hSpan: 0.25, lean: 1.0 },
         }
-      : {
-          // Fruit hangs among the round crown; nuts (cones) hang from the lowest tier of a pine.
-          fruit: { r0: 1.5, rSpan: 0.5, h0: 3.5, hSpan: 1.5, lean: 0 },
-          nut: { r0: 1.3, rSpan: 0.35, h0: 2.5, hSpan: 0.9, lean: 0 },
-        };
+      : plains
+        ? {
+            // Fruit hangs under the flat crown of an acacia; pods hang from a low thorn bush.
+            fruit: { r0: 1.6, rSpan: 1.6, h0: 5.2, hSpan: 0.4, lean: 0 },
+            nut: { r0: 0.45, rSpan: 0.3, h0: 0.55, hSpan: 0.4, lean: 0 },
+          }
+        : {
+            // Fruit hangs among the round crown; nuts (cones) hang from the lowest tier of a pine.
+            fruit: { r0: 1.5, rSpan: 0.5, h0: 3.5, hSpan: 1.5, lean: 0 },
+            nut: { r0: 1.3, rSpan: 0.35, h0: 2.5, hSpan: 0.9, lean: 0 },
+          };
 
     this.group.add(buildTerrainMesh(this.heightAt, this.layout, this.biome.palette, this.rivers));
     this.buildWater();
@@ -328,10 +335,12 @@ export class BiomeWorld {
     const { trees, worldRadius, seed } = this.layout;
     const p = this.biome.palette;
     const jungle = this.layout.style === 'jungle';
-    // The Jungle is denser than the Forest: its trees stand closer and it has only a few small clearings.
-    const spacing = jungle ? 3.1 : 3.6;
-    const clearingAbove = jungle ? 0.52 : 0.3;
-    const secondShare = jungle ? 0.3 : 0.4;
+    const plains = this.layout.style === 'plains';
+    // The Jungle is denser than the Forest: its trees stand closer and it has only a few small clearings. The Plains have few
+    // trees, far apart, and no clearings at all (it is all clearing).
+    const spacing = jungle ? 3.1 : plains ? 8 : 3.6;
+    const clearingAbove = jungle ? 0.52 : plains ? 1 : 0.3;
+    const secondShare = jungle ? 0.3 : plains ? 0.45 : 0.4;
     const placed: (Placement & { pine: boolean })[] = [];
     const maxR = worldRadius + 18;
     for (let attempts = 0; placed.length < trees && attempts < trees * 14; attempts++) {
@@ -348,7 +357,7 @@ export class BiomeWorld {
       placed.push({ x, z, s: 0.85 + this.rand() * 0.7, pine: this.rand() < secondShare });
     }
 
-    const look = jungle ? jungleTrees() : forestTrees();
+    const look = jungle ? jungleTrees() : plains ? plainsTrees() : forestTrees();
     const crowns: Instance[] = [];
     const seconds: Instance[] = [];
     const trunks: Instance[] = [];
@@ -477,8 +486,10 @@ export class BiomeWorld {
       })) continue;
       const s = 0.5 + this.rand() * 0.6;
       _q.setFromEuler(_e.set(0, this.rand() * TAU, 0));
+      // The Plains' grass grows taller (the same random numbers are used, so the other biomes are unchanged).
+      const tall = this.layout.style === 'plains' ? 1.5 : 1;
       const matrix = new THREE.Matrix4().compose(
-        new THREE.Vector3(x, this.heightAt(x, z) - 0.03, z), _q, new THREE.Vector3(s, s * (0.8 + this.rand() * 0.6), s),
+        new THREE.Vector3(x, this.heightAt(x, z) - 0.03, z), _q, new THREE.Vector3(s, s * (0.8 + this.rand() * 0.6) * tall, s),
       );
       const color = new THREE.Color(p.groundAlt).lerp(_c.set(tip), this.rand() * 0.6);
       const key = `${Math.floor(x / chunkSize)},${Math.floor(z / chunkSize)}`;
@@ -577,7 +588,8 @@ export class BiomeWorld {
   private buildCave(cave: CaveDef, seedStep: number): void {
     const floor = this.heightAt(cave.x, cave.z);
     const rand = mulberry32(this.layout.seed + 808 + seedStep);
-    const rock = new THREE.Color(this.biome.palette.rock).multiplyScalar(0.72);
+    // A den of the Plains has its own colour of stone; the Jungle's cave is the biome's rock, darkened.
+    const rock = cave.rockColor !== undefined ? new THREE.Color(cave.rockColor) : new THREE.Color(this.biome.palette.rock).multiplyScalar(0.72);
     const rocks: Instance[] = [];
     const place = (stone: CaveStone, wall: boolean): void => {
       _q.setFromEuler(_e.set(0, stone.yaw, 0));
@@ -957,6 +969,36 @@ function jungleTrees(): TreeLook {
     secondColor: 0x4a9a3a,
     size: { radius: 0.5, top: 6.6 },
     secondSize: { radius: 0.28, top: 5.6 },
+  };
+}
+
+/** The Plains: acacias, with a thin trunk that forks under a wide, flat crown, and low thorn scrub. */
+function plainsTrees(): TreeLook {
+  const branch = (r0: number, r1: number, length: number, x: number, y: number, tilt: number) =>
+    new THREE.CylinderGeometry(r0, r1, length, 5).rotateZ(-tilt).translate(x, y, 0);
+  return {
+    // The flat umbrella: a wide, shallow crown of three lobes.
+    crown: flatShade(mergeGeometries([
+      new THREE.IcosahedronGeometry(3.3, 1).scale(1, 0.3, 1).translate(0, 5.8, 0),
+      new THREE.IcosahedronGeometry(2.2, 1).scale(1, 0.34, 1).translate(1.9, 5.4, 0.9),
+      new THREE.IcosahedronGeometry(2.0, 1).scale(1, 0.32, 1).translate(-1.7, 5.5, -1.1),
+    ])),
+    // Scrub: a low, round mound of thorn bush.
+    second: flatShade(mergeGeometries([
+      new THREE.IcosahedronGeometry(0.95, 1).scale(1, 0.7, 1).translate(0, 0.62, 0),
+      new THREE.IcosahedronGeometry(0.7, 1).scale(1, 0.75, 1).translate(0.75, 0.46, 0.3),
+      new THREE.IcosahedronGeometry(0.6, 1).scale(1, 0.75, 1).translate(-0.65, 0.4, -0.35),
+    ])),
+    // The trunk rises, then forks into two branches that carry the crown.
+    trunk: mergeGeometries([
+      new THREE.CylinderGeometry(0.18, 0.32, 3.8, 6).translate(0, 1.7, 0),
+      branch(0.12, 0.17, 2.2, -0.7, 4.6, -0.55),
+      branch(0.1, 0.15, 2.0, 0.65, 4.5, 0.6),
+    ]),
+    secondTrunk: new THREE.CylinderGeometry(0.05, 0.08, 0.3, 5).translate(0, 0.15, 0),
+    secondColor: 0x7d8a3a,
+    size: { radius: 0.4, top: 4.2 },
+    secondSize: { radius: 0.75, top: 1.1 },
   };
 }
 

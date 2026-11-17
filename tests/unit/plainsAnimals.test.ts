@@ -21,24 +21,42 @@ test('plains animals: every animal of the Plains exists in the data', () => {
 
 // ---------- The antelope: harder to catch (asked for by the user, 2026-11-18) ----------
 
-test('antelope: it flees and tires like other prey, but only the fast hunters (Wolf, Tiger, Lion) can sprint it down', () => {
+/**
+ * How many metres a hunter gains on a fleeing antelope while its stamina lasts. A sprint costs `sprintStaminaPerSec`, so a hunter
+ * can sprint for stamina / that seconds; the antelope flees in bursts and tires, over and over (`fleeBurst`, `windedSeconds`).
+ */
+function gainOnAntelope(hunterId: string): number {
+  const a = ENEMIES.antelope;
+  const b = a.behavior;
+  const seconds = playable.find((s) => s.id === hunterId)!.baseStats.stamina / TUNING.player.sprintStaminaPerSec;
+  let gain = 0;
+  const dt = 0.05;
+  for (let t = 0; t < seconds; t += dt) {
+    const bursting = t % (b.fleeBurst + b.windedSeconds) < b.fleeBurst;
+    gain += (sprintOf(hunterId) - a.baseStats.sprintSpeed * (bursting ? 1 : b.windedSpeedMult)) * dt;
+  }
+  return gain;
+}
+
+test('antelope: it flees and tires like other prey, but only the fast hunters (Wolf, Tiger, Lion) can sprint it down before they run out of breath', () => {
   const a = ENEMIES.antelope;
   assert.ok(a.behavior.fleeOnSight && !a.behavior.aggressive && a.attacks.length === 0, 'it is prey: it runs and never fights');
   assert.ok(a.behavior.fleeBurst > 0 && a.behavior.windedSeconds > 0, 'it still tires, so the fast hunters can win in the end');
-  const burst = a.baseStats.sprintSpeed;
-  const tired = burst * a.behavior.windedSpeedMult;
-  // The slow hunters (the Bear, the Crocodile, the Elephant) never gain on it, even when it is tired: they must corner it.
-  for (const id of ['bear', 'crocodile', 'elephant']) {
-    assert.ok(tired > sprintOf(id), `a tired antelope (${tired.toFixed(2)} m/s) must outrun a ${id} (${sprintOf(id)} m/s)`);
-  }
-  // The fast hunters sprint faster than it does even in its burst, so they gain on it all the time.
+  // It notices a hunter from about this far (its sight range ahead), so a hunter that is seen first must close this gap to bite.
+  const notice = a.behavior.aggroRadius;
   for (const id of ['wolf', 'tiger', 'lion']) {
-    assert.ok(burst < sprintOf(id), `a ${id} (${sprintOf(id)} m/s) must be able to run down an antelope in its burst (${burst} m/s)`);
+    assert.ok(gainOnAntelope(id) >= notice, `a ${id} gains ${gainOnAntelope(id).toFixed(1)} m before its stamina runs out; it needs ${notice} m`);
+  }
+  // The slow hunters (the Bear, the Crocodile, the Elephant) cannot: they must corner it, or come at it from behind.
+  for (const id of ['bear', 'crocodile', 'elephant']) {
+    assert.ok(gainOnAntelope(id) < notice * 0.6, `a ${id} gains ${gainOnAntelope(id).toFixed(1)} m, which must not be enough to catch an antelope that has seen it`);
   }
   assert.ok(a.behavior.woundedSpeedMult < 1, 'a bitten antelope slows down, so each bite helps the next');
-  // It is harder to catch than the deer in every way.
+  // It is harder to catch than the deer in every way that matters: faster, and it tires less and recovers sooner.
   const deer = ENEMIES.deer;
-  assert.ok(burst > deer.baseStats.sprintSpeed && a.behavior.fleeBurst > deer.behavior.fleeBurst, 'faster, and for longer');
+  assert.ok(a.baseStats.sprintSpeed > deer.baseStats.sprintSpeed, 'faster');
+  assert.ok(a.behavior.windedSpeedMult > deer.behavior.windedSpeedMult, 'a tired antelope is still quick');
+  assert.ok(a.behavior.windedSeconds < deer.behavior.windedSeconds, 'and it recovers sooner');
 });
 
 // ---------- The others ----------

@@ -330,7 +330,7 @@ export class Game {
       } else {
         this.prompt = { key: 'E', text: `Enter the ${nextName}` };
         if (pressed) {
-          // TODO(M3): the Plains and Winter are not built yet.
+          // TODO(M3): Winter is not built yet (and with it the ending, when every biome is ruled).
           this.events.emit('toast', { text: `The way to the ${nextName} is not open yet. The ${here.name} is yours for now.`, tone: 'info' });
         }
       }
@@ -380,7 +380,7 @@ export class Game {
       const zone = e.zone;
       if (!zone || !zone.lair || zone.wakeNear === undefined || !e.alive || !e.calm || done.has(zone)) continue;
       done.add(zone);
-      if (lairWakes(zone, pa.pos, pa.alive, refuge)) this.wakeLair(zone, 'The guards of the den rise and rush at you!');
+      if (lairWakes(zone, pa.pos, pa.alive, refuge)) this.wakeLair(zone, `The ${e.def.name.toLowerCase()}s of the den rise and rush at you!`);
     }
   }
 

@@ -360,12 +360,14 @@ list.push(
 // The Plains' animals (Milestone 3, levels about 16 to 23, for Alphas). Every number is a first guess.
 list.push(
   {
-    // Prey that is harder to catch than any before (the user asked, 2026-11-18): faster than the deer, with longer bursts, and
-    // tired it still outruns the Bear, the Crocodile and the Elephant, so only the Wolf, the Tiger and the Lion can sprint it
-    // down; the others must corner it against a lake or a rock. Every bite slows it.
+    // Prey that is harder to catch than any before (the user asked, 2026-11-18): faster than the deer, quick even when tired, and it
+    // recovers sooner. A sprint costs a hunter stamina (14 a second), so a hunter can only sprint for about 6 to 8 seconds: in that
+    // time only the Wolf, the Tiger and the Lion gain enough on it to bite (a test counts the metres); the Bear, the Crocodile and
+    // the Elephant must corner it against a lake or a rock, or come at it from behind, where it notices a hunter late. Every bite
+    // slows it.
     id: 'antelope', name: 'Antelope',
     baseStats: {
-      maxHealth: 60, stamina: 100, staminaRegen: 10, damage: 0, moveSpeed: 3.0, sprintSpeed: 9.2,
+      maxHealth: 60, stamina: 100, staminaRegen: 10, damage: 0, moveSpeed: 3.0, sprintSpeed: 8.6,
       attackSpeed: 1, defense: 0, size: 1,
     },
     body: {
@@ -377,7 +379,7 @@ list.push(
     features: ['horns', 'tailTipDark'],
     behavior: {
       aggroRadius: 14, aggressive: false, fleeOnSight: true, fleeHealthPct: 1,
-      leashRadius: 70, wanderRadius: 18, fleeBurst: 6, windedSeconds: 3, windedSpeedMult: 0.92,
+      leashRadius: 70, wanderRadius: 18, fleeBurst: 3.5, windedSeconds: 3, windedSpeedMult: 0.7,
       woundedSpeedMult: 0.7,
       senses: { front: 1.4 },
     },
