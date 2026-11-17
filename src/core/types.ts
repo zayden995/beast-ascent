@@ -71,6 +71,14 @@ export type FeatureId =
   | 'trunk'
   | 'jaw'
   | 'sprawl'
+  /** A sloping back: the shoulders stand higher than the hips (a hyena's), gentler than the gorilla's `knuckle`. */
+  | 'slope'
+  /** Dark spots over the flanks and rump (a hyena's). */
+  | 'spots'
+  /** Long thin horns that sweep up and back (an antelope's). */
+  | 'horns'
+  /** Thick horns that curve out and up, with a boss on the forehead (a buffalo's). */
+  | 'bullHorns'
   | 'tailTipLight'
   | 'tailTipDark';
 

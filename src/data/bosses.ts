@@ -1,4 +1,5 @@
 import type { BossDef } from '../core/types.ts';
+import { getEnemy } from './enemies.ts';
 
 // Biome bosses. Boss stats are final values at the boss's level (no per-level scaling).
 // TODO(M5): boss phases.
@@ -79,6 +80,42 @@ const list: BossDef[] = [
         },
       ],
       xp: 700, carcassGrowth: 80,
+    },
+  },
+  {
+    // The Plains' boss: a hyena pack leader. She bites, lunges and rakes the ground round her, and she calls a pack of 3 hyenas
+    // when the fight starts and another 3 six seconds after the last of a pack has died (`summon`, rule in logic/summon.ts).
+    id: 'hyena_matriarch', biome: 'plains', title: 'Hyena Matriarch, Queen of the Plains', level: 30, repeatXp: 120,
+    summon: { enemyId: 'hyena', count: 3, waitSeconds: 6, levelMin: 19, levelMax: 21, text: 'The Matriarch whoops, and her pack answers!' },
+    enemy: {
+      id: 'hyena_matriarch', name: 'Hyena Matriarch',
+      baseStats: {
+        maxHealth: 3500, stamina: 100, staminaRegen: 10, damage: 58, moveSpeed: 3.2, sprintSpeed: 7.2,
+        attackSpeed: 1, defense: 14, size: 2.2,
+      },
+      body: getEnemy('hyena').body,
+      colors: { body: 0x8f7240, belly: 0xc9b27d, accent: 0x2e2314 },
+      features: ['slope', 'spots', 'ridge', 'scar'],
+      behavior: {
+        aggroRadius: 18, aggressive: true, fleeOnSight: false, fleeHealthPct: 0,
+        leashRadius: 22, wanderRadius: 6, fleeBurst: 0, windedSeconds: 0, windedSpeedMult: 1,
+        woundedSpeedMult: 1,
+      },
+      attacks: [
+        {
+          id: 'bite', kind: 'melee', range: 1.7, windup: 0.5, recover: 0.8, damageMult: 1,
+          arcDeg: 110, knockback: 8, cooldown: 1.7,
+        },
+        {
+          id: 'lunge', kind: 'charge', range: 26, minRange: 7, windup: 0.8, recover: 1.2,
+          damageMult: 1.6, knockback: 13, cooldown: 7, speed: 16, duration: 1.0,
+        },
+        {
+          id: 'rake', kind: 'aoe', range: 3, radius: 6, windup: 0.9, recover: 1.0,
+          damageMult: 1.2, knockback: 9, cooldown: 10,
+        },
+      ],
+      xp: 1100, carcassGrowth: 100,
     },
   },
 ];

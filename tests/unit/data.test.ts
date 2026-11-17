@@ -147,7 +147,9 @@ test('data: biome order, forest boss and spawn zones are consistent', () => {
 test('data: every animal that flees tires out, and a tired one can be walked down by every playable species', () => {
   const playable = SPECIES.filter((s) => isPlayable(s, TUNING.currentMilestone));
   const slowestWalk = Math.min(...playable.map((s) => groundWalkSpeed(s)));
-  const runners = Object.values(ENEMIES).filter((e) => e.behavior.fleeOnSight || e.behavior.fleeHealthPct > 0);
+  // The antelope is the exception, on purpose (the user asked for one that is harder to catch, 2026-11-18): it is tested on its own
+  // in plainsAnimals.test.ts, where the fast hunters can sprint it down and the slow ones must corner it.
+  const runners = Object.values(ENEMIES).filter((e) => e.id !== 'antelope' && (e.behavior.fleeOnSight || e.behavior.fleeHealthPct > 0));
   assert.ok(runners.length >= 2, 'deer and fox both flee');
   for (const e of runners) {
     const b = e.behavior;

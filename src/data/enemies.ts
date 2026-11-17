@@ -357,6 +357,167 @@ list.push(
   }),
 );
 
+// The Plains' animals (Milestone 3, levels about 16 to 23, for Alphas). Every number is a first guess.
+list.push(
+  {
+    // Prey that is harder to catch than any before (the user asked, 2026-11-18): faster than the deer, with longer bursts, and
+    // tired it still outruns the Bear, the Crocodile and the Elephant, so only the Wolf, the Tiger and the Lion can sprint it
+    // down; the others must corner it against a lake or a rock. Every bite slows it.
+    id: 'antelope', name: 'Antelope',
+    baseStats: {
+      maxHealth: 60, stamina: 100, staminaRegen: 10, damage: 0, moveSpeed: 3.0, sprintSpeed: 9.2,
+      attackSpeed: 1, defense: 0, size: 1,
+    },
+    body: {
+      bodyLength: 1.25, bodyHeight: 0.44, bodyWidth: 0.3, legLength: 0.95, legThickness: 0.065,
+      neckLength: 0.55, neckAngle: 1.0, headSize: 0.22, snoutLength: 0.2,
+      ears: 'long', earSize: 0.12, tail: 'thin', tailLength: 0.3, chestBulk: 1.0,
+    },
+    colors: { body: 0xc58b4e, belly: 0xf3e7cf, accent: 0x3a2a1c },
+    features: ['horns', 'tailTipDark'],
+    behavior: {
+      aggroRadius: 14, aggressive: false, fleeOnSight: true, fleeHealthPct: 1,
+      leashRadius: 70, wanderRadius: 18, fleeBurst: 6, windedSeconds: 3, windedSpeedMult: 0.92,
+      woundedSpeedMult: 0.7,
+      senses: { front: 1.4 },
+    },
+    attacks: [],
+    xp: 30, carcassGrowth: 22,
+  },
+  {
+    // Fighter: a heavy, thick-skinned grazer with a hump and wide horns. Attacks on sight, charges from range, never runs.
+    id: 'buffalo', name: 'Buffalo',
+    baseStats: {
+      maxHealth: 150, stamina: 100, staminaRegen: 10, damage: 11, moveSpeed: 2.4, sprintSpeed: 6.8,
+      attackSpeed: 1, defense: 8, size: 1.1,
+    },
+    body: {
+      bodyLength: 1.5, bodyHeight: 0.75, bodyWidth: 0.62, legLength: 0.55, legThickness: 0.12,
+      neckLength: 0.22, neckAngle: 0.15, headSize: 0.4, snoutLength: 0.3,
+      ears: 'pointed', earSize: 0.09, tail: 'tuft', tailLength: 0.6, chestBulk: 1.3,
+    },
+    colors: { body: 0x3a2f28, belly: 0x4a3c33, accent: 0x1f1814 },
+    features: ['hump', 'bullHorns'],
+    behavior: {
+      aggroRadius: 11, aggressive: true, fleeOnSight: false, fleeHealthPct: 0,
+      leashRadius: 40, wanderRadius: 12, fleeBurst: 0, windedSeconds: 0, windedSpeedMult: 1,
+      woundedSpeedMult: 1,
+    },
+    attacks: [
+      {
+        id: 'gore', kind: 'melee', range: 1.2, windup: 0.5, recover: 0.8, damageMult: 1,
+        arcDeg: 110, knockback: 7, cooldown: 1.6,
+      },
+      {
+        id: 'charge', kind: 'charge', range: 14, minRange: 5, windup: 0.8, recover: 1.1,
+        damageMult: 1.7, knockback: 11, cooldown: 7, speed: 12.5, duration: 0.9,
+      },
+    ],
+    xp: 55, carcassGrowth: 34,
+  },
+  {
+    // A pack animal: quick bites and a short lunge, with a sloping back, spots and a dark ridge down the neck. Lives in threes
+    // and fours, guards the hyena's den, and answers the Matriarch's call.
+    id: 'hyena', name: 'Hyena',
+    baseStats: {
+      maxHealth: 80, stamina: 100, staminaRegen: 10, damage: 9, moveSpeed: 3.0, sprintSpeed: 7.0,
+      attackSpeed: 1, defense: 3, size: 1,
+    },
+    body: {
+      bodyLength: 1.15, bodyHeight: 0.5, bodyWidth: 0.38, legLength: 0.55, legThickness: 0.085,
+      neckLength: 0.32, neckAngle: 0.6, headSize: 0.34, snoutLength: 0.26,
+      ears: 'round', earSize: 0.12, tail: 'thin', tailLength: 0.35, chestBulk: 1.2,
+    },
+    colors: { body: 0xb89a62, belly: 0xd9c79c, accent: 0x4a3a22 },
+    features: ['slope', 'spots', 'ridge', 'tailTipDark'],
+    behavior: { ...stands, aggroRadius: 13, leashRadius: 40, wanderRadius: 16 },
+    attacks: [
+      {
+        id: 'bite', kind: 'melee', range: 1.0, windup: 0.3, recover: 0.5, damageMult: 1.1,
+        arcDeg: 90, knockback: 3, cooldown: 1.0,
+      },
+      {
+        id: 'lunge', kind: 'charge', range: 9, minRange: 4, windup: 0.5, recover: 0.8,
+        damageMult: 1.4, knockback: 5, cooldown: 6, speed: 12, duration: 0.5,
+      },
+    ],
+    xp: 40, carcassGrowth: 26,
+  },
+);
+
+// The lion's den and the Plains' rivals and lake animals, built like the playable species they look like.
+list.push(
+  rival('lion', 'default', {
+    // A guard of the lion's den: tougher than a wild lion, with a long pounce.
+    id: 'den_lion', name: 'Lion',
+    baseStats: {
+      maxHealth: 135, stamina: 100, staminaRegen: 10, damage: 13, moveSpeed: 2.8, sprintSpeed: 7.0,
+      attackSpeed: 1, defense: 9, size: 1.1,
+    },
+    behavior: { ...stands, aggroRadius: 13, leashRadius: 36, wanderRadius: 5 },
+    attacks: [
+      {
+        id: 'claw', kind: 'melee', range: 1.4, windup: 0.4, recover: 0.65, damageMult: 1,
+        arcDeg: 130, knockback: 7, cooldown: 1.4,
+      },
+      {
+        id: 'pounce', kind: 'charge', range: 11, minRange: 5, windup: 0.6, recover: 0.9,
+        damageMult: 1.7, knockback: 10, cooldown: 6.5, speed: 15, duration: 0.6,
+      },
+    ],
+    xp: 90, carcassGrowth: 36,
+  }),
+  rival('elephant', 'default', {
+    // Slow and huge: a trunk whip, a stomp that reaches all round it, and a charge from range.
+    id: 'rival_elephant', name: 'Elephant',
+    baseStats: {
+      maxHealth: 200, stamina: 100, staminaRegen: 10, damage: 15, moveSpeed: 2.4, sprintSpeed: 6.4,
+      attackSpeed: 1, defense: 12, size: 1,
+    },
+    behavior: { ...stands, aggroRadius: 11, leashRadius: 40, wanderRadius: 14 },
+    attacks: [
+      {
+        id: 'trunk_whip', kind: 'melee', range: 2.4, windup: 0.6, recover: 0.9, damageMult: 1,
+        arcDeg: 140, knockback: 10, cooldown: 1.8,
+      },
+      {
+        id: 'stomp', kind: 'aoe', range: 2.4, radius: 5, windup: 0.9, recover: 1.1,
+        damageMult: 1.2, knockback: 10, cooldown: 8,
+      },
+      {
+        id: 'charge', kind: 'charge', range: 12, minRange: 5, windup: 0.8, recover: 1.0,
+        damageMult: 1.6, knockback: 12, cooldown: 8, speed: 13, duration: 0.8,
+      },
+    ],
+    xp: 110, carcassGrowth: 50,
+  }),
+  rival('crocodile', 'alligator', {
+    // The lakes' animal: it never leaves its lake and a strip of shore (`waterBound`), and attacks anyone in the water or on
+    // that shore. Not a rival of any species, so every animal meets it.
+    id: 'alligator', name: 'Alligator',
+    baseStats: {
+      maxHealth: 140, stamina: 100, staminaRegen: 10, damage: 13, moveSpeed: 2.2, sprintSpeed: 6.4,
+      attackSpeed: 1, defense: 10, size: 1,
+    },
+    behavior: { ...stands, aggroRadius: 11, leashRadius: 30, wanderRadius: 9, aquatic: true, waterBound: 8 },
+    attacks: [
+      {
+        id: 'bite', kind: 'melee', range: 1.4, windup: 0.5, recover: 0.8, damageMult: 1.2,
+        arcDeg: 110, knockback: 5, cooldown: 1.7,
+      },
+      {
+        id: 'tail_sweep', kind: 'aoe', range: 1.8, radius: 4, windup: 0.8, recover: 1.0,
+        damageMult: 1.0, knockback: 8, cooldown: 8,
+      },
+      {
+        id: 'lunge', kind: 'charge', range: 8, minRange: 4, windup: 0.55, recover: 0.9,
+        damageMult: 1.5, knockback: 7, cooldown: 7, speed: 13, duration: 0.5,
+      },
+    ],
+    xp: 85, carcassGrowth: 40,
+  }),
+);
+
 export const ENEMIES: Record<string, EnemyDef> = Object.fromEntries(list.map((e) => [e.id, e]));
 
 export function getEnemy(id: string): EnemyDef {

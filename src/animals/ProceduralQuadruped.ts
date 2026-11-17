@@ -105,7 +105,8 @@ export class ProceduralQuadruped implements AnimalModel {
 
   constructor(look: AnimalAppearance) {
     this.look = look;
-    this.lean = (look.features as string[]).includes('knuckle') ? 0.36 : 0;
+    const features = look.features as string[];
+    this.lean = features.includes('knuckle') ? 0.36 : features.includes('slope') ? 0.2 : 0;
     const p = look.body;
     this.size = look.size;
     // Reptiles sprawl: legs splayed out to the sides, and the body hangs low between them.
@@ -170,6 +171,16 @@ export class ProceduralQuadruped implements AnimalModel {
         const z = lerp(halfL * 0.5, -halfL * 0.72, i / (bands - 1));
         const reach = i % 2 === 0 ? 1.25 : 1.45;
         b.add(new THREE.SphereGeometry(1, 12, 6, 0, TAU, 0, reach), c.accent, [0, 0, z], [0, 0, 0], [r * w * 1.035, r * 1.035, 0.035 + (i % 3) * 0.01]);
+      }
+    }
+    if (this.has('spots')) {
+      // Dark spots over the flanks and rump, a few on each side, each just proud of the body.
+      const marks: [number, number, number][] = [[0.34, 0.35, 1.0], [0.12, 0.6, 0.9], [-0.1, 0.3, 1.1], [-0.3, 0.55, 0.9], [-0.44, 0.2, 0.8]];
+      for (const s of [1, -1]) {
+        for (const [zf, yf, k] of marks) {
+          const x = r * w * Math.sqrt(Math.max(0.05, 1 - yf * yf)) * 0.99;
+          b.add(sphere(r * 0.2 * k), c.accent, [s * x, r * yf, halfL * zf], [0, 0, 0], [0.3, 1, 1]);
+        }
       }
     }
     this.torso = b.build(this.material);
@@ -354,6 +365,32 @@ export class ProceduralQuadruped implements AnimalModel {
           hb.segment(p1, [p1[0] + s * 0.16, p1[1] + 0.06, p1[2] - 0.1], 0.016, 0.004, c.accent);
         }
         top = Math.max(top, p2[1] + (this.has('antlers') ? 0.24 : 0));
+      }
+    }
+    if (this.has('horns')) {
+      // Long, thin horns that sweep up and back: an antelope's.
+      const long = hr * 5;
+      for (const s of [1, -1]) {
+        const base: V3 = [s * hr * 0.38, hr * 0.78, -hr * 0.18];
+        const p1: V3 = [base[0] + s * hr * 0.12, base[1] + long * 0.5, base[2] - long * 0.12];
+        const p2: V3 = [p1[0] + s * hr * 0.1, p1[1] + long * 0.5, p1[2] - long * 0.3];
+        hb.segment(base, p1, hr * 0.13, hr * 0.095, c.accent);
+        hb.segment(p1, p2, hr * 0.095, hr * 0.02, c.accent);
+        top = Math.max(top, p2[1]);
+      }
+    }
+    if (this.has('bullHorns')) {
+      // A buffalo's: a boss of horn on the forehead, and thick horns that curve out, then up and forward.
+      hb.add(sphere(hr * 0.4), c.accent, [0, hr * 0.6, hr * 0.1], [0, 0, 0], [1.5, 0.6, 0.9]);
+      for (const s of [1, -1]) {
+        const base: V3 = [s * hr * 0.6, hr * 0.55, -hr * 0.05];
+        const p1: V3 = [base[0] + s * hr * 1.6, base[1] - hr * 0.1, base[2] - hr * 0.08];
+        const p2: V3 = [p1[0] + s * hr * 0.8, p1[1] + hr * 1.0, p1[2] + hr * 0.15];
+        const p3: V3 = [p2[0] - s * hr * 0.15, p2[1] + hr * 0.85, p2[2] + hr * 0.5];
+        hb.segment(base, p1, hr * 0.28, hr * 0.22, c.accent);
+        hb.segment(p1, p2, hr * 0.22, hr * 0.14, c.accent);
+        hb.segment(p2, p3, hr * 0.14, hr * 0.03, c.accent);
+        top = Math.max(top, p3[1]);
       }
     }
     if (this.has('tusks')) {
