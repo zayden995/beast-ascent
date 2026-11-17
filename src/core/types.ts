@@ -281,6 +281,11 @@ export interface EnemyBehavior {
   senses?: { front?: number; rear?: number };
   /** At home in the water: it wanders into rivers and ponds instead of keeping to dry ground (the wild crocodile). */
   aquatic?: boolean;
+  /**
+   * Lives in a lake (the Plains' alligator): it stays in the water and this many metres of shore around it, attacks
+   * only an animal that is in that zone, and gives up on one that leaves it (see `logic/waterBound.ts`).
+   */
+  waterBound?: number;
 }
 
 export interface EnemyDef {

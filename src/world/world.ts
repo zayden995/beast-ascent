@@ -13,6 +13,7 @@ import { currentAt, sampleRiver } from '../logic/river.ts';
 import type { River } from '../logic/river.ts';
 import { drinkSpot, nearAnyWater, surfaceAt } from '../logic/water.ts';
 import type { WaterSet } from '../logic/water.ts';
+import { holdInLakeZone, inLakeZone } from '../logic/waterBound.ts';
 import { waterfallOf } from '../logic/waterfall.ts';
 import type { Waterfall } from '../logic/waterfall.ts';
 import { ColliderGrid } from './colliders.ts';
@@ -145,6 +146,16 @@ export class BiomeWorld {
   waterDepth(x: number, z: number): number {
     const surface = surfaceAt(this.water, x, z);
     return surface === null ? 0 : Math.max(0, surface - this.heightAt(x, z));
+  }
+
+  /** True in the water or within `strip` metres of its shore: the zone of a lake-bound animal (see `logic/waterBound.ts`). */
+  inLakeZone(x: number, z: number, strip: number): boolean {
+    return inLakeZone(this.water, x, z, strip);
+  }
+
+  /** The velocity a lake-bound animal may use: stopped if the step would take it out of its zone. */
+  holdInLakeZone(strip: number, x: number, z: number, vx: number, vz: number, dt: number): { vx: number; vz: number } {
+    return holdInLakeZone(this.water, strip, x, z, vx, vz, dt);
   }
 
   /** True within a few metres of the shore of any pond or the bank of any river (or in the water). */

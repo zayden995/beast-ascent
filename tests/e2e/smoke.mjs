@@ -2103,6 +2103,95 @@ try {
   const snakeFight = await fight('snake', { maxSeconds: 60, keepAlive: true });
   check('jungle: a snake rears back, strikes and can be beaten', snakeFight.killed && (snakeFight.states.has('windup') || snakeFight.states.has('charging')), `${snakeFight.seconds}s, states ${[...snakeFight.states].join(', ')}`);
 
+  // ---------- Lake-bound animals (the Plains' alligators) ----------
+  // The rule is switched on for the Jungle's lagoon crocodile at run time (`waterBound`: water plus an 8 m strip of shore), because
+  // the Plains do not exist yet when it is built. A player just outside the zone is ignored, one inside it is attacked, and the
+  // animal gives up and goes back to the water when the player leaves.
+  {
+    const site = await page.evaluate(() => {
+      const w = window.__beast.app.game.world;
+      const lagoon = w.layout.waters.find((q) => q.lilyPads);
+      for (let deg = 0; deg < 360; deg += 15) {
+        const dx = Math.cos((deg * Math.PI) / 180);
+        const dz = Math.sin((deg * Math.PI) / 180);
+        const at = (d) => ({ x: lagoon.x + dx * (lagoon.radius + d), z: lagoon.z + dz * (lagoon.radius + d) });
+        const spots = { edge: at(6.5), inside: at(4), outside: at(12) };
+        if (Math.hypot(spots.outside.x, spots.outside.z) > w.boundary - 6) continue;
+        let clear = true;
+        for (let d = 0; d <= 14; d += 1) {
+          const p = at(d);
+          if (w.colliders.blocked(p.x, p.z, 2.5) || w.waterDepth(p.x, p.z) > 0) clear = false;
+        }
+        if (!clear || w.nearWater(spots.outside.x, spots.outside.z) || !w.nearWater(spots.inside.x, spots.inside.z)) continue;
+        return { lagoon: { x: lagoon.x, z: lagoon.z, radius: lagoon.radius }, ...spots };
+      }
+      return null;
+    });
+    check('lake-bound: a clear patch of shore beside the lagoon was found for the test', site !== null);
+    if (site) {
+      await page.evaluate(async () => {
+        const { ENEMIES } = await import('/src/data/enemies.ts');
+        ENEMIES.rival_crocodile.behavior.waterBound = 8;
+      });
+      await calmAll();
+      const croc = await page.evaluate(() => {
+        const e = window.__beast.app.game.spawner.enemies.find((q) => q.alive && q.def.id === 'rival_crocodile');
+        return e ? e.id : null;
+      });
+      const placeCroc = (x, z, facingX, facingZ) => page.evaluate(([id, px, pz, fx, fz, home]) => {
+        const g = window.__beast.app.game;
+        const e = g.spawner.enemies.find((q) => q.id === id);
+        e.pos.set(px, g.world.heightAt(px, pz), pz);
+        e.vx = e.vz = 0;
+        e.state = 'idle';
+        e.timer = 1;
+        e.calm = false;
+        e.provoked = false;
+        e.hp = e.stats.maxHealth;
+        e.homeX = home.x;
+        e.homeZ = home.z;
+        e.yaw = Math.atan2(fx - px, fz - pz);
+      }, [croc, x, z, facingX, facingZ, site.lagoon]);
+      const crocNow = () => page.evaluate((id) => {
+        const g = window.__beast.app.game;
+        const e = g.spawner.enemies.find((q) => q.id === id);
+        return { state: e.state, x: e.pos.x, z: e.pos.z, near: g.world.nearWater(e.pos.x, e.pos.z), depth: g.world.waterDepth(e.pos.x, e.pos.z) };
+      }, croc);
+      const fighting = ['chase', 'windup', 'charging', 'recover'];
+      const fullHp = (await B.state()).player.maxHp;
+
+      // Just outside the zone (4 m past its edge, 5.5 m from the animal): ignored.
+      await B.call('setHp', fullHp);
+      await placeCroc(site.edge.x, site.edge.z, site.outside.x, site.outside.z);
+      await B.teleport(site.outside.x, site.outside.z);
+      await B.advance(5);
+      let c = await crocNow();
+      s = await B.state();
+      check('lake-bound: a player just outside the zone is ignored: no chase, no bite, and the animal stays in its zone',
+        !fighting.includes(c.state) && s.player.hp === fullHp && c.near, `state ${c.state}, player hp ${s.player.hp}/${fullHp}, in its zone ${c.near}`);
+
+      // Inside the zone (on the shore): attacked, and the animal still does not leave the zone.
+      await placeCroc(site.edge.x, site.edge.z, site.inside.x, site.inside.z);
+      await B.teleport(site.inside.x, site.inside.z);
+      await B.advance(3);
+      c = await crocNow();
+      check('lake-bound: a player inside the zone is attacked, and the attacker stays in the zone', fighting.includes(c.state) && c.near, `state ${c.state}, in its zone ${c.near}`);
+
+      // The player leaves: it gives up and goes back to the water.
+      await B.teleport(site.outside.x, site.outside.z);
+      await B.advance(25);
+      c = await crocNow();
+      check('lake-bound: when the player leaves the zone it gives up and goes back to the water', !fighting.includes(c.state) && c.depth > 0.2, `state ${c.state}, depth ${c.depth.toFixed(2)}`);
+
+      await page.evaluate(async () => {
+        const { ENEMIES } = await import('/src/data/enemies.ts');
+        delete ENEMIES.rival_crocodile.behavior.waterBound;
+      });
+      await calmAll();
+      await B.call('setHp', fullHp);
+    }
+  }
+
   // ---------- The snakes' cave, next to the boss's arena ----------
   {
     const cave = J.layout.cave;

@@ -126,6 +126,9 @@ function pickWanderTarget(e: EnemyActor, ctx: AiContext): void {
     if (Math.hypot(x, z) > ctx.world.boundary - 3) continue;
     // Land animals keep to dry ground; one that lives in the water (the wild crocodile) wanders into it.
     if (!e.def.behavior.aquatic && ctx.world.waterDepth(x, z) > 0.2) continue;
+    // A lake-bound animal wanders only in its zone.
+    const lake = e.def.behavior.waterBound;
+    if (lake !== undefined && !ctx.world.inLakeZone(x, z, lake)) continue;
     if (ctx.world.inRefuge(x, z, 2)) continue;
     e.targetX = x;
     e.targetZ = z;
@@ -208,7 +211,10 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
     : noticeMultiplier(e.yaw, dx, dz, { front: b.senses?.front ?? S.front, rear: b.senses?.rear ?? S.rear }, S);
   // A flier high above the ground is out of sight, and a chase gives up on it (see TUNING.flight).
   const aloft = p.flying ? p.altitude : 0;
-  const sees = p.alive && !refuge && aloft <= TUNING.flight.noticeAltitude && noticeDist < b.aggroRadius * reach;
+  // A lake-bound animal (the Plains' alligator) only cares about an animal in its zone: the water and a strip of shore.
+  const lake = b.waterBound;
+  const reachable = lake === undefined || ctx.world.inLakeZone(p.pos.x, p.pos.z, lake);
+  const sees = p.alive && !refuge && reachable && aloft <= TUNING.flight.noticeAltitude && noticeDist < b.aggroRadius * reach;
   // A badly hurt animal stops picking fights and keeps its distance until it has recovered.
   const hurt = b.fleeHealthPct > 0 && e.hp / e.stats.maxHealth < b.fleeHealthPct;
   const walk = e.stats.moveSpeed;
@@ -232,7 +238,7 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
           e.startFlee();
           break;
         }
-        if (!hurt && ((sees && b.aggressive && !e.calm) || (e.provoked && p.alive && !refuge && dist < b.aggroRadius * 2))) {
+        if (!hurt && ((sees && b.aggressive && !e.calm) || (e.provoked && p.alive && !refuge && reachable && dist < b.aggroRadius * 2))) {
           e.state = 'chase';
           break;
         }
@@ -266,7 +272,7 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
       }
       case 'chase': {
         const tooFar = e.isBoss ? playerFromHome > b.leashRadius + 6 : distHome > b.leashRadius;
-        if (!p.alive || tooFar || refuge || aloft > TUNING.flight.giveUpAltitude) {
+        if (!p.alive || tooFar || refuge || !reachable || aloft > TUNING.flight.giveUpAltitude) {
           e.state = 'return';
           e.provoked = false;
           break;
@@ -386,6 +392,12 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
     }
   }
 
+  // A lake-bound animal never walks out of its zone (a step from the inside out is stopped).
+  if (lake !== undefined) {
+    const held = ctx.world.holdInLakeZone(lake, e.pos.x, e.pos.z, e.vx, e.vz, dt);
+    e.vx = held.vx;
+    e.vz = held.vz;
+  }
   integrate(e, dt, ctx.world);
   ctx.world.keepOutOfRefuge(e.pos, e.radius);
   e.anim.speed = Math.hypot(e.vx, e.vz);
