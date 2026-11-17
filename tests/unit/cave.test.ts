@@ -9,14 +9,15 @@ import { JUNGLE_LAYOUT, JUNGLE_SPAWNS } from '../../src/data/jungle.ts';
 import { SPECIES, isPlayable } from '../../src/data/species.ts';
 import { STAGES } from '../../src/data/stages.ts';
 import { TUNING } from '../../src/data/tuning.ts';
-import { TRAIL_HALF_WIDTH, WALL_OFFSET, caveBaitSpots, caveRoof, caveSpot, caveTrail, caveWalls, distanceToTrail, inCave, mouthHalfDeg } from '../../src/logic/cave.ts';
+import { TRAIL_HALF_WIDTH, WALL_OFFSET, caveBaitSpots, caveKeepsClear, caveRoof, caveSpot, caveTrail, caveWalls, distanceToTrail, inAnyCave, inCave, mouthHalfDeg } from '../../src/logic/cave.ts';
+import type { CaveDef } from '../../src/core/layout.ts';
 import { isGuardZone } from '../../src/logic/foxReserve.ts';
 import { buildRivers, createHeight, slopeAt } from '../../src/logic/heightfield.ts';
 import { groundSprintSpeed } from '../../src/logic/stats.ts';
 import { surfaceAt } from '../../src/logic/water.ts';
 
 const L = JUNGLE_LAYOUT;
-const cave = L.cave!;
+const cave = L.caves![0];
 const rivers = buildRivers(L);
 const h = createHeight(L, rivers);
 const water = { waters: L.waters, rivers, waterY: L.waterY };
@@ -27,6 +28,37 @@ function wallGrid(): ColliderGrid {
   for (const w of caveWalls(cave, L.seed + 809)) grid.add(w.x, w.z, w.r, 6.5);
   return grid;
 }
+
+// ---------- A layout holds a list of caves (the Plains have two) ----------
+
+test('caves: the Jungle has exactly one cave, and it has its trail', () => {
+  assert.equal(L.caves!.length, 1);
+  assert.equal(cave.trail, true);
+});
+
+test('caves: ground near every cave is kept clear, a trail is kept clear only for a cave that has one, and a cave is found in any of them', () => {
+  const arena = { x: 0, z: -60, radius: 18 };
+  const withTrail: CaveDef = { x: 60, z: -60, radius: 6, mouthDeg: 180, bait: 2, trail: true };
+  const noTrail: CaveDef = { x: -60, z: 20, radius: 6, mouthDeg: 0, bait: 2 };
+  const caves = [withTrail, noTrail];
+  // Bare ground all round each cave.
+  assert.equal(caveKeepsClear(caves, arena, 60, -60, 0), true, 'inside the first cave');
+  assert.equal(caveKeepsClear(caves, arena, -60 - 8, 20, 0), true, 'a few metres outside the second cave');
+  assert.equal(caveKeepsClear(caves, arena, -60 - 30, 20, 0), false, 'far from both');
+  // The first cave's trail runs west from its mouth to the arena: ground on it is kept clear; the second cave has none.
+  const trail = caveTrail(withTrail, arena);
+  assert.equal(caveKeepsClear(caves, arena, (trail.x0 + trail.x1) / 2, (trail.z0 + trail.z1) / 2, 0), true, 'on the first cave\'s trail');
+  const toArena = caveTrail({ ...noTrail, trail: true }, arena);
+  const mid = { x: (toArena.x0 + toArena.x1) / 2, z: (toArena.z0 + toArena.z1) / 2 };
+  assert.equal(caveKeepsClear(caves, arena, mid.x, mid.z, 0), false, 'no trail leads to a cave that has none');
+  // Several caves, none, or the Forest's missing list.
+  assert.equal(inAnyCave(caves, -60, 20), true);
+  assert.equal(inAnyCave(caves, 60, -60), true);
+  assert.equal(inAnyCave(caves, 0, 0), false);
+  assert.equal(inAnyCave([], 60, -60), false);
+  assert.equal(inAnyCave(undefined, 60, -60), false);
+  assert.equal(caveKeepsClear(undefined, arena, 60, -60, 0), false);
+});
 
 // ---------- The cave's shape ----------
 

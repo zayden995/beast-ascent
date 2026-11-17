@@ -1,6 +1,6 @@
 import type * as THREE from 'three';
 import { EventBus } from '../core/events.ts';
-import type { BiomeId, BossDef, FoodKind } from '../core/types.ts';
+import type { BiomeId, BossDef, FoodKind, SpawnZoneDef } from '../core/types.ts';
 import { mulberry32 } from '../core/math.ts';
 import { BIOMES, BIOME_LAYOUTS, nextBiome, previousBiome, spawnsOf } from '../data/biomes.ts';
 import { getBoss } from '../data/bosses.ts';
@@ -9,6 +9,7 @@ import { TUNING } from '../data/tuning.ts';
 import { describeMod } from '../logic/biome.ts';
 import { withinEatingHeight } from '../logic/flight.ts';
 import { foxesToProvoke } from '../logic/foxReserve.ts';
+import { lairWakes } from '../logic/lair.ts';
 import { nightVisionFactor } from '../logic/vision.ts';
 import { enemyXp, growthNeeded } from '../logic/progression.ts';
 import { playerIsUnseen } from '../logic/stealth.ts';
@@ -201,8 +202,9 @@ export class Game {
 
     this.refreshActors();
     this.player.update(dt);
+    this.wakeLairsByCloseness();
 
-    const ai = { player: pa, world, combat: this.combat, fx: this.fx, rand: this.rand };
+    const ai ={ player: pa, world, combat: this.combat, fx: this.fx, rand: this.rand };
     const awakeStates: string[] = [];
     for (const e of this.spawner.enemies) {
       // Distant animals are hidden and stop thinking (the boss always stays awake).
@@ -340,6 +342,19 @@ export class Game {
     this.food.consume(item);
     if (item.reserve !== undefined) this.raidReserve(item);
     if (item.bait) this.wakeLair(item.pos, 'The snakes of the cave rear up: you took their bait!');
+  }
+
+  /** The guards of a den (a lair zone with `wakeNear`) all wake, together, when the player comes near the den. */
+  private wakeLairsByCloseness(): void {
+    const pa = this.player.actor;
+    const refuge = this.world.inRefuge(pa.pos.x, pa.pos.z);
+    const done = new Set<SpawnZoneDef>();
+    for (const e of this.spawner.enemies) {
+      const zone = e.zone;
+      if (!zone || !zone.lair || zone.wakeNear === undefined || !e.alive || !e.calm || done.has(zone)) continue;
+      done.add(zone);
+      if (lairWakes(zone, pa.pos, pa.alive, refuge)) this.wakeLair(zone, 'The guards of the den rise and rush at you!');
+    }
   }
 
   /** Wakes every calm animal of a lair within range of `at`: they all attack. `text` is what the player is told. */

@@ -63,6 +63,8 @@ export interface CaveDef {
   mouthDeg: number;
   /** How many carcasses lie inside. */
   bait: number;
+  /** A trail kept clear of trees leads from the mouth to the boss's arena (the Jungle's cave has one; the Plains' dens have none). */
+  trail?: boolean;
 }
 
 export type BiomeStyle = 'forest' | 'jungle';
@@ -85,8 +87,8 @@ export interface BiomeLayout {
   /** The stream that ends in a waterfall, and how far out from the cliff edge the water lands. */
   waterfall?: { river: string; run: number };
   arena: { x: number; z: number; radius: number };
-  /** A cave (the Jungle's, next to the boss's arena). */
-  cave?: CaveDef;
+  /** Caves: the Jungle's (next to the boss's arena) or the Plains' two dens. Left out: none. */
+  caves?: CaveDef[];
   /** The gate onward to the next biome, at the north edge. It opens when the boss is beaten. */
   gate: GateDef;
   /** The gate back to the biome before this one, at the south edge. Always open. Left out in the first biome. */

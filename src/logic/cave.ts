@@ -40,6 +40,30 @@ export function inCave(cave: CaveDef, x: number, z: number, margin = 0): boolean
   return Math.hypot(x - cave.x, z - cave.z) < cave.radius + WALL_OFFSET + 1.8 + margin;
 }
 
+/** True inside any of the caves (a layout may have none, one or several). */
+export function inAnyCave(caves: readonly CaveDef[] | undefined, x: number, z: number, margin = 0): boolean {
+  return caves !== undefined && caves.some((cave) => inCave(cave, x, z, margin));
+}
+
+/**
+ * True where nothing may be built or planted because of the caves: bare ground all round each one, and the trail
+ * that leads to it from the arena (only for a cave that has a trail).
+ */
+export function caveKeepsClear(
+  caves: readonly CaveDef[] | undefined,
+  arena: { x: number; z: number; radius: number },
+  x: number,
+  z: number,
+  margin: number,
+): boolean {
+  if (caves === undefined) return false;
+  for (const cave of caves) {
+    if (Math.hypot(x - cave.x, z - cave.z) < cave.radius + 5 + margin) return true;
+    if (cave.trail && distanceToTrail(caveTrail(cave, arena), x, z) < TRAIL_HALF_WIDTH + margin * 0.5) return true;
+  }
+  return false;
+}
+
 /**
  * The rock walls: a ring of boulders around the floor with a gap for the mouth. They overlap, so that nothing
  * can squeeze between them. The two that frame the mouth are the biggest.

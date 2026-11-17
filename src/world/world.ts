@@ -2,12 +2,12 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { flatShade, toonMaterial } from '../animals/toon.ts';
 import { TAU, fbm2, mulberry32 } from '../core/math.ts';
-import type { BiomeLayout, GateDef } from '../core/layout.ts';
+import type { BiomeLayout, CaveDef, GateDef } from '../core/layout.ts';
 import type { BiomeDef, BiomeId } from '../core/types.ts';
 import { BIOMES, layoutOf } from '../data/biomes.ts';
 import { buildRivers, createHeight, slopeAt, surfaceOf } from '../logic/heightfield.ts';
 import type { HeightFn } from '../logic/heightfield.ts';
-import { TRAIL_HALF_WIDTH, caveRoof, caveTrail, caveWalls, distanceToTrail, inCave as isInCave, mouthHalfDeg } from '../logic/cave.ts';
+import { caveKeepsClear, caveRoof, caveWalls, inAnyCave, mouthHalfDeg } from '../logic/cave.ts';
 import type { CaveStone } from '../logic/cave.ts';
 import { currentAt, sampleRiver } from '../logic/river.ts';
 import type { River } from '../logic/river.ts';
@@ -121,7 +121,7 @@ export class BiomeWorld {
     this.buildGrass();
     this.buildBushes();
     this.buildDen();
-    this.buildCave();
+    this.buildCaves();
     this.buildGate(this.layout.gate, 1, true);
     if (this.layout.returnGate) this.buildGate(this.layout.returnGate, -1, false);
     // Everything below has its own random sequence, so that adding to it never moves a tree or a rock.
@@ -175,8 +175,7 @@ export class BiomeWorld {
 
   /** True inside the cave and its walls (`margin` widens it), where only the cave's own animals are placed. */
   inCave(x: number, z: number, margin = 0): boolean {
-    const cave = this.layout.cave;
-    return cave !== undefined && isInCave(cave, x, z, margin);
+    return inAnyCave(this.layout.caves, x, z, margin);
   }
 
   /** True inside the den's refuge, where wild animals never go (`margin` widens it). */
@@ -214,13 +213,10 @@ export class BiomeWorld {
 
   /** True if nothing is built or planted at this spot. */
   isOpenGround(x: number, z: number, margin: number): boolean {
-    const { den, arena, waters, gate, returnGate, playerSpawn, cave } = this.layout;
+    const { den, arena, waters, gate, returnGate, playerSpawn, caves } = this.layout;
     if (Math.hypot(x - den.x, z - den.z) < den.radius + margin) return false;
-    // The cave, its walls and a few metres of bare ground all round, and the trail that leads to it from the arena.
-    if (cave) {
-      if (Math.hypot(x - cave.x, z - cave.z) < cave.radius + 5 + margin) return false;
-      if (distanceToTrail(caveTrail(cave, arena), x, z) < TRAIL_HALF_WIDTH + margin * 0.5) return false;
-    }
+    // Each cave, its walls and a few metres of bare ground all round, and the trail that leads to it from the arena (if it has one).
+    if (caveKeepsClear(caves, arena, x, z, margin)) return false;
     if (Math.hypot(x - playerSpawn.x, z - playerSpawn.z) < 5 + margin) return false;
     if (Math.hypot(x - arena.x, z - arena.z) < arena.radius + 3 + margin) return false;
     for (const w of waters) if (Math.hypot(x - w.x, z - w.z) < w.radius - 1 + margin) return false;
@@ -573,11 +569,14 @@ export class BiomeWorld {
    * The snakes' cave: a ring of boulders around the floor with a gap for the mouth, a roof of flat rock over it, a dark
    * floor, a dark ceiling that hides the gaps between the stones, and bones.
    */
-  private buildCave(): void {
-    const cave = this.layout.cave;
-    if (!cave) return;
+  private buildCaves(): void {
+    // The first cave keeps the random sequences it always had (+808, +809, +810), so the Jungle's cave is unchanged.
+    this.layout.caves?.forEach((cave, i) => this.buildCave(cave, i * 10));
+  }
+
+  private buildCave(cave: CaveDef, seedStep: number): void {
     const floor = this.heightAt(cave.x, cave.z);
-    const rand = mulberry32(this.layout.seed + 808);
+    const rand = mulberry32(this.layout.seed + 808 + seedStep);
     const rock = new THREE.Color(this.biome.palette.rock).multiplyScalar(0.72);
     const rocks: Instance[] = [];
     const place = (stone: CaveStone, wall: boolean): void => {
@@ -590,8 +589,8 @@ export class BiomeWorld {
       // The walls stop an animal; a flier clears them above 6.5 m. The roof is overhead and stops nothing.
       if (wall) this.colliders.add(stone.x, stone.z, stone.r, 6.5);
     };
-    for (const wall of caveWalls(cave, this.layout.seed + 809)) place(wall, true);
-    for (const slab of caveRoof(cave, this.layout.seed + 810)) place(slab, false);
+    for (const wall of caveWalls(cave, this.layout.seed + 809 + seedStep)) place(wall, true);
+    for (const slab of caveRoof(cave, this.layout.seed + 810 + seedStep)) place(slab, false);
     this.instanced(new THREE.DodecahedronGeometry(1, 0), toonMaterial(), rocks, true);
 
     const dark = new THREE.Mesh(new THREE.CircleGeometry(cave.radius + 0.7, 28).rotateX(-Math.PI / 2), toonMaterial({ color: 0x2a2018 }));

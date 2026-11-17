@@ -82,7 +82,7 @@ export class FoodSystem {
 
     this.growPlants(rand);
     this.buildReserves();
-    if (world.layout.cave) for (const spot of caveBaitSpots(world.layout.cave)) this.addBait(spot.x, spot.z, rand);
+    for (const cave of world.layout.caves ?? []) for (const spot of caveBaitSpots(cave)) this.addBait(spot.x, spot.z, rand);
 
     // Fish swim in every pond, in circles around spots spread across it.
     for (const water of world.layout.waters) {

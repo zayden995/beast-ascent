@@ -2011,6 +2011,12 @@ try {
   // Palms bear coconuts.
   const palm = await pickTree('nut');
   if (palm) {
+    // Leafy plants grow in random places: one beside the palm would be the nearest food and be offered instead of the
+    // coconuts (seen once, 2026-11-18), so clear any plant near the palm first, as for the Forest's berry bush.
+    await page.evaluate(([px, pz]) => {
+      const food = window.__beast.app.game.food;
+      for (const item of [...food.items]) if (item.kind === 'plant' && Math.hypot(item.pos.x - px, item.pos.z - pz) < 8) food.consume(item);
+    }, [palm.x, palm.z]);
     await B.teleport(palm.x + 2.6, palm.z);
     await B.advance(0.2);
     s = await B.state();
@@ -2194,7 +2200,7 @@ try {
 
   // ---------- The snakes' cave, next to the boss's arena ----------
   {
-    const cave = J.layout.cave;
+    const cave = J.layout.caves[0];
     const arena = J.layout.arena;
     const nest = async () => (await B.state()).enemies.filter((e) => e.kind === 'cave_snake' && e.alive);
     const bait = async () => (await B.state()).food.filter((f) => f.bait);
@@ -2274,6 +2280,29 @@ try {
     baits = await bait();
     check('cave: three minutes later the nest is back, calm again, and the eaten carcass has been replaced',
       snakes.length === 3 && snakes.every((e) => e.calm) && baits.length === 4 && baits.every((f) => f.available), `${snakes.length} snakes, ${baits.filter((f) => f.available).length} carcasses`);
+
+    // A lair with a wake distance (a den of the Plains; the cave's own has none) wakes, all together, when an animal comes near.
+    // It is switched on for the cave's nest at run time, because the Plains' dens do not exist yet when it is built.
+    const setWakeNear = (metres) => page.evaluate(async (m) => {
+      const { JUNGLE_SPAWNS } = await import('/src/data/jungle.ts');
+      const zone = JUNGLE_SPAWNS.find((z) => z.lair);
+      if (m === null) delete zone.wakeNear;
+      else zone.wakeNear = m;
+    }, metres);
+    await setWakeNear(14);
+    await B.advance(2);
+    snakes = await nest();
+    check('lair: an animal 26 m from the den\'s middle does not wake the guards', snakes.length === 3 && snakes.every((e) => e.calm), snakes.map((e) => `${e.state}${e.calm ? ' calm' : ''}`).join(', '));
+    await B.teleport(cave.x - 12, cave.z, Math.PI / 2);
+    await B.advance(1);
+    snakes = await nest();
+    check('lair: an animal that comes within 14 m wakes all the guards together, without touching any bait',
+      snakes.length === 3 && snakes.every((e) => !e.calm && ['chase', 'windup', 'charging', 'recover'].includes(e.state)) && (await bait()).every((f) => f.available),
+      snakes.map((e) => `${e.state}${e.calm ? ' calm' : ''}`).join(', '));
+    await setWakeNear(null);
+    await B.teleport(cave.x - 25, cave.z, Math.PI / 2);
+    await calmAll();
+    await B.advance(1);
 
     // Hurting one snake of a sleeping nest wakes all of them, without the bait being touched.
     await page.evaluate(() => {

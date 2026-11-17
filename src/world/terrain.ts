@@ -28,9 +28,10 @@ export function buildTerrainMesh(heightAt: HeightFn, layout: BiomeLayout, palett
   const sand = new THREE.Color(palette.shore ?? 0xd8c690);
   const deep = new THREE.Color(palette.deepWater ?? 0x6f8a6a);
   const c = new THREE.Color();
-  const { arena, den, waters, waterY, gate, returnGate, worldRadius, cave } = layout;
+  const { arena, den, waters, waterY, gate, returnGate, worldRadius } = layout;
   const rockSlope = layout.terrain.rockSlope;
-  const trail = cave ? caveTrail(cave, arena) : null;
+  // Each cave has bare earth round it, and one with a trail has a strip of bare earth from the arena to its mouth.
+  const caves = (layout.caves ?? []).map((cave) => ({ cave, trail: cave.trail ? caveTrail(cave, arena) : null }));
 
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
@@ -54,10 +55,10 @@ export function buildTerrainMesh(heightAt: HeightFn, layout: BiomeLayout, palett
       const dReturn = Math.hypot(x - returnGate.x, z - returnGate.z);
       dirtAmount = Math.max(dirtAmount, (1 - smoothstep(returnGate.radius - 2, returnGate.radius + 2, dReturn)) * 0.9);
     }
-    if (cave) {
+    for (const { cave, trail } of caves) {
       dirtAmount = Math.max(dirtAmount, (1 - smoothstep(cave.radius, cave.radius + 4.5, Math.hypot(x - cave.x, z - cave.z))) * 0.95);
       // The trail from the arena to the cave is bare earth.
-      dirtAmount = Math.max(dirtAmount, (1 - smoothstep(TRAIL_HALF_WIDTH - 0.6, TRAIL_HALF_WIDTH + 1.2, distanceToTrail(trail!, x, z))) * 0.75);
+      if (trail) dirtAmount = Math.max(dirtAmount, (1 - smoothstep(TRAIL_HALF_WIDTH - 0.6, TRAIL_HALF_WIDTH + 1.2, distanceToTrail(trail, x, z))) * 0.75);
     }
     c.lerp(dirt, dirtAmount);
 

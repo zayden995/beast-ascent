@@ -359,7 +359,7 @@ export interface SpawnZoneDef {
   radius: number;
   levelMin: number;
   levelMax: number;
-  /** A rival predator: this zone is left out when the player is this species. */
+  /** A rival predator: a wild animal of this playable species (every player meets it, one of its own kind included). */
   rivalOf?: string;
   /** Seconds before a dead animal from this zone comes back (default: TUNING.enemies.respawnSeconds). */
   respawnSeconds?: number;
@@ -367,6 +367,11 @@ export interface SpawnZoneDef {
   guardOf?: number;
   /** The animals of a lair (the snakes in the Jungle's cave): calm until the bait is eaten or one of them is hurt, then they all attack. */
   lair?: boolean;
+  /**
+   * For a lair (a den of the Plains): the guards also wake, all together, when an animal comes within this many metres of
+   * the zone's middle. Left out (the Jungle's cave): they wake only by the bait or a wound.
+   */
+  wakeNear?: number;
 }
 
 export interface BiomePalette {

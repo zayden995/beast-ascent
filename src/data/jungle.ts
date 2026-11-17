@@ -72,7 +72,7 @@ export const JUNGLE_LAYOUT: BiomeLayout = {
   arena: { x: 0, z: -62, radius: 18 },
   // The snakes' cave, deep in the trees on the right (east) of the boss's arena as an animal comes in from the south. Its
   // mouth faces the arena, 62 m away, and a trail kept clear of trees leads from the arena to it. Four carcasses lie inside as bait.
-  cave: { x: 62, z: -62, radius: 6, mouthDeg: 180, bait: 4 },
+  caves: [{ x: 62, z: -62, radius: 6, mouthDeg: 180, bait: 4, trail: true }],
   gate: { x: 0, z: -105, radius: 6 },
   returnGate: { x: 0, z: 105, radius: 6 },
   trees: 640,
