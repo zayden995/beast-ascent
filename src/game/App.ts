@@ -316,6 +316,8 @@ export class App {
       biomes: BIOME_ORDER.filter((id) => BIOME_LAYOUTS[id]).map((id) => ({ id, name: BIOMES[id].name, current: id === this.world.biome.id })),
       goToBiome: (id) => this.adminTravel(id),
       switchAnimal: (speciesId, variantId) => this.adminSwitch(speciesId, variantId),
+      pet: () => game.pet?.def.kind ?? null,
+      setPet: (kind) => game.setPet(kind),
       close: () => this.closeAdmin(),
     });
   }

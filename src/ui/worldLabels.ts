@@ -3,6 +3,7 @@ import { threatLevel } from '../logic/progression.ts';
 import { tagRange } from '../logic/vision.ts';
 import type { Actor } from '../systems/actor.ts';
 import type { EnemyActor } from '../systems/ai.ts';
+import type { CompanionActor } from '../systems/companion.ts';
 import { el } from './dom.ts';
 
 interface Tag {
@@ -39,7 +40,7 @@ export class WorldLabels {
    * `revealRange` (the Eagle's Eye) shows level tags farther away than the usual range. `sight` shrinks every
    * range in the dark (1 = daytime sight): the Bald Eagle sees half as far at night.
    */
-  update(camera: THREE.Camera, enemies: EnemyActor[], player: Actor, playerLevel: number, revealRange = 0, sight = 1): void {
+  update(camera: THREE.Camera, enemies: EnemyActor[], player: Actor, playerLevel: number, revealRange = 0, sight = 1, pet: CompanionActor | null = null): void {
     // Read the layout size once per frame, not once per label.
     this.width = this.root.clientWidth;
     this.height = this.root.clientHeight;
@@ -73,6 +74,27 @@ export class WorldLabels {
         tag.threat = threat;
       }
       const hp = Math.round((e.hp / e.stats.maxHealth) * 100);
+      if (hp !== tag.hp) {
+        tag.bar.style.width = `${hp}%`;
+        tag.hp = hp;
+      }
+      tag.root.style.transform = `translate(${_v.x.toFixed(1)}px, ${_v.y.toFixed(1)}px) translate(-50%, -100%)`;
+    }
+    if (pet && pet.alive && this.project(camera, pet.pos.x, pet.pos.y + pet.model.height + 0.3, pet.pos.z)) {
+      seen.add(pet.id);
+      let tag = this.tags.get(pet.id);
+      if (!tag) {
+        // The player's own pet: a green tag with no level ("Your cub", "Your pup").
+        const root = el('div', 'tag pet');
+        const barWrap = el('div', 'bar');
+        const bar = el('i');
+        barWrap.append(bar);
+        root.append(pet.def.kind === 'hyena' ? 'Your pup' : 'Your cub', barWrap);
+        this.root.append(root);
+        tag = { root, lv: root, bar, threat: '', hp: -1 };
+        this.tags.set(pet.id, tag);
+      }
+      const hp = Math.round((pet.hp / pet.stats.maxHealth) * 100);
       if (hp !== tag.hp) {
         tag.bar.style.width = `${hp}%`;
         tag.hp = hp;

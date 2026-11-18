@@ -307,6 +307,8 @@ html, body {
 .tag.hard .lv { color: var(--honey); }
 .tag.deadly .lv { color: var(--ember); }
 .tag.boss { font-size: 0.95rem; }
+.tag.pet { color: var(--lichen); box-shadow: inset 0 0 0 1px rgba(159, 194, 74, 0.55); }
+.tag.pet .bar i { background: var(--lichen); }
 
 .dmg { position: absolute; left: 0; top: 0; font-size: 1.25rem; font-weight: 700; color: var(--cream); text-shadow: 0 2px 0 var(--bark), 0 0 4px #000; animation: dmg 0.8s ease-out forwards; white-space: nowrap; }
 .dmg.hurt { color: var(--ember); font-size: 1.45rem; }

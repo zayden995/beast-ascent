@@ -1,4 +1,6 @@
 import type { BiomeId } from '../core/types.ts';
+import { PETS } from '../data/pets.ts';
+import type { PetKind } from '../data/pets.ts';
 import { getAbility } from '../data/abilities.ts';
 import { SPECIES, isPlayable } from '../data/species.ts';
 import { STAGES, STAGE_ORDER } from '../data/stages.ts';
@@ -17,6 +19,9 @@ export interface AdminHooks {
   biomes: { id: BiomeId; name: string; current: boolean }[];
   /** Restarts the sandbox at that biome's den. */
   goToBiome: (id: BiomeId) => void;
+  /** The sandbox's pet, and a way to give one or take it away. */
+  pet: () => PetKind | null;
+  setPet: (kind: PetKind | null) => void;
   /** Starts the sandbox again as another animal (species and skin cannot change while the game runs). */
   switchAnimal: (speciesId: string, variantId: string) => void;
   close: () => void;
@@ -34,6 +39,21 @@ function row(label: string, value: string, controls: HTMLElement[]): HTMLElement
   const controlBox = el('div', 'admin-chips');
   controlBox.append(...controls);
   line.append(el('span', 'admin-label', label), el('b', 'admin-value', value), controlBox);
+  return line;
+}
+
+/** The Pet row: none, a liger cub or a hyena pup, given at once beside the animal. */
+function petRow(hooks: AdminHooks, render: () => void): HTMLElement {
+  const current = hooks.pet();
+  const choose = (kind: PetKind | null) => () => {
+    if (kind !== current) hooks.setPet(kind);
+    render();
+  };
+  const line = row('Pet', current ? PETS[current].name : 'None', [
+    chip('None', current === null, choose(null)),
+    ...(Object.keys(PETS) as PetKind[]).map((k) => chip(PETS[k].name, current === k, choose(k))),
+  ]);
+  line.dataset.row = 'pet';
   return line;
 }
 
@@ -100,6 +120,7 @@ export function createAdminPanel(parent: HTMLElement, growth: Growth, hooks: Adm
         b.disabled = needed === null;
         return b;
       })),
+      petRow(hooks, render),
       row('Marks', '', [
         chip('Wounded', p.wounded, () => edit((pr) => setWounded(pr, !pr.wounded)), p.stage === 'juvenile'),
         chip(`${hooks.biomeName} ruled`, hooks.isRuled(), () => {

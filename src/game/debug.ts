@@ -117,6 +117,11 @@ export function installDebug(app: App): void {
           state: e.state, drinking: e.drinking, calm: e.calm, summoned: e.summoned, provoked: e.provoked, alive: e.alive, boss: e.isBoss, stun: e.stun, slow: e.slowTime, bleeds: e.bleeds.length,
           dist: e.distanceTo(a),
         })),
+        pet: g.pet ? {
+          kind: g.pet.def.kind, x: g.pet.pos.x, z: g.pet.pos.z, hp: g.pet.hp, maxHp: g.pet.stats.maxHealth, damage: g.pet.stats.damage,
+          defense: g.pet.stats.defense, size: g.pet.stats.size, alive: g.pet.alive, phase: g.pet.care.phase, dist: g.pet.distanceTo(a),
+          targetId: g.pet.targetId, hits: g.pet.hits, kills: g.pet.kills,
+        } : null,
         food: g.food.items.map((f) => ({ kind: f.kind, x: f.pos.x, z: f.pos.z, available: f.available, label: f.label, reserve: f.reserve, bait: f.bait })),
       };
     },

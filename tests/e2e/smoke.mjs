@@ -2540,6 +2540,141 @@ try {
     s.biome === 'plains' && s.player.alive && Math.hypot(s.player.x - PL.layout.playerSpawn.x, s.player.z - PL.layout.playerSpawn.z) < 1 && s.ruled.includes('plains') && s.gateOpen,
     `${s.biome} at ${s.player.x.toFixed(1)}, ${s.player.z.toFixed(1)}`);
 
+  // ---------- The pet (M3, 2026-11-19): a liger cub or a hyena pup that follows the player and fights beside it ----------
+  {
+  const SP = PL.layout.playerSpawn;
+  const petOf = async () => (await B.state()).pet;
+  /** Puts the pet somewhere by hand (the test's stand-in for it wandering). */
+  const placePet = (x, z) => page.evaluate(([a, b]) => { const g = window.__beast.app.game; g.pet.pos.set(a, g.world.heightAt(a, b), b); g.pet.vx = g.pet.vz = 0; }, [x, z]);
+  await calmAll();
+  await B.teleport(SP.x, SP.z, Math.PI);
+  await B.advance(0.2);
+  check('pet: an animal starts with no pet', (await petOf()) === null);
+
+  await page.keyboard.press('KeyJ');
+  await page.locator('.admin-card').waitFor();
+  const petRow = page.locator('.admin-row[data-row="pet"]');
+  check('admin: the panel has a Pet row with None, Liger cub and Hyena pup', (await petRow.getByRole('button').allInnerTexts()).join() === 'None,Liger cub,Hyena pup',
+    (await petRow.getByRole('button').allInnerTexts().catch(() => [])).join());
+  await petRow.getByRole('button', { name: 'Liger cub' }).click();
+  await page.keyboard.press('KeyJ');
+  await page.locator('.admin-card').waitFor({ state: 'detached' });
+  await B.advance(0.2);
+  s = await B.state();
+  let pet = s.pet;
+  check('admin: Liger cub gives the sandbox a liger cub, beside the animal', pet?.kind === 'liger' && pet.alive && pet.dist < 4, JSON.stringify(pet));
+  const near = (a, b) => Math.abs(a - b) <= Math.max(1, Math.abs(b) * 0.01);
+  check('pet: a liger cub has 35% of the player\'s health, 30% of its damage and the same defense, at about half an adult\'s size',
+    !!pet && near(pet.maxHp, s.player.maxHp * 0.35) && near(pet.damage, s.player.damage * 0.3) && pet.defense === s.player.defense && pet.size > 0.4 && pet.size < 0.7,
+    pet && `hp ${pet.maxHp} of ${s.player.maxHp}, damage ${pet.damage.toFixed(1)} of ${s.player.damage.toFixed(1)}, size ${pet.size}`);
+  await shot('29-pet-liger');
+  await settle();
+  check('pet: a green tag over it says it is the player\'s', /Your cub/.test(await page.locator('.tag.pet').innerText().catch(() => '')));
+
+  // Its strength follows the player's.
+  const before = pet.maxHp;
+  await B.call('grantXp', 20000);
+  await B.advance(0.1);
+  pet = await petOf();
+  check('pet: when the player grows stronger, so does its pet', pet.maxHp > before, `${before} -> ${pet.maxHp}`);
+
+  // Following, and catching up.
+  await B.teleport(SP.x + 12, SP.z - 6, Math.PI);
+  await B.advance(5);
+  pet = await petOf();
+  check('pet: it follows the player and stays close', pet.dist < 4, `${pet.dist.toFixed(1)} m`);
+  await B.teleport(SP.x - 30, SP.z - 30, Math.PI);
+  await B.advance(0.2);
+  pet = await petOf();
+  check('pet: left more than 35 m behind, it appears beside the player', pet.dist < 4, `${pet.dist.toFixed(1)} m`);
+
+  // Its health comes back slowly, like the player's.
+  await page.evaluate(() => { const p = window.__beast.app.game.pet; p.hp = p.stats.maxHealth / 2; });
+  await B.advance(15);
+  pet = await petOf();
+  check('pet: it heals slowly when it is not being hurt', pet.hp > pet.maxHp / 2 + 1, `${pet.hp.toFixed(0)} of ${pet.maxHp}`);
+
+  // The player's own attacks never touch it; a wild animal's do.
+  const teamCheck = await page.evaluate(() => {
+    const g = window.__beast.app.game;
+    const p = g.pet.pos;
+    const wild = g.spawner.enemies.find((e) => e.alive);
+    return {
+      player: g.combat.targetsInRadius(g.player.actor, p.x, p.z, 30).includes(g.pet) || g.combat.targetsInArc(g.player.actor, 50, 360).includes(g.pet),
+      wild: g.combat.targetsInRadius(wild, p.x, p.z, 3).includes(g.pet),
+    };
+  });
+  check('pet: the player\'s area attacks and swipes pass through its pet; a wild animal\'s area attack can hit it', !teamCheck.player && teamCheck.wild, JSON.stringify(teamCheck));
+  s = await B.state();
+  await placePet(s.player.x + Math.sin(s.player.yaw) * 1.6, s.player.z + Math.cos(s.player.yaw) * 1.6);
+  const petHp = (await petOf()).hp;
+  await page.mouse.move(640, 360);
+  for (let i = 0; i < 3; i++) {
+    await page.mouse.down();
+    await B.advance(0.1);
+    await page.mouse.up();
+    await B.advance(0.6);
+  }
+  await tap('Digit3');
+  await B.advance(1);
+  check('pet: the player\'s real attacks and an ability key at the pet do it no harm', (await petOf()).hp >= petHp, `${petHp} -> ${(await petOf()).hp}`);
+
+  // It leaves a calm den guard alone, even right beside it.
+  await calmAll();
+  await B.teleport(hyenaDen.x + 18, hyenaDen.z, -Math.PI / 2);
+  const calmGuard = (await denGuards('hyena', hyenaDen))[0];
+  const hits0 = (await petOf()).hits;
+  await placePet(calmGuard.x + 1.5, calmGuard.z);
+  await B.advance(3);
+  check('pet: it never wakes a calm den guard or starts a fight', (await petOf()).hits === hits0 && (await denGuards('hyena', hyenaDen)).every((e) => e.calm),
+    `${(await petOf()).hits - hits0} bites, guards ${(await denGuards('hyena', hyenaDen)).map((e) => (e.calm ? 'calm' : e.state)).join(', ')}`);
+
+  // It fights an animal that is fighting the player, and the kill is the player's.
+  await B.teleport(SP.x, SP.z - 30, Math.PI);
+  const foe = nearest(await B.state(), 'buffalo');
+  await B.teleport(foe.x, foe.z + 3, Math.PI);
+  await placePet(foe.x + 1.5, foe.z + 2);
+  await page.evaluate((id) => { const e = window.__beast.app.game.spawner.enemies.find((x) => x.id === id); e.calm = false; e.provoked = true; e.state = 'chase'; e.homeX = e.pos.x; e.homeZ = e.pos.z; }, foe.id);
+  const hits1 = (await petOf()).hits;
+  for (let i = 0; i < 8; i++) {
+    await B.advance(0.5);
+    await B.call('setHp', (await B.state()).player.maxHp);
+  }
+  pet = await petOf();
+  check('pet: it bites an animal that is fighting the player', pet.hits > hits1, `${pet.hits - hits1} bites, target ${pet.targetId}, foe ${foe.id}`);
+  const xp0 = (await B.state()).player;
+  await page.evaluate((id) => { window.__beast.app.game.spawner.enemies.find((x) => x.id === id).hp = 1; }, foe.id);
+  for (let i = 0; i < 12 && (await B.state()).enemies.find((e) => e.id === foe.id)?.alive; i++) {
+    await B.advance(0.5);
+    await B.call('setHp', (await B.state()).player.maxHp);
+  }
+  s = await B.state();
+  pet = s.pet;
+  check('pet: an animal its pet kills gives the player its XP and leaves a carcass',
+    pet.kills >= 1 && (s.player.level > xp0.level || s.player.xp > xp0.xp) && s.food.some((f) => f.kind === 'carcass' && Math.hypot(f.x - foe.x, f.z - foe.z) < 8),
+    `kills ${pet.kills}, level ${xp0.level} -> ${s.player.level}, xp ${xp0.xp.toFixed(0)} -> ${s.player.xp.toFixed(0)}`);
+
+  // The hyena pup, and no pet.
+  await page.keyboard.press('KeyJ');
+  await page.locator('.admin-card').waitFor();
+  await petRow.getByRole('button', { name: 'Hyena pup' }).click();
+  await page.keyboard.press('KeyJ');
+  await page.locator('.admin-card').waitFor({ state: 'detached' });
+  await B.advance(0.2);
+  s = await B.state();
+  pet = s.pet;
+  check('admin: Hyena pup swaps the cub for a hyena pup with 40% of the player\'s health and 20% of its damage',
+    pet?.kind === 'hyena' && near(pet.maxHp, s.player.maxHp * 0.4) && near(pet.damage, s.player.damage * 0.2) && pet.dist < 4,
+    pet && `hp ${pet.maxHp} of ${s.player.maxHp}, damage ${pet.damage.toFixed(1)}`);
+  await shot('29-pet-hyena');
+  await page.keyboard.press('KeyJ');
+  await page.locator('.admin-card').waitFor();
+  await petRow.getByRole('button', { name: 'None' }).click();
+  await page.keyboard.press('KeyJ');
+  await page.locator('.admin-card').waitFor({ state: 'detached' });
+  check('admin: None takes the pet away', (await petOf()) === null && (await page.evaluate(() => window.__beast.app.game.growth.profile.pet)) === null);
+  }
+
   // Back through the gate to the Jungle.
   await B.teleport(PL.layout.returnGate.x, PL.layout.returnGate.z - 4, 0);
   await B.advance(0.2);

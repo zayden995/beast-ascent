@@ -1,6 +1,7 @@
 import type * as THREE from 'three';
 import { EventBus } from '../core/events.ts';
 import type { BiomeId, BossDef, FoodKind, SpawnZoneDef } from '../core/types.ts';
+import type { PetKind } from '../data/pets.ts';
 import { mulberry32 } from '../core/math.ts';
 import { BIOMES, BIOME_LAYOUTS, nextBiome, previousBiome, spawnsOf } from '../data/biomes.ts';
 import { getBoss } from '../data/bosses.ts';
@@ -19,6 +20,7 @@ import type { Actor } from '../systems/actor.ts';
 import { EnemyActor, updateEnemy } from '../systems/ai.ts';
 import type { ThirdPersonCamera } from '../systems/camera.ts';
 import { Combat } from '../systems/combat.ts';
+import { CompanionActor } from '../systems/companion.ts';
 import { FoodSystem } from '../systems/food.ts';
 import type { FoodItem } from '../systems/food.ts';
 import { Fx } from '../systems/fx.ts';
@@ -70,6 +72,8 @@ export class Game {
   readonly fx: Fx;
   readonly hud: Hud;
   readonly labels: WorldLabels;
+  /** The player's pet, or null (one per save slot; see the bible's "M3, the pet: design"). */
+  pet: CompanionActor | null = null;
   /** What the E key would do right now (shown on the HUD). */
   prompt: Prompt | null = null;
   /** How much of its daytime sight the player has right now (1 = all of it): the tag range and the fog distance. */
@@ -107,6 +111,7 @@ export class Game {
     this.spawner.spawnZones(spawnsOf(world.biome.id));
     this.food = new FoodSystem(scene, world, this.rand, this.clock);
     this.trees = new TreeFoodSystem(scene, world, this.clock);
+    if (profile.pet) this.createPet(profile.pet.kind);
 
     // The boss is back every time the player enters the biome, even after it has been beaten.
     // A ruled biome stays ruled and its gate stays open.
@@ -138,8 +143,10 @@ export class Game {
     const cam = this.ctx.cam.camera;
     const playerActor = this.player.actor;
 
-    ev.on('damage', ({ target, amount, kind, ambush }) => {
+    ev.on('damage', ({ target, attacker, amount, kind, ambush }) => {
       if (target instanceof EnemyActor) target.onDamaged();
+      // The pet joins a fight the player started.
+      if (target instanceof EnemyActor && attacker === playerActor) target.lastPlayerHitAt = this.clock.time;
       // Hurting one snake of the nest wakes all of them.
       if (target instanceof EnemyActor && target.zone?.lair) this.wakeLair(target.pos, 'The whole nest stirs!');
       const cls = target === playerActor ? 'hurt' : kind === 'bleed' ? 'bleed' : ambush ? 'ambush' : '';
@@ -193,7 +200,7 @@ export class Game {
   }
 
   private refreshActors(): void {
-    this.actors = [this.player.actor, ...this.spawner.enemies];
+    this.actors = this.pet ? [this.player.actor, this.pet, ...this.spawner.enemies] : [this.player.actor, ...this.spawner.enemies];
   }
 
   /** Advances the simulation by `dt` seconds. */
@@ -207,6 +214,7 @@ export class Game {
 
     this.refreshActors();
     this.player.update(dt);
+    this.pet?.update(dt, { player: pa, enemies: this.spawner.enemies, world, combat: this.combat, fx: this.fx, now: this.clock.time });
     this.wakeLairsByCloseness();
     this.updateSummons(dt);
 
@@ -232,6 +240,7 @@ export class Game {
     this.interact();
 
     pa.syncModel(dt);
+    this.pet?.syncModel(dt);
     for (const e of this.spawner.enemies) if (e.model.root.visible) e.syncModel(dt);
 
     cam.update(dt, pa.pos, pa.model.height, pa.stats.size, world.heightAt, world.colliders);
@@ -429,7 +438,7 @@ export class Game {
   /** Updates HUD and labels. Runs every frame, even while paused. */
   present(): void {
     this.hud.update();
-    this.labels.update(this.ctx.cam.camera, this.spawner.enemies, this.player.actor, this.growth.progress.level, this.growth.getPassives().revealRange, this.vision.sight);
+    this.labels.update(this.ctx.cam.camera, this.spawner.enemies, this.player.actor, this.growth.progress.level, this.growth.getPassives().revealRange, this.vision.sight, this.pet);
   }
 
   save(): boolean {
@@ -443,6 +452,29 @@ export class Game {
   /** True once the biome the player is in has been ruled (its gate is open). */
   get biomeRuled(): boolean {
     return this.growth.profile.ruledBiomes.includes(this.world.biome.id);
+  }
+
+  /** Makes the pet of this kind and puts it beside the player (replacing any pet there was). */
+  private createPet(kind: PetKind): void {
+    this.pet?.model.dispose();
+    const pet = new CompanionActor(kind, this.player.actor);
+    pet.placeBeside(this.world);
+    pet.addTo(this.ctx.scene);
+    pet.syncModel(0);
+    this.pet = pet;
+    this.refreshActors();
+  }
+
+  /** Gives the animal this pet, or takes its pet away (the admin panel's Pet row; the egg in step 3e). */
+  setPet(kind: PetKind | null): void {
+    if (kind) this.createPet(kind);
+    else {
+      this.pet?.model.dispose();
+      this.pet = null;
+      this.refreshActors();
+    }
+    this.growth.profile.pet = kind ? { kind, injured: false } : null;
+    this.dirty = true;
   }
 
   /** Admin sandbox only: rules the current biome (opening its gate) or takes the rule away. */
@@ -460,6 +492,7 @@ export class Game {
     this.hud.dispose();
     this.labels.dispose();
     this.player.dispose();
+    this.pet?.model.dispose();
     this.spawner.dispose();
     this.food.dispose();
     this.trees.dispose();
