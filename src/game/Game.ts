@@ -3,6 +3,7 @@ import { EventBus } from '../core/events.ts';
 import type { BiomeId, BossDef, FoodKind, SpawnZoneDef } from '../core/types.ts';
 import { PETS, PET_TUNING } from '../data/pets.ts';
 import type { PetKind } from '../data/pets.ts';
+import type { PetPhase } from '../logic/pet.ts';
 import { mulberry32 } from '../core/math.ts';
 import { BIOMES, BIOME_LAYOUTS, nextBiome, previousBiome, spawnsOf } from '../data/biomes.ts';
 import { getBoss } from '../data/bosses.ts';
@@ -22,6 +23,7 @@ import { EnemyActor, updateEnemy } from '../systems/ai.ts';
 import type { ThirdPersonCamera } from '../systems/camera.ts';
 import { Combat } from '../systems/combat.ts';
 import { CompanionActor } from '../systems/companion.ts';
+import { EggSystem } from '../systems/eggs.ts';
 import { FoodSystem } from '../systems/food.ts';
 import type { FoodItem } from '../systems/food.ts';
 import { Fx } from '../systems/fx.ts';
@@ -37,6 +39,9 @@ import { Hud } from '../ui/hud.ts';
 import { WorldLabels } from '../ui/worldLabels.ts';
 import type { BiomeWorld } from '../world/world.ts';
 import type { Sky } from '../world/sky.ts';
+
+/** Where a new pet comes from, said when the pet dies. */
+const NEW_EGG = "Beat the guards of a den on the Plains for a new egg.";
 
 /** What the E prompt calls each kind of tree food. */
 const TREE_LABELS = { leaf: 'leaves', fruit: 'fruit', nut: 'nuts' } as const;
@@ -77,6 +82,8 @@ export class Game {
   readonly labels: WorldLabels;
   /** The player's pet, or null (one per save slot; see the bible's "M3, the pet: design"). */
   pet: CompanionActor | null = null;
+  /** The eggs in the dens (a den whose guards are all dead gives one, while the slot has no pet). */
+  readonly eggs: EggSystem;
   /** What the E key would do right now (shown on the HUD). */
   prompt: Prompt | null = null;
   /** How much of its daytime sight the player has right now (1 = all of it): the tag range and the fog distance. */
@@ -118,7 +125,9 @@ export class Game {
     this.spawner.spawnZones(spawnsOf(world.biome.id));
     this.food = new FoodSystem(scene, world, this.rand, this.clock);
     this.trees = new TreeFoodSystem(scene, world, this.clock);
-    if (profile.pet) this.createPet(profile.pet.kind);
+    this.eggs = new EggSystem(scene, world, spawnsOf(world.biome.id));
+    // The slot's pet comes along, beside the player; an injured one (saved on quitting) lies there with a fresh countdown.
+    if (profile.pet) this.createPet(profile.pet.kind, profile.pet.injured ? 'injured' : 'healthy');
 
     // The boss is back every time the player enters the biome, even after it has been beaten.
     // A ruled biome stays ruled and its gate stays open.
@@ -191,6 +200,8 @@ export class Game {
     });
 
     ev.on('progress', () => (this.dirty = true));
+    // The pet wakes at the den with the player.
+    ev.on('playerRespawned', () => this.pet?.wakeBeside(this.world));
   }
 
   private bossDefeated(boss: EnemyActor, repeatWin: boolean, xp: number): void {
@@ -249,6 +260,7 @@ export class Game {
     // A fish swims away from the player only when the player is wading or swimming (a flier skimming the pond does not scare it).
     this.food.update(dt, pa.wet && pa.alive && !pa.flying ? pa.pos : null);
     this.trees.update();
+    this.eggs.update(this.spawner.enemies, !!this.growth.profile.pet);
     this.fx.update(dt);
     this.interact();
 
@@ -315,6 +327,17 @@ export class Game {
       return;
     }
 
+    // An egg in a beaten den (only while the slot has no pet).
+    const egg = this.growth.profile.pet ? null : this.eggs.nearest(pa.pos.x, pa.pos.z, PET_TUNING.tendRange + pa.radius);
+    if (egg) {
+      this.prompt = { key: 'E', text: 'Take the egg' };
+      if (pressed) {
+        this.setPet(this.eggs.take(egg), 'egg');
+        this.events.emit('toast', { text: 'You take the egg. Something is moving inside...', tone: 'good' });
+      }
+      return;
+    }
+
     // A flier must come down to eat: an eagle can take a fish by skimming the water, not from 20 m up.
     const lowEnough = withinEatingHeight(pa.flying ? pa.altitude : 0, TUNING.flight.eatAltitude);
     const item = lowEnough ? this.food.nearest(pa.pos, TUNING.food.eatRange + pa.radius) : null;
@@ -355,9 +378,12 @@ export class Game {
       if (!this.world.isGateOpen()) {
         this.prompt = { key: '', text: `Sealed. Defeat the ${here.name} boss to open this gate.` };
       } else if (BIOME_LAYOUTS[next]) {
-        this.prompt = { key: 'E', text: `Enter the ${nextName}` };
+        this.prompt = { key: 'E', text: this.leaveBehindWarning(`enter the ${nextName}`) ?? `Enter the ${nextName}` };
         // An animal that goes on arrives through the next biome's gate back.
-        if (pressed) this.ctx.travel(next, 'return');
+        if (pressed) {
+          this.leavePetBehind();
+          this.ctx.travel(next, 'return');
+        }
       } else {
         this.prompt = { key: 'E', text: `Enter the ${nextName}` };
         if (pressed) {
@@ -368,9 +394,12 @@ export class Game {
     } else if (at === 'return') {
       const back = previousBiome(here.id);
       if (!back) return;
-      this.prompt = { key: 'E', text: `Return to the ${BIOMES[back].name}` };
+      this.prompt = { key: 'E', text: this.leaveBehindWarning(`return to the ${BIOMES[back].name}`) ?? `Return to the ${BIOMES[back].name}` };
       // An animal that goes back arrives at the gate it once left by.
-      if (pressed) this.ctx.travel(back, 'onward');
+      if (pressed) {
+        this.leavePetBehind();
+        this.ctx.travel(back, 'onward');
+      }
     }
   }
 
@@ -487,7 +516,9 @@ export class Game {
     this.playerHit = false;
     const name = PETS[pet.def.kind].name.toLowerCase();
     const saved = this.growth.profile.pet;
-    if (event === 'injured') {
+    if (event === 'hatched') {
+      this.events.emit('toast', { text: `Your egg has hatched: a ${name}!`, tone: 'good' });
+    } else if (event === 'injured') {
       if (saved) saved.injured = true;
       this.dirty = true;
       this.events.emit('toast', { text: `Your ${name} is injured! Hold E beside it within ${PET_TUNING.injuredSeconds} s, or it will die.`, tone: 'bad' });
@@ -498,14 +529,34 @@ export class Game {
     } else if (event === 'died') {
       this.growth.profile.pet = null;
       this.save();
-      this.events.emit('toast', { text: `Your ${name} has died.`, tone: 'bad' });
+      this.events.emit('toast', { text: `Your ${name} has died. ${NEW_EGG}`, tone: 'bad' });
     }
     // A dead pet lies a moment, then is gone.
     if (pet.care.phase === 'dead' && this.clock.time - pet.deathTime > 1.8) {
-      pet.model.dispose();
+      pet.dispose();
       this.pet = null;
       this.refreshActors();
     }
+  }
+
+  /** The gate's warning while the pet is injured (going through leaves it behind), or null. */
+  private leaveBehindWarning(going: string): string | null {
+    const pet = this.pet;
+    if (!pet || pet.care.phase !== 'injured') return null;
+    return `Your ${PETS[pet.def.kind].name.toLowerCase()} is injured. Leave it behind and ${going}?`;
+  }
+
+  /** Going through a gate while the pet is injured leaves it behind: it dies, and the slot has no pet. */
+  private leavePetBehind(): void {
+    const pet = this.pet;
+    if (!pet || pet.care.phase !== 'injured') return;
+    const name = PETS[pet.def.kind].name.toLowerCase();
+    pet.dispose();
+    this.pet = null;
+    this.refreshActors();
+    this.growth.profile.pet = null;
+    this.save();
+    this.events.emit('toast', { text: `You left your ${name} behind, and it died. ${NEW_EGG}`, tone: 'bad' });
   }
 
   /** Admin sandbox only: knocks the pet down, to see the injury and the tending. */
@@ -514,9 +565,9 @@ export class Game {
   }
 
   /** Makes the pet of this kind and puts it beside the player (replacing any pet there was). */
-  private createPet(kind: PetKind): void {
-    this.pet?.model.dispose();
-    const pet = new CompanionActor(kind, this.player.actor);
+  private createPet(kind: PetKind, phase: PetPhase = 'healthy'): void {
+    this.pet?.dispose();
+    const pet = new CompanionActor(kind, this.player.actor, phase);
     pet.placeBeside(this.world);
     pet.addTo(this.ctx.scene);
     pet.syncModel(0);
@@ -525,10 +576,10 @@ export class Game {
   }
 
   /** Gives the animal this pet, or takes its pet away (the admin panel's Pet row; the egg in step 3e). */
-  setPet(kind: PetKind | null): void {
-    if (kind) this.createPet(kind);
+  setPet(kind: PetKind | null, phase: PetPhase = 'healthy'): void {
+    if (kind) this.createPet(kind, phase);
     else {
-      this.pet?.model.dispose();
+      this.pet?.dispose();
       this.pet = null;
       this.refreshActors();
     }
@@ -551,7 +602,8 @@ export class Game {
     this.hud.dispose();
     this.labels.dispose();
     this.player.dispose();
-    this.pet?.model.dispose();
+    this.pet?.dispose();
+    this.eggs.dispose();
     this.spawner.dispose();
     this.food.dispose();
     this.trees.dispose();

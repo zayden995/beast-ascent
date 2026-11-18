@@ -9,6 +9,7 @@ import type { PetCare, PetCareEvent, PetPhase } from '../logic/pet.ts';
 import type { BiomeWorld } from '../world/world.ts';
 import { Actor, integrate } from './actor.ts';
 import type { EnemyActor } from './ai.ts';
+import { disposeEgg, makeEgg } from './eggs.ts';
 import type { Combat } from './combat.ts';
 import type { Fx } from './fx.ts';
 
@@ -48,6 +49,8 @@ export class CompanionActor extends Actor {
   kills = 0;
 
   private player: Actor;
+  /** While it is an egg: the egg beside the player, which wobbles more and more until it hatches. */
+  private egg: THREE.Group | null = null;
   private biteCooldown = 0;
   private rethink = 0;
   private statKey = '';
@@ -61,6 +64,29 @@ export class CompanionActor extends Actor {
     this.care = newPetCare(phase);
     this.name = def.name;
     this.statKey = this.keyOf();
+    if (phase === 'egg') {
+      // Until it hatches it is an egg: the cub is hidden, and nothing can hit it.
+      this.egg = makeEgg(kind);
+      this.model.root.visible = false;
+      this.untargetable = true;
+    } else if (phase === 'injured') this.goDown();
+  }
+
+  /** The player woke at its den (after a death): the pet is there too. A healthy pet is at full health; an injured one stays injured. */
+  wakeBeside(world: BiomeWorld): void {
+    if (this.care.phase === 'healthy') {
+      this.alive = true;
+      this.clearStatuses();
+      this.hp = this.stats.maxHealth;
+      this.targetId = null;
+    }
+    this.placeBeside(world);
+  }
+
+  dispose(): void {
+    this.model.dispose();
+    if (this.egg) disposeEgg(this.egg);
+    this.egg = null;
   }
 
   /** Puts it beside the player (on arrival, or when it has fallen far behind): behind and to one side, on open ground if there is any. */
@@ -100,7 +126,8 @@ export class CompanionActor extends Actor {
       this.hp = 0;
     }
     const event = stepPetCare(this.care, { hp: this.hp, tending: ctx.tending, playerHit: ctx.playerHit }, dt);
-    if (event === 'injured') this.goDown();
+    if (event === 'hatched') this.hatch(ctx);
+    else if (event === 'injured') this.goDown();
     else if (event === 'revived') {
       this.untargetable = false;
       this.anim.deathT = -1;
@@ -109,6 +136,13 @@ export class CompanionActor extends Actor {
     } else if (event === 'died') {
       this.alive = false;
       this.deathTime = ctx.now;
+    }
+    if (this.care.phase === 'egg' && this.egg) {
+      // The egg rocks, faster and harder as the hatch comes near.
+      const k = 1 - Math.max(0, this.care.hatchLeft) / PET_TUNING.hatchSeconds;
+      this.egg.position.copy(this.pos);
+      this.egg.rotation.z = Math.sin(ctx.now * (4 + k * 14)) * (0.05 + k * 0.22);
+      return event;
     }
     // Injured, it lies where it fell: it does not move, fight, heal, or drift with the water.
     if (this.care.phase !== 'healthy') return event;
@@ -145,6 +179,17 @@ export class CompanionActor extends Actor {
     this.anim.speed = Math.hypot(this.vx, this.vz);
     this.anim.sprinting = this.anim.speed > this.stats.moveSpeed * 1.3;
     return event;
+  }
+
+  /** The egg cracks open: the cub stands where the egg was, at full health. */
+  private hatch(ctx: CompanionContext): void {
+    if (this.egg) disposeEgg(this.egg);
+    this.egg = null;
+    this.model.root.visible = true;
+    this.untargetable = false;
+    this.hp = this.stats.maxHealth;
+    this.yaw = ctx.player.yaw;
+    ctx.fx.ring(this.pos, 1.4, 0xfff2b0, 0.7);
   }
 
   /** Injured: it lies down where it is, cannot be hit, and drops any fight. */
@@ -237,5 +282,9 @@ export class CompanionActor extends Actor {
 
   addTo(scene: THREE.Scene): void {
     scene.add(this.model.root);
+    if (this.egg) {
+      this.egg.position.copy(this.pos);
+      scene.add(this.egg);
+    }
   }
 }

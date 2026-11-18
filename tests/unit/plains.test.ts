@@ -211,3 +211,12 @@ test('plains: fruit bushes stand on dry open ground, away from the lakes and the
     assert.ok(Math.hypot(bx - L.arena.x, bz - L.arena.z) > L.arena.radius + 3, 'outside the arena');
   }
 });
+
+// ---------- The pet (M3, 2026-11-19): each den of the Plains gives the egg of its own kind ----------
+
+test('plains: the lion\'s den gives a liger egg and the hyena\'s den a hyena egg; no other zone of any biome gives one', () => {
+  const givers = PLAINS_SPAWNS.filter((z) => z.eggOf !== undefined).map((z) => `${z.enemyId}:${z.eggOf}`).sort();
+  assert.deepEqual(givers, ['den_lion:liger', 'hyena:hyena']);
+  for (const z of PLAINS_SPAWNS.filter((s) => s.eggOf !== undefined)) assert.ok(z.lair && z.wakeNear !== undefined, 'only a den gives an egg');
+  for (const id of ['forest', 'jungle'] as const) assert.ok(spawnsOf(id).every((z) => z.eggOf === undefined), `${id} gives no egg`);
+});

@@ -2447,7 +2447,8 @@ try {
 
   // The two dens: four calm guards each, which all wake together when an animal comes within 14 m.
   const [hyenaDen, lionDen] = PL.layout.caves;
-  const denGuards = async (kind, den) => (await B.state()).enemies.filter((e) => e.kind === kind && e.alive && Math.hypot(e.x - den.x, e.z - den.z) < den.radius + 3);
+  // A den's guards are counted by the den they belong to (their home), not by where they stand: one that lunges at the player leaves the circle.
+  const denGuards = async (kind, den) => (await B.state()).enemies.filter((e) => e.kind === kind && e.alive && e.lair && Math.hypot(e.homeX - den.x, e.homeZ - den.z) < den.radius + 3);
   const engaged = ['chase', 'windup', 'charging', 'recover'];
   for (const [name, kind, den, side] of [['hyena', 'hyena', hyenaDen, 1], ['lion', 'den_lion', lionDen, -1]]) {
     let guards = await denGuards(kind, den);
@@ -2818,6 +2819,61 @@ try {
   await page.keyboard.press('KeyJ');
   await page.locator('.admin-card').waitFor({ state: 'detached' });
   check('admin: None takes the pet away', (await petOf()) === null && (await page.evaluate(() => window.__beast.app.game.growth.profile.pet)) === null);
+
+  // ----- 3e: the egg -----
+  const eggsOf = async () => (await B.state()).eggs;
+  const killDen = (kind, den) => page.evaluate(([k, x, z, r]) => {
+    const g = window.__beast.app.game;
+    for (const e of g.spawner.enemies.filter((a) => a.alive && a.def.id === k && a.zone?.lair && Math.hypot(a.pos.x - x, a.pos.z - z) < r + 4)) {
+      g.combat.damage(g.player.actor, e, { damage: 1e9, knockback: 0 });
+    }
+  }, [kind, den.x, den.z, den.radius]);
+  await calmAll();
+  await B.teleport(SP.x, SP.z, Math.PI);
+  await B.advance(0.5);
+  check('egg: no den shows an egg while its guards live', (await eggsOf()).length === 0, JSON.stringify(await eggsOf()));
+  await killDen('hyena', hyenaDen);
+  await B.advance(0.5);
+  let eggs = await eggsOf();
+  check('egg: once all four guards of the hyena\'s den are dead, a hyena egg lies in the den, and none at the lion\'s',
+    eggs.length === 1 && eggs[0].kind === 'hyena' && Math.hypot(eggs[0].x - hyenaDen.x, eggs[0].z - hyenaDen.z) < hyenaDen.radius, JSON.stringify(eggs));
+  await B.teleport(eggs[0].x + 1.8, eggs[0].z, -Math.PI / 2);
+  await B.advance(0.1);
+  s = await B.state();
+  check('egg: beside it the prompt offers to take it', s.prompt?.key === 'E' && /Take the egg/.test(s.prompt.text), s.prompt?.text);
+  await shot('29c-egg-in-den');
+  await tap('KeyE');
+  await B.advance(0.2);
+  s = await B.state();
+  check('egg: taking it gives the slot a hyena pup at once (saved), the egg starts hatching beside the player, and the den is empty',
+    s.pet?.phase === 'egg' && s.pet.kind === 'hyena' && s.pet.dist < 4 && s.eggs.length === 0
+    && (await page.evaluate(() => JSON.stringify(window.__beast.app.game.growth.profile.pet))) === '{"kind":"hyena","injured":false}', JSON.stringify(s.pet));
+  await B.advance(5);
+  await shot('29d-egg-hatching');
+  await B.advance(4);
+  check('egg: it has not hatched at 9 s', (await petOf()).phase === 'egg');
+  await B.advance(1.5);
+  pet = await petOf();
+  await settle();
+  check('egg: at 10 s it hatches into a hyena pup beside the player', pet.phase === 'healthy' && pet.kind === 'hyena' && pet.dist < 4 && /hatched/.test(await page.locator('.hud-toasts').innerText()), JSON.stringify(pet));
+  await shot('29e-egg-hatched');
+  await killDen('den_lion', lionDen);
+  await B.advance(0.5);
+  check('egg: with a pet in the slot, beating the lion\'s den gives no egg (one pet per slot)', (await eggsOf()).length === 0, JSON.stringify(await eggsOf()));
+
+  // When the pet dies, both beaten dens give an egg again; the next one can be the other kind.
+  await page.evaluate(() => window.__beast.app.game.adminInjurePet());
+  await B.advance(62.5);
+  eggs = await eggsOf();
+  check('egg: after the pet dies, both beaten dens give an egg again', (await petOf()) === null && eggs.map((e) => e.kind).sort().join() === 'hyena,liger', JSON.stringify(eggs));
+  check('pet: the message of its death says where a new egg comes from', /new egg/.test(await page.locator('.hud-toasts').innerText()));
+  const ligerEgg = eggs.find((e) => e.kind === 'liger');
+  await B.teleport(ligerEgg.x + 1.8, ligerEgg.z, -Math.PI / 2);
+  await B.advance(0.1);
+  await tap('KeyE');
+  await B.advance(10.5);
+  pet = await petOf();
+  check('egg: the lion\'s den\'s egg hatches into a liger cub, and the hyena\'s egg is gone', pet?.kind === 'liger' && pet.phase === 'healthy' && (await eggsOf()).length === 0, JSON.stringify(pet));
   }
 
   // Back through the gate to the Jungle.
@@ -2830,17 +2886,30 @@ try {
   await page.waitForTimeout(100);
   s = await B.state();
   check('plains: the way back leads to the Jungle', s.biome === 'jungle', s.biome);
+  check('pet: the pet goes through the gate with the player and arrives beside it', s.pet?.kind === 'liger' && s.pet.phase === 'healthy' && s.pet.dist < 4, JSON.stringify(s.pet));
+  await page.evaluate(() => { const p = window.__beast.app.game.pet; p.hp = p.stats.maxHealth / 3; });
 
   // Death in the Jungle: the animal wakes at the Jungle's den.
-  await page.evaluate(() => {
+  const killPlayer = () => page.evaluate(() => {
     const g = window.__beast.app.game;
     g.combat.damage(g.spawner.enemies.find((e) => e.alive), g.player.actor, { damage: 1e7, knockback: 0 });
   });
+  await killPlayer();
   await B.advance(5);
   s = await B.state();
   check('jungle: an animal that dies here wakes at the Jungle\'s den, and keeps the biomes it rules',
     s.biome === 'jungle' && s.player.alive && Math.hypot(s.player.x - J.layout.playerSpawn.x, s.player.z - J.layout.playerSpawn.z) < 1 && s.ruled.includes('jungle') && s.gateOpen,
     `${s.biome} at ${s.player.x.toFixed(1)}, ${s.player.z.toFixed(1)}`);
+  check('pet: when the player dies, a healthy pet wakes beside it at the den, at full health', s.pet?.phase === 'healthy' && s.pet.dist < 4 && Math.abs(s.pet.hp - s.pet.maxHp) < 1, JSON.stringify(s.pet));
+  // An injured pet stays injured through the player's death, its countdown still running.
+  await page.evaluate(() => window.__beast.app.game.adminInjurePet());
+  await B.advance(0.2);
+  const left0 = (await B.state()).pet.injuredLeft;
+  await killPlayer();
+  await B.advance(5);
+  s = await B.state();
+  check('pet: an injured pet wakes at the den with the player, still injured, its countdown still running',
+    s.player.alive && s.pet?.phase === 'injured' && s.pet.dist < 4 && s.pet.injuredLeft < left0 - 4, JSON.stringify(s.pet));
 
   // Night falls in the Jungle too.
   await B.call('setTimeOfDay', 0);
@@ -2848,6 +2917,18 @@ try {
   await shot('26-jungle-night');
   await B.call('setTimeOfDay', 0.5);
   await B.advance(0.2);
+
+  // Through a gate while the pet is injured: the gate warns, and going on leaves it behind (it dies).
+  await B.teleport(J.layout.returnGate.x, J.layout.returnGate.z - 4, 0);
+  await B.advance(0.2);
+  s = await B.state();
+  check('pet: at a gate with the pet injured, the prompt warns that it would be left behind', s.pet?.phase === 'injured' && s.prompt?.key === 'E' && /injured.*leave it behind/i.test(s.prompt.text), s.prompt?.text);
+  await tap('KeyE');
+  await B.advance(0.2);
+  await page.waitForTimeout(100);
+  s = await B.state();
+  check('pet: going on through the gate leaves it behind: it dies, and the animal arrives alone',
+    s.biome === 'forest' && s.pet === null && (await page.evaluate(() => window.__beast.app.game.growth.profile.pet)) === null, `${s.biome}, pet ${JSON.stringify(s.pet)}`);
   }
   await page.keyboard.press('Escape');
   await page.locator('.pause-card').waitFor();
@@ -2857,6 +2938,36 @@ try {
   check('leaving the sandbox removes its badge', (await page.locator('.admin-badge').count()) === 0);
   const slotsAfter = await page.evaluate(() => [1, 2, 3, 4].map((n) => localStorage.getItem(`beastAscent.save.slot${n}`)));
   check('the sandbox wrote nothing to the four save slots', JSON.stringify(slotsAfter) === JSON.stringify(slotsBefore));
+
+  // Continue Game with an injured pet: it lies beside the animal at the den, with a fresh 60 s. (Slot 4 is put back afterwards.)
+  const slot4Before = await page.evaluate(() => {
+    const keys = [1, 2, 3, 4].map((n) => `beastAscent.save.slot${n}`);
+    const old = localStorage.getItem(keys[3]);
+    const save = JSON.parse(keys.map((k) => localStorage.getItem(k)).find((v) => v));
+    save.pet = { kind: 'liger', injured: true };
+    save.biome = 'forest';
+    localStorage.setItem(keys[3], JSON.stringify(save));
+    return old;
+  });
+  await page.goto(url);
+  await page.locator('.title').waitFor();
+  await page.getByRole('button', { name: /Continue Game/ }).click();
+  await page.locator('.slot-card').waitFor();
+  const card4 = await page.locator('.save-slot[data-slot="4"]').innerText();
+  check('the slot card says the animal has an injured pet', /with an injured liger cub/.test(card4), card4.replace(/\n/g, ' '));
+  await page.locator('.save-slot[data-slot="4"]').click();
+  await page.locator('.hud').waitFor();
+  await B.call('setAutoStep', false);
+  await B.call('setRender', false);
+  await B.advance(0.2);
+  const resumed = (await B.state()).pet;
+  check('Continue Game with an injured pet: it lies beside the animal at the den, with a fresh 60 s',
+    resumed?.kind === 'liger' && resumed.phase === 'injured' && resumed.dist < 4 && resumed.injuredLeft > 59, JSON.stringify(resumed));
+  await page.evaluate((old) => {
+    const key = 'beastAscent.save.slot4';
+    if (old === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, old);
+  }, slot4Before);
   await page.goto(url);
   await page.locator('.title').waitFor();
 

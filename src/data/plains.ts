@@ -63,8 +63,8 @@ export const PLAINS_SPAWNS: SpawnZoneDef[] = [
   { enemyId: 'hyena', count: 3, x: 30, z: 0, radius: 12, levelMin: 17, levelMax: 19 },
   { enemyId: 'hyena', count: 3, x: -40, z: -16, radius: 12, levelMin: 17, levelMax: 19 },
   // The two dens: calm until an animal comes within 14 m, then all four attack. The lion's den is the harder one.
-  { enemyId: 'hyena', count: 4, x: -68, z: 14, radius: 3, levelMin: 18, levelMax: 19, lair: true, wakeNear: 14, respawnSeconds: 240 },
-  { enemyId: 'den_lion', count: 4, x: 66, z: -18, radius: 3, levelMin: 21, levelMax: 23, lair: true, wakeNear: 14, respawnSeconds: 240 },
+  { enemyId: 'hyena', count: 4, x: -68, z: 14, radius: 3, levelMin: 18, levelMax: 19, lair: true, wakeNear: 14, respawnSeconds: 240, eggOf: 'hyena' },
+  { enemyId: 'den_lion', count: 4, x: 66, z: -18, radius: 3, levelMin: 21, levelMax: 23, lair: true, wakeNear: 14, respawnSeconds: 240, eggOf: 'liger' },
   { enemyId: 'rival_elephant', count: 1, x: -38, z: 56, radius: 10, levelMin: 20, levelMax: 21, rivalOf: 'elephant', respawnSeconds: 150 },
   { enemyId: 'rival_elephant', count: 1, x: 6, z: 34, radius: 10, levelMin: 21, levelMax: 22, rivalOf: 'elephant', respawnSeconds: 150 },
   { enemyId: 'rival_lion', count: 1, x: -12, z: -30, radius: 10, levelMin: 19, levelMax: 20, rivalOf: 'lion', respawnSeconds: 150 },

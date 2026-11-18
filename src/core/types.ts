@@ -396,6 +396,8 @@ export interface SpawnZoneDef {
    * the zone's middle. Left out (the Jungle's cave): they wake only by the bait or a wound.
    */
   wakeNear?: number;
+  /** A den of the Plains: once all its guards are dead, an egg of this pet lies in it (the slot must have no pet). */
+  eggOf?: 'liger' | 'hyena';
 }
 
 export interface BiomePalette {

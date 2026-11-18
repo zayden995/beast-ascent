@@ -114,7 +114,7 @@ export function installDebug(app: App): void {
         },
         enemies: g.spawner.enemies.map((e) => ({
           id: e.id, kind: e.def.id, level: e.level, x: e.pos.x, z: e.pos.z, hp: e.hp, maxHp: e.stats.maxHealth,
-          state: e.state, foe: e.foeIsPet ? 'pet' : 'player', drinking: e.drinking, calm: e.calm, summoned: e.summoned, provoked: e.provoked, alive: e.alive, boss: e.isBoss, stun: e.stun, slow: e.slowTime, bleeds: e.bleeds.length,
+          lair: e.zone?.lair === true, homeX: e.homeX, homeZ: e.homeZ, state: e.state, foe: e.foeIsPet ? 'pet' : 'player', drinking: e.drinking, calm: e.calm, summoned: e.summoned, provoked: e.provoked, alive: e.alive, boss: e.isBoss, stun: e.stun, slow: e.slowTime, bleeds: e.bleeds.length,
           dist: e.distanceTo(a),
         })),
         pet: g.pet ? {
@@ -122,6 +122,7 @@ export function installDebug(app: App): void {
           defense: g.pet.stats.defense, size: g.pet.stats.size, alive: g.pet.alive, phase: g.pet.care.phase, dist: g.pet.distanceTo(a),
           targetId: g.pet.targetId, hits: g.pet.hits, kills: g.pet.kills, tendHeld: g.pet.care.tendHeld, injuredLeft: g.pet.care.injuredLeft, flash: g.pet.anim.hitFlash,
         } : null,
+        eggs: g.eggs.visible(),
         food: g.food.items.map((f) => ({ kind: f.kind, x: f.pos.x, z: f.pos.z, available: f.available, label: f.label, reserve: f.reserve, bait: f.bait })),
       };
     },
