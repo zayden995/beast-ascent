@@ -197,3 +197,39 @@ test('slot summary: says when nothing is ruled yet, and which skin a variant has
   bear.variantId = 'polar';
   assert.match(slotSummary(sanitizeSave(bear)!).title, /Juvenile Polar Bear, level 3/);
 });
+
+// ---------- The pet (M3, 2026-11-19): one pet per slot, saved with the animal ----------
+
+test('pet save: a save from before the pet has no pet', () => {
+  assert.equal(sanitizeSave(saveOf('lion', 20))!.pet, null);
+});
+
+test('pet save: a liger cub or a hyena pup is kept, injured or not', () => {
+  const a = { ...saveOf('lion', 20), pet: { kind: 'liger', injured: false } };
+  assert.deepEqual(sanitizeSave(a)!.pet, { kind: 'liger', injured: false });
+  const b = { ...saveOf('wolf', 20), pet: { kind: 'hyena', injured: true } };
+  assert.deepEqual(sanitizeSave(b)!.pet, { kind: 'hyena', injured: true });
+});
+
+test('pet save: a pet that cannot be trusted is dropped, never the whole save', () => {
+  for (const pet of [{ kind: 'dragon', injured: false }, 'liger', 7, [], { injured: true }]) {
+    const save = sanitizeSave({ ...saveOf('lion', 20), pet });
+    assert.ok(save, `the save loads with pet ${JSON.stringify(pet)}`);
+    assert.equal(save!.pet, null);
+  }
+  assert.deepEqual(sanitizeSave({ ...saveOf('lion', 20), pet: { kind: 'liger', injured: 'yes' } })!.pet, { kind: 'liger', injured: false });
+});
+
+test('pet save: the pet survives a write and a read', () => {
+  const store = new MemoryStore();
+  writeSlot(store, 2, sanitizeSave({ ...saveOf('tiger', 22), pet: { kind: 'hyena', injured: false } })!);
+  assert.deepEqual(readSlot(store, 2)!.pet, { kind: 'hyena', injured: false });
+});
+
+test('slot summary: the card names the pet, and says when it is injured', () => {
+  const save = sanitizeSave({ ...saveOf('lion', 22, ['forest', 'jungle']), pet: { kind: 'liger', injured: false } })!;
+  assert.equal(slotSummary(save).detail, 'Forest, Jungle ruled, with a liger cub');
+  const hurt = sanitizeSave({ ...saveOf('wolf', 22), pet: { kind: 'hyena', injured: true } })!;
+  assert.equal(slotSummary(hurt).detail, 'No biome ruled yet, with an injured hyena pup');
+  assert.equal(slotSummary(sanitizeSave(saveOf('wolf', 3))!).detail, 'No biome ruled yet', 'no pet, no mention');
+});

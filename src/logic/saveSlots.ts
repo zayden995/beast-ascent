@@ -1,9 +1,11 @@
 import { BIOMES } from '../data/biomes.ts';
+import { PETS } from '../data/pets.ts';
 import { getSpecies, getVariant } from '../data/species.ts';
 import { STAGES } from '../data/stages.ts';
 import { TUNING } from '../data/tuning.ts';
 import { parseSave } from './saveData.ts';
-import type { SaveData } from './saveData.ts';
+import type { PetSave, SaveData } from './saveData.ts';
+import { withArticle } from './text.ts';
 
 /** The part of localStorage the slots need, so that the rules can be tested without a browser. */
 export interface KeyValueStore {
@@ -69,12 +71,19 @@ export function migrateLegacySave(store: KeyValueStore): boolean {
   }
 }
 
+/** What a slot card adds about the pet: ", with a liger cub", ", with an injured hyena pup", or nothing. */
+function petNote(pet: PetSave | null): string {
+  if (!pet) return '';
+  const name = PETS[pet.kind].name.toLowerCase();
+  return pet.injured ? `, with an injured ${name}` : `, with ${withArticle(name)}`;
+}
+
 /** The two lines a slot card shows: which animal it is, and how far it has got. */
 export function slotSummary(save: SaveData): { title: string; detail: string } {
   const variant = getVariant(getSpecies(save.speciesId), save.variantId);
   const ruled = save.ruledBiomes.map((id) => BIOMES[id].name);
   return {
     title: `${STAGES[save.progress.stage].name} ${variant.name}, level ${save.progress.level}`,
-    detail: ruled.length > 0 ? `${ruled.join(', ')} ruled` : 'No biome ruled yet',
+    detail: (ruled.length > 0 ? `${ruled.join(', ')} ruled` : 'No biome ruled yet') + petNote(save.pet),
   };
 }

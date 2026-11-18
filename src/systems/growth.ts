@@ -8,7 +8,7 @@ import {
   addGrowth, addXp, applyDeath, evolve, evolveStatus, newProgress, summarizePassives, upgradeAbility,
 } from '../logic/progression.ts';
 import type { DeathOutcome, PassiveSummary, Progress } from '../logic/progression.ts';
-import type { SaveData } from '../logic/saveData.ts';
+import type { PetSave, SaveData } from '../logic/saveData.ts';
 import type { GameEvents } from './gameEvents.ts';
 
 /** The saved state of a run: who the player is and how far they have grown. */
@@ -20,6 +20,8 @@ export interface Profile {
   ruledBiomes: BiomeId[];
   /** The biome the animal is in. */
   biome: BiomeId;
+  /** The slot's one pet, or null (see `PetSave`). */
+  pet: PetSave | null;
 }
 
 export function newProfile(speciesId: string, variantId: string): Profile {
@@ -31,6 +33,7 @@ export function newProfile(speciesId: string, variantId: string): Profile {
     unlockedBiomes: ['forest'],
     ruledBiomes: [],
     biome: 'forest',
+    pet: null,
   };
 }
 
@@ -42,6 +45,7 @@ export function profileFromSave(save: SaveData): Profile {
     unlockedBiomes: save.unlockedBiomes,
     ruledBiomes: save.ruledBiomes,
     biome: save.biome,
+    pet: save.pet,
   };
 }
 

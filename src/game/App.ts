@@ -344,6 +344,8 @@ export class App {
       unlockedBiomes: [...old.unlockedBiomes],
       ruledBiomes: [...old.ruledBiomes],
       biome: old.biome,
+      // Switching animal keeps the sandbox's pet.
+      pet: old.pet ? { ...old.pet } : null,
     }, null, false);
     this.openAdmin();
   }

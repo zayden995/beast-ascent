@@ -1,5 +1,7 @@
 import type { BiomeId, StageId } from '../core/types.ts';
 import { ABILITIES } from '../data/abilities.ts';
+import { PETS } from '../data/pets.ts';
+import type { PetKind } from '../data/pets.ts';
 import { BIOME_LAYOUTS, BIOME_ORDER } from '../data/biomes.ts';
 import { SPECIES, isPlayable } from '../data/species.ts';
 import { STAGE_ORDER } from '../data/stages.ts';
@@ -16,6 +18,20 @@ export interface SaveData {
   ruledBiomes: BiomeId[];
   /** The biome the animal is in: where Continue Game puts it (at that biome's den). */
   biome: BiomeId;
+  /** The slot's one pet (since 2026-11-19), or null. Its health is not saved: it wakes at full health, or injured. */
+  pet: PetSave | null;
+}
+
+/** The pet as saved: which kind, and whether it is injured (then it wakes beside the player with a fresh countdown). */
+export interface PetSave {
+  kind: PetKind;
+  injured: boolean;
+}
+
+/** A saved pet, or null when there is none or it cannot be trusted (the rest of the save still loads). */
+export function sanitizePet(raw: unknown): PetSave | null {
+  if (!isRecord(raw) || typeof raw.kind !== 'string' || !Object.hasOwn(PETS, raw.kind)) return null;
+  return { kind: raw.kind as PetKind, injured: raw.injured === true };
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -86,6 +102,8 @@ export function sanitizeSave(raw: unknown): SaveData | null {
     unlockedBiomes: unlocked,
     ruledBiomes: biomeList(raw.ruledBiomes),
     biome,
+    // Saves from before the pet have none.
+    pet: sanitizePet(raw.pet),
   };
 }
 
