@@ -22,6 +22,9 @@ export interface AdminHooks {
   /** The sandbox's pet, and a way to give one or take it away. */
   pet: () => PetKind | null;
   setPet: (kind: PetKind | null) => void;
+  /** True while the pet is on its feet; and a way to knock it down (to see the injury and the tending). */
+  petHealthy: () => boolean;
+  injurePet: () => void;
   /** Starts the sandbox again as another animal (species and skin cannot change while the game runs). */
   switchAnimal: (speciesId: string, variantId: string) => void;
   close: () => void;
@@ -52,6 +55,10 @@ function petRow(hooks: AdminHooks, render: () => void): HTMLElement {
   const line = row('Pet', current ? PETS[current].name : 'None', [
     chip('None', current === null, choose(null)),
     ...(Object.keys(PETS) as PetKind[]).map((k) => chip(PETS[k].name, current === k, choose(k))),
+    chip('Injure', false, () => {
+      hooks.injurePet();
+      render();
+    }, current === null || !hooks.petHealthy()),
   ]);
   line.dataset.row = 'pet';
   return line;

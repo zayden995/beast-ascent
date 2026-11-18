@@ -4,8 +4,8 @@ import { dampAngle } from '../core/math.ts';
 import { PETS, PET_TUNING } from '../data/pets.ts';
 import type { PetDef, PetKind } from '../data/pets.ts';
 import { TUNING } from '../data/tuning.ts';
-import { followPlan, newPetCare, petStats, pickPetTarget } from '../logic/pet.ts';
-import type { PetCare, PetPhase } from '../logic/pet.ts';
+import { followPlan, newPetCare, petStats, pickPetTarget, stepPetCare } from '../logic/pet.ts';
+import type { PetCare, PetCareEvent, PetPhase } from '../logic/pet.ts';
 import type { BiomeWorld } from '../world/world.ts';
 import { Actor, integrate } from './actor.ts';
 import type { EnemyActor } from './ai.ts';
@@ -20,7 +20,16 @@ export interface CompanionContext {
   combat: Combat;
   fx: Fx;
   now: number;
+  /** The player is holding E beside it (while it is injured). */
+  tending: boolean;
+  /** The player was hit since the last step (it breaks off the tending). */
+  playerHit: boolean;
 }
+
+/** How far the death pose goes for an injured pet: lying on its side (the full pose, not yet fading). */
+const LYING = 0.4;
+/** Seconds a dead pet takes to fade. */
+const FADE_SECONDS = 1.8;
 
 /** How often (seconds) the pet looks again for something to fight. */
 const RETHINK_SECONDS = 0.25;
@@ -79,8 +88,31 @@ export class CompanionActor extends Actor {
     return `${s.maxHealth}|${s.damage}|${s.defense}|${s.moveSpeed}|${s.sprintSpeed}`;
   }
 
-  update(dt: number, ctx: CompanionContext): void {
-    if (!this.alive) return;
+  /** One step. Returns what happened to it (injured, back on its feet, died) so that the game can say so and save it. */
+  update(dt: number, ctx: CompanionContext): PetCareEvent {
+    if (this.care.phase === 'dead') {
+      this.anim.deathT = Math.min(1, LYING + ((ctx.now - this.deathTime) / FADE_SECONDS) * (1 - LYING));
+      return 'none';
+    }
+    // At 0 health the pet is knocked down, not killed: the care rule decides what happens next.
+    if (!this.alive && this.care.phase === 'healthy') {
+      this.alive = true;
+      this.hp = 0;
+    }
+    const event = stepPetCare(this.care, { hp: this.hp, tending: ctx.tending, playerHit: ctx.playerHit }, dt);
+    if (event === 'injured') this.goDown();
+    else if (event === 'revived') {
+      this.untargetable = false;
+      this.anim.deathT = -1;
+      this.hp = this.stats.maxHealth * PET_TUNING.reviveHealthPct;
+      this.lastHitTime = ctx.now;
+    } else if (event === 'died') {
+      this.alive = false;
+      this.deathTime = ctx.now;
+    }
+    // Injured, it lies where it fell: it does not move, fight, heal, or drift with the water.
+    if (this.care.phase !== 'healthy') return event;
+
     this.tickStatus(dt);
     // Its strength follows the player's (a level, a stage, a buff): its share of health is kept.
     const key = this.keyOf();
@@ -112,6 +144,21 @@ export class CompanionActor extends Actor {
     integrate(this, dt, ctx.world);
     this.anim.speed = Math.hypot(this.vx, this.vz);
     this.anim.sprinting = this.anim.speed > this.stats.moveSpeed * 1.3;
+    return event;
+  }
+
+  /** Injured: it lies down where it is, cannot be hit, and drops any fight. */
+  private goDown(): void {
+    this.hp = 0;
+    this.clearStatuses();
+    this.untargetable = true;
+    this.targetId = null;
+    this.vx = this.vz = this.vy = 0;
+    this.anim.attackT = -1;
+    this.anim.speed = 0;
+    this.anim.deathT = LYING;
+    // The blow that knocked it down started a white hit flash; lying still, nothing would fade it, so it would stay white.
+    this.anim.hitFlash = 0;
   }
 
   private think(dt: number, ctx: CompanionContext): void {

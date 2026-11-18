@@ -35,7 +35,7 @@ export class Combat {
   targetsInArc(attacker: Actor, reach: number, arcDeg: number): Actor[] {
     const half = (arcDeg * Math.PI) / 360;
     return this.actors().filter((t) => {
-      if (t === attacker || !t.alive || t.team === attacker.team) return false;
+      if (t === attacker || !t.alive || t.untargetable || t.team === attacker.team) return false;
       const dx = t.pos.x - attacker.pos.x;
       const dz = t.pos.z - attacker.pos.z;
       const dist = Math.hypot(dx, dz);
@@ -56,7 +56,7 @@ export class Combat {
   /** Hostile, living actors within `radius` of a point (beyond their own body radius). */
   targetsInRadius(attacker: Actor, x: number, z: number, radius: number): Actor[] {
     return this.actors().filter(
-      (t) => t !== attacker && t.alive && t.team !== attacker.team && Math.hypot(t.pos.x - x, t.pos.z - z) <= radius + t.radius
+      (t) => t !== attacker && t.alive && !t.untargetable && t.team !== attacker.team && Math.hypot(t.pos.x - x, t.pos.z - z) <= radius + t.radius
         // Out of reach above or below, when either one is in the air.
         && ((!attacker.flying && !t.flying) || withinVerticalReach(t.pos.y - attacker.pos.y, attacker.model.height, true)),
     );
@@ -70,7 +70,7 @@ export class Combat {
 
   /** Applies one hit. Returns the damage dealt (0 if dodged). */
   damage(attacker: Actor, target: Actor, opts: HitOptions, fromX = attacker.pos.x, fromZ = attacker.pos.z): number {
-    if (!target.alive) return 0;
+    if (!target.alive || target.untargetable) return 0;
     if (target.invuln > 0) {
       this.events.emit('dodged', { target });
       return 0;

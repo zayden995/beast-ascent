@@ -3,6 +3,7 @@ import { dampAngle, lerp } from '../core/math.ts';
 import type { EnemyAttackDef, EnemyDef, SpawnZoneDef } from '../core/types.ts';
 import { TUNING } from '../data/tuning.ts';
 import { guardWanderRadius, isGuardZone } from '../logic/foxReserve.ts';
+import { chooseFoe } from '../logic/pet.ts';
 import { noticeMultiplier } from '../logic/senses.ts';
 import type { StatInputs } from '../logic/stats.ts';
 import type { BiomeWorld } from '../world/world.ts';
@@ -32,6 +33,10 @@ export class EnemyActor extends Actor {
   provoked = false;
   /** A guard of a fox food reserve: ignores the player until the reserve is raided (or it is attacked). */
   calm = false;
+  /** Which of the player or the pet hit it last (cleared when it gives up a fight): see `chooseFoe`. */
+  lastHitBy: 'player' | 'pet' | null = null;
+  /** For the browser test and the labels: it is fighting the pet right now, not the player. */
+  foeIsPet = false;
   /** Game time the player last hit it: the pet joins a fight the player started (see `pickPetTarget`). */
   lastPlayerHitAt = -999;
   /** Called by a boss to fight for it: it gives no XP, leaves no carcass, never comes back, and goes when the fight ends. */
@@ -80,6 +85,8 @@ export class EnemyActor extends Actor {
 
 export interface AiContext {
   player: Actor;
+  /** The player's pet while it can be fought (hatched, healthy), or null. */
+  pet: Actor | null;
   world: BiomeWorld;
   combat: Combat;
   fx: Fx;
@@ -221,6 +228,19 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
   const sees = p.alive && !refuge && reachable && aloft <= TUNING.flight.noticeAltitude && noticeDist < b.aggroRadius * reach;
   // A badly hurt animal stops picking fights and keeps its distance until it has recovered.
   const hurt = b.fleeHealthPct > 0 && e.hp / e.stats.maxHealth < b.fleeHealthPct;
+  // Noticing, fleeing, the den, the lake, flight and the leash are all about the player. Once fighting, an animal goes for the
+  // player or the pet (`chooseFoe`): the pet only while it can be fought and is within reach of this animal.
+  let foe: Actor = p;
+  const pet = ctx.pet;
+  if (pet && pet.alive && !pet.untargetable && (e.state === 'chase' || e.state === 'windup' || e.state === 'charging' || e.state === 'recover')) {
+    const petInReach = (lake === undefined || ctx.world.inLakeZone(pet.pos.x, pet.pos.z, lake))
+      && !ctx.world.inRefuge(pet.pos.x, pet.pos.z) && e.distanceTo(pet) < b.aggroRadius * 2;
+    if (chooseFoe({ petAvailable: petInReach, lastHitBy: e.lastHitBy, distPlayer: dist, distPet: e.distanceTo(pet) }) === 'pet') foe = pet;
+  }
+  e.foeIsPet = foe !== p;
+  const fdx = foe.pos.x - e.pos.x;
+  const fdz = foe.pos.z - e.pos.z;
+  const fdist = Math.hypot(fdx, fdz);
   const walk = e.stats.moveSpeed;
   const run = e.stats.sprintSpeed;
   // Anything that interrupts the animal (a stun, a hunter coming near, a fight) ends the drink.
@@ -279,19 +299,20 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
         if (!p.alive || tooFar || refuge || !reachable || aloft > TUNING.flight.giveUpAltitude) {
           e.state = 'return';
           e.provoked = false;
+          e.lastHitBy = null;
           break;
         }
         if (hurt) {
           e.startFlee();
           break;
         }
-        const atk = chooseAttack(e, dist, p);
+        const atk = chooseAttack(e, fdist, foe);
         if (atk) {
           e.attack = atk;
           e.state = 'windup';
           e.timer = atk.windup;
           e.vx = e.vz = 0;
-          e.faceToward(p.pos.x, p.pos.z);
+          e.faceToward(foe.pos.x, foe.pos.z);
           if (atk.kind === 'charge') {
             const length = (atk.speed ?? 12) * (atk.duration ?? 0.8);
             ctx.fx.chargeWarning(e.pos, e.yaw, length, e.radius * 2.2, atk.windup);
@@ -300,11 +321,11 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
           }
           break;
         }
-        const stopAt = e.radius + p.radius + 0.3;
-        if (dist > stopAt) moveToward(e, p.pos.x, p.pos.z, run, dt);
+        const stopAt = e.radius + foe.radius + 0.3;
+        if (fdist > stopAt) moveToward(e, foe.pos.x, foe.pos.z, run, dt);
         else {
           e.vx = e.vz = 0;
-          e.yaw = dampAngle(e.yaw, Math.atan2(dx, dz), 9, dt);
+          e.yaw = dampAngle(e.yaw, Math.atan2(fdx, fdz), 9, dt);
         }
         break;
       }
@@ -316,7 +337,7 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
         }
         e.vx = e.vz = 0;
         // Melee tracks the player through the wind-up; a charge commits to its line early so it can be dodged.
-        if (atk.kind === 'melee') e.yaw = dampAngle(e.yaw, Math.atan2(dx, dz), 5, dt);
+        if (atk.kind === 'melee') e.yaw = dampAngle(e.yaw, Math.atan2(fdx, fdz), 5, dt);
         e.timer -= dt;
         const k = 1 - Math.max(0, e.timer) / atk.windup;
         e.anim.windupT = k;
@@ -329,9 +350,9 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
         const speed = atk?.speed ?? 12;
         e.vx = e.chargeX * speed;
         e.vz = e.chargeZ * speed;
-        if (atk && !e.chargeHit && p.alive && !refuge && dist < e.radius + p.radius + 0.5 && Math.abs(p.pos.y - e.pos.y) < 2 + e.model.height) {
+        if (atk && !e.chargeHit && foe.alive && !refuge && fdist < e.radius + foe.radius + 0.5 && Math.abs(foe.pos.y - e.pos.y) < 2 + e.model.height) {
           e.chargeHit = true;
-          ctx.combat.damage(e, p, { damage: e.stats.damage * atk.damageMult, knockback: atk.knockback });
+          ctx.combat.damage(e, foe, { damage: e.stats.damage * atk.damageMult, knockback: atk.knockback });
         }
         e.timer -= dt;
         // A boss never leaves its arena, even mid-charge.

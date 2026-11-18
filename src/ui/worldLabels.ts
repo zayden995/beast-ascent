@@ -80,7 +80,7 @@ export class WorldLabels {
       }
       tag.root.style.transform = `translate(${_v.x.toFixed(1)}px, ${_v.y.toFixed(1)}px) translate(-50%, -100%)`;
     }
-    if (pet && pet.alive && this.project(camera, pet.pos.x, pet.pos.y + pet.model.height + 0.3, pet.pos.z)) {
+    if (pet && pet.alive && pet.care.phase !== 'egg' && this.project(camera, pet.pos.x, pet.pos.y + pet.model.height + 0.3, pet.pos.z)) {
       seen.add(pet.id);
       let tag = this.tags.get(pet.id);
       if (!tag) {
@@ -98,6 +98,12 @@ export class WorldLabels {
       if (hp !== tag.hp) {
         tag.bar.style.width = `${hp}%`;
         tag.hp = hp;
+      }
+      // Red while it is injured, so that it can be found.
+      const injured = pet.care.phase === 'injured' ? 'injured' : '';
+      if (injured !== tag.threat) {
+        tag.root.classList.toggle('injured', !!injured);
+        tag.threat = injured;
       }
       tag.root.style.transform = `translate(${_v.x.toFixed(1)}px, ${_v.y.toFixed(1)}px) translate(-50%, -100%)`;
     }

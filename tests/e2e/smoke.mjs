@@ -2554,7 +2554,7 @@ try {
   await page.keyboard.press('KeyJ');
   await page.locator('.admin-card').waitFor();
   const petRow = page.locator('.admin-row[data-row="pet"]');
-  check('admin: the panel has a Pet row with None, Liger cub and Hyena pup', (await petRow.getByRole('button').allInnerTexts()).join() === 'None,Liger cub,Hyena pup',
+  check('admin: the panel has a Pet row with None, Liger cub, Hyena pup and Injure', (await petRow.getByRole('button').allInnerTexts()).join() === 'None,Liger cub,Hyena pup,Injure',
     (await petRow.getByRole('button').allInnerTexts().catch(() => [])).join());
   await petRow.getByRole('button', { name: 'Liger cub' }).click();
   await page.keyboard.press('KeyJ');
@@ -2605,8 +2605,19 @@ try {
     };
   });
   check('pet: the player\'s area attacks and swipes pass through its pet; a wild animal\'s area attack can hit it', !teamCheck.player && teamCheck.wild, JSON.stringify(teamCheck));
+  // Inside the den's ring (wild animals never come in), with a record of who hits the pet.
+  await calmAll();
+  await B.teleport(SP.x, SP.z, Math.PI);
+  await B.advance(0.2);
   s = await B.state();
   await placePet(s.player.x + Math.sin(s.player.yaw) * 1.6, s.player.z + Math.cos(s.player.yaw) * 1.6);
+  await page.evaluate(() => {
+    const g = window.__beast.app.game;
+    window.__petHitBy = [];
+    window.__offPetHits = g.events.on('damage', ({ target, attacker }) => {
+      if (target === g.pet) window.__petHitBy.push(attacker === g.player.actor ? 'player' : (attacker?.name ?? 'nobody'));
+    });
+  });
   const petHp = (await petOf()).hp;
   await page.mouse.move(640, 360);
   for (let i = 0; i < 3; i++) {
@@ -2617,7 +2628,9 @@ try {
   }
   await tap('Digit3');
   await B.advance(1);
-  check('pet: the player\'s real attacks and an ability key at the pet do it no harm', (await petOf()).hp >= petHp, `${petHp} -> ${(await petOf()).hp}`);
+  const petHitBy = await page.evaluate(() => { window.__offPetHits(); return window.__petHitBy; });
+  check('pet: the player\'s real attacks and an ability key at the pet do it no harm', petHitBy.length === 0 && (await petOf()).hp >= petHp,
+    `${petHp.toFixed(0)} -> ${(await petOf()).hp.toFixed(0)}, hit by: ${petHitBy.join(', ') || 'nobody'}`);
 
   // It leaves a calm den guard alone, even right beside it.
   await calmAll();
@@ -2653,6 +2666,138 @@ try {
   check('pet: an animal its pet kills gives the player its XP and leaves a carcass',
     pet.kills >= 1 && (s.player.level > xp0.level || s.player.xp > xp0.xp) && s.food.some((f) => f.kind === 'carcass' && Math.hypot(f.x - foe.x, f.z - foe.z) < 8),
     `kills ${pet.kills}, level ${xp0.level} -> ${s.player.level}, xp ${xp0.xp.toFixed(0)} -> ${s.player.xp.toFixed(0)}`);
+
+  // ----- 3d: wild animals fight the pet too; injury, tending and death -----
+  await settle();
+  check('pet: a plaque on the HUD names the pet and shows its health', /Liger cub/.test(await page.locator('.hud-pet').innerText().catch(() => ''))
+    && (await page.locator('.hud-pet .meter').count()) === 1 && !(await page.locator('.hud-pet').evaluate((n) => n.classList.contains('injured')).catch(() => true)));
+
+  // An animal fighting the player turns on the pet once the pet bites it.
+  await calmAll();
+  const foeOf = async (id) => (await B.state()).enemies.find((e) => e.id === id);
+  const rival = nearest(await B.state(), 'buffalo');
+  await B.teleport(rival.x, rival.z + 2.6, Math.PI);
+  await placePet(rival.x + 5, rival.z + 4);
+  await page.evaluate((id) => { const e = window.__beast.app.game.spawner.enemies.find((x) => x.id === id); e.calm = false; e.provoked = true; e.state = 'chase'; e.homeX = e.pos.x; e.homeZ = e.pos.z; e.lastHitBy = null; }, rival.id);
+  await B.advance(0.1);
+  const firstFoe = (await foeOf(rival.id)).foe;
+  let turned = false;
+  let petHurt = false;
+  const petHp0 = (await petOf()).hp;
+  for (let i = 0; i < 16 && !(turned && petHurt); i++) {
+    await B.advance(0.5);
+    await B.call('setHp', (await B.state()).player.maxHp);
+    turned ||= (await foeOf(rival.id))?.foe === 'pet';
+    petHurt ||= (await petOf()).hp < petHp0 - 1;
+  }
+  check('pet: a fighting animal goes for the nearer of the two, then turns on the pet once the pet bites it, and can hurt it',
+    firstFoe === 'player' && turned && petHurt, `first ${firstFoe}, turned ${turned}, pet hurt ${petHurt}`);
+
+  // At 0 health the pet is injured, not dead: it lies down, cannot be hit, and nothing fights it.
+  await page.evaluate((id) => { const g = window.__beast.app.game; g.combat.damage(g.spawner.enemies.find((x) => x.id === id), g.pet, { damage: 1e7, knockback: 0 }); }, rival.id);
+  await B.advance(0.2);
+  pet = await petOf();
+  const injuredCheck = await page.evaluate((id) => {
+    const g = window.__beast.app.game;
+    const wild = g.spawner.enemies.find((x) => x.id === id);
+    return { hittable: g.combat.targetsInRadius(wild, g.pet.pos.x, g.pet.pos.z, 5).includes(g.pet) };
+  }, rival.id);
+  await B.advance(1);
+  check('pet: at 0 health it is injured, not dead: it cannot be hit and the animal goes back to the player',
+    pet.phase === 'injured' && pet.alive && !injuredCheck.hittable && (await foeOf(rival.id))?.foe === 'player',
+    `${pet.phase}, alive ${pet.alive}, hittable ${injuredCheck.hittable}, foe ${(await foeOf(rival.id))?.foe}`);
+  check('pet: lying injured it keeps its own colours (no hit flash stuck on it, found in a screenshot)', (await petOf()).flash === 0, `flash ${(await petOf()).flash}`);
+  await settle();
+  const plaque = await page.locator('.hud-pet').innerText().catch(() => '');
+  check('pet: the plaque turns red and counts down from 1:00, and says to hold E beside it',
+    (await page.locator('.hud-pet.injured').count()) === 1 && /Injured/.test(plaque) && /0:5\d|1:00/.test(plaque) && /Hold E/.test(plaque) && (await page.locator('.tag.pet.injured').count()) === 1,
+    plaque.replace(/\s+/g, ' '));
+  await shot('29b-pet-injured');
+  check('pet: the save marks it injured', (await page.evaluate(() => window.__beast.app.game.growth.profile.pet?.injured)) === true);
+
+  // Tending: hold E beside it for 3 s; a hit on the player starts the 3 s again.
+  await calmAll();
+  await B.advance(0.5);
+  pet = await petOf();
+  await B.teleport(pet.x + 1.6, pet.z, -Math.PI / 2);
+  await B.advance(0.1);
+  s = await B.state();
+  check('pet: beside the injured pet the prompt says to hold E', s.prompt?.key === 'E' && /tend to your cub/.test(s.prompt.text), s.prompt?.text);
+  await page.keyboard.down('KeyE');
+  await B.advance(2);
+  pet = await petOf();
+  await settle();
+  const ring = await page.locator('.hud-prompt .ring').count();
+  const held = pet.tendHeld;
+  await page.evaluate((id) => { const g = window.__beast.app.game; g.combat.damage(g.spawner.enemies.find((x) => x.id === id), g.player.actor, { damage: 5, knockback: 0 }); }, rival.id);
+  await B.advance(0.1);
+  const afterHit = (await petOf()).tendHeld;
+  await B.advance(2.5);
+  const notYet = (await petOf()).phase;
+  await B.advance(0.8);
+  await page.keyboard.up('KeyE');
+  pet = await petOf();
+  check('pet: holding E fills the ring, a hit on the player starts it again, and 3 s of tending bring it back with 40% of its health',
+    held > 1.8 && ring === 1 && afterHit < 0.3 && notYet === 'injured' && pet.phase === 'healthy' && Math.abs(pet.hp - pet.maxHp * 0.4) < pet.maxHp * 0.03,
+    `held ${held.toFixed(2)}, ring ${ring}, after the hit ${afterHit.toFixed(2)}, then ${notYet}, now ${pet.phase} at ${pet.hp.toFixed(0)} of ${pet.maxHp}`);
+  check('pet: once tended, the save no longer marks it injured', (await page.evaluate(() => window.__beast.app.game.growth.profile.pet?.injured)) === false);
+
+  // Injured in the water: it stays where it is, and can be tended there.
+  const lake = PL.layout.waters[0];
+  const wade = await page.evaluate(([lx, lz, r]) => {
+    const w = window.__beast.app.world;
+    for (let a = 0; a < Math.PI * 2; a += 0.2) for (let d = r - 1; d > 0; d -= 0.5) {
+      const x = lx + Math.cos(a) * d; const z = lz + Math.sin(a) * d;
+      const depth = w.waterDepth(x, z);
+      if (depth > 0.3 && depth < 0.9 && !w.colliders.blocked(x, z, 1)) return { x, z, depth };
+    }
+    return null;
+  }, [lake.x, lake.z, lake.radius]);
+  await B.teleport(wade.x + 1.5, wade.z, -Math.PI / 2);
+  await placePet(wade.x, wade.z);
+  await page.evaluate(() => { const g = window.__beast.app.game; g.pet.hp = 0; });
+  await B.advance(3);
+  pet = await petOf();
+  const drift = Math.hypot(pet.x - wade.x, pet.z - wade.z);
+  await page.keyboard.down('KeyE');
+  await B.advance(3.3);
+  await page.keyboard.up('KeyE');
+  check('pet: injured in the water it stays put, and can be tended there', pet.phase === 'injured' && drift < 0.3 && (await petOf()).phase === 'healthy',
+    `${pet.phase}, moved ${drift.toFixed(2)} m, depth ${wade.depth.toFixed(2)}, then ${(await petOf()).phase}`);
+
+  // Its target vanishing mid-fight (a boss's pack is dismissed when the fight ends): it gives up and comes back.
+  await B.teleport(SP.x, SP.z - 30, Math.PI);
+  const prey = nearest(await B.state(), 'hyena') ?? nearest(await B.state(), 'buffalo');
+  // The pet only joins a fight within 15 m of the player.
+  await B.teleport(prey.x, prey.z + 6, Math.PI);
+  await placePet(prey.x + 1.5, prey.z);
+  await page.evaluate((id) => { const e = window.__beast.app.game.spawner.enemies.find((x) => x.id === id); e.calm = false; e.provoked = true; e.state = 'chase'; e.homeX = e.pos.x; e.homeZ = e.pos.z; }, prey.id);
+  await B.advance(1);
+  const hadTarget = (await petOf()).targetId === prey.id;
+  await page.evaluate((id) => { const sp = window.__beast.app.game.spawner; const e = sp.enemies.find((x) => x.id === id); e.model.dispose(); sp.enemies = sp.enemies.filter((x) => x !== e); }, prey.id);
+  await B.advance(6);
+  pet = await petOf();
+  check('pet: when its target vanishes mid-fight it gives up and comes back to the player', hadTarget && pet.targetId === null && pet.dist < 4,
+    `had target ${hadTarget}, target ${pet.targetId}, ${pet.dist.toFixed(1)} m`);
+
+  // The admin panel can injure it; left untended for 60 s, it dies, and the slot has no pet.
+  await calmAll();
+  await B.teleport(SP.x, SP.z, Math.PI);
+  await page.keyboard.press('KeyJ');
+  await page.locator('.admin-card').waitFor();
+  await petRow.getByRole('button', { name: 'Injure' }).click();
+  await page.keyboard.press('KeyJ');
+  await page.locator('.admin-card').waitFor({ state: 'detached' });
+  await B.advance(0.2);
+  check('admin: Injure injures the pet', (await petOf())?.phase === 'injured');
+  await B.teleport(SP.x + 8, SP.z, Math.PI);
+  await B.advance(58);
+  check('pet: an injured pet still lives at 58 s', (await petOf())?.phase === 'injured');
+  await B.advance(5);
+  await settle();
+  check('pet: untended for 60 s it dies: the slot has no pet, and the player is told',
+    (await petOf()) === null && (await page.evaluate(() => window.__beast.app.game.growth.profile.pet)) === null && /has died/.test(await page.locator('.hud-toasts').innerText())
+    && !(await page.locator('.hud-pet').isVisible()));
 
   // The hyena pup, and no pet.
   await page.keyboard.press('KeyJ');

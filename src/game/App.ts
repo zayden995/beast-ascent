@@ -318,6 +318,8 @@ export class App {
       switchAnimal: (speciesId, variantId) => this.adminSwitch(speciesId, variantId),
       pet: () => game.pet?.def.kind ?? null,
       setPet: (kind) => game.setPet(kind),
+      petHealthy: () => game.pet?.care.phase === 'healthy',
+      injurePet: () => game.adminInjurePet(),
       close: () => this.closeAdmin(),
     });
   }

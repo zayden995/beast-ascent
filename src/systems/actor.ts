@@ -66,6 +66,8 @@ export class Actor {
   heavy = false;
   /** Standing at the water's edge with its head down. */
   drinking = false;
+  /** Cannot be hit, fought or pushed (an injured pet lying where it fell). */
+  untargetable = false;
   /** Mid-charge: shoves other animals aside without being slowed by them (the Elephant's Charge). */
   plowing = false;
 

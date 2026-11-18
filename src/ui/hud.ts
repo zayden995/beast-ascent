@@ -7,6 +7,7 @@ import { meterLabel } from '../logic/growthText.ts';
 import { visionLimited } from '../logic/vision.ts';
 import { evolveStatus, growthNeeded, xpToNext } from '../logic/progression.ts';
 import type { Game } from '../game/Game.ts';
+import { PETS } from '../data/pets.ts';
 import { DomCache, el } from './dom.ts';
 import { iconSvg } from './icons.ts';
 
@@ -56,6 +57,14 @@ export class Hud {
   private slots: SlotView[] = [];
   private dodgeSlot: SlotView;
   private prompt = el('div', 'hud-prompt plaque');
+  private promptRing = el('span', 'ring');
+  /** The pet's plaque: its name and health, or (injured) a red countdown. */
+  private pet = el('div', 'hud-pet plaque');
+  private petName = el('b');
+  private petBar = meter('health');
+  private petInjured = el('div', 'pet-injured');
+  private petClock = el('span');
+  private petHint = el('div', 'pet-hint', 'Hold E beside it to tend to it');
   private toasts = el('div', 'hud-toasts');
   private death = el('div', 'hud-death');
   private deathLost = el('p');
@@ -81,6 +90,12 @@ export class Hud {
 
     const vitals = el('div', 'hud-vitals plaque');
     vitals.append(this.health.root, this.stamina.root, this.status);
+
+    const petHead = el('div', 'pet-head');
+    petHead.append(this.petName, el('small', '', 'Your pet'));
+    this.petInjured.append(el('span', '', 'Injured'), this.petClock);
+    this.pet.append(petHead, this.petBar.root, this.petInjured, this.petHint);
+    this.pet.hidden = true;
 
     const abilities = el('div', 'hud-abilities');
     const attack = slot('LMB', 'claw', 'small');
@@ -113,7 +128,7 @@ export class Hud {
     );
     this.death.append(deathBox);
 
-    this.root.append(this.hurt, growth, biome, this.boss, vitals, abilities, this.prompt, hints, this.toasts, this.death);
+    this.root.append(this.hurt, growth, biome, this.boss, this.pet, vitals, abilities, this.prompt, hints, this.toasts, this.death);
     parent.append(this.root);
 
     const ev = game.events;
@@ -241,6 +256,30 @@ export class Hud {
         this.prompt.textContent = '';
         if (prompt.key) this.prompt.append(el('span', 'key', prompt.key), ' ');
         this.prompt.append(prompt.text);
+        if (prompt.progress !== undefined) this.prompt.append(this.promptRing);
+      }
+      if (prompt.progress !== undefined) {
+        const p = `${Math.round(Math.max(0, Math.min(1, prompt.progress)) * 100)}%`;
+        if (this.promptRing.style.getPropertyValue('--p') !== p) this.promptRing.style.setProperty('--p', p);
+      }
+    }
+
+    const pet = g.pet;
+    const showPet = !!pet && (pet.care.phase === 'healthy' || pet.care.phase === 'injured');
+    c.hidden('pet', this.pet, !showPet);
+    if (pet && showPet) {
+      const injured = pet.care.phase === 'injured';
+      c.text('petN', this.petName, PETS[pet.def.kind].name);
+      c.cls('petI', this.pet, 'injured', injured);
+      c.hidden('petBar', this.petBar.root, injured);
+      c.hidden('petInj', this.petInjured, !injured);
+      c.hidden('petHint', this.petHint, !injured);
+      if (injured) {
+        const left = Math.max(0, Math.ceil(pet.care.injuredLeft));
+        c.text('petClock', this.petClock, `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`);
+      } else {
+        c.width('petW', this.petBar.fill, pet.hp / pet.stats.maxHealth);
+        c.text('petT', this.petBar.label, `${Math.ceil(pet.hp)} / ${Math.round(pet.stats.maxHealth)}`);
       }
     }
   }

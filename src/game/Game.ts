@@ -1,6 +1,7 @@
 import type * as THREE from 'three';
 import { EventBus } from '../core/events.ts';
 import type { BiomeId, BossDef, FoodKind, SpawnZoneDef } from '../core/types.ts';
+import { PETS, PET_TUNING } from '../data/pets.ts';
 import type { PetKind } from '../data/pets.ts';
 import { mulberry32 } from '../core/math.ts';
 import { BIOMES, BIOME_LAYOUTS, nextBiome, previousBiome, spawnsOf } from '../data/biomes.ts';
@@ -54,6 +55,8 @@ export interface GameContext {
 export interface Prompt {
   key: string;
   text: string;
+  /** For a key that is held (tending the pet): how far the hold has got, 0 to 1. */
+  progress?: number;
 }
 
 /** One play session: owns every system and runs the update loop. */
@@ -86,6 +89,10 @@ export class Game {
   /** Where the boss is in calling its pack (a boss with a `summon` rule only). */
   private summonState = newSummonState();
   private dirty = false;
+  /** The player is holding E beside its injured pet (read by the pet's next step). */
+  private tending = false;
+  /** The player was hit since the pet's last step (a hit breaks off the tending). */
+  private playerHit = false;
   private lastSave = 0;
 
   /** The save slot (1 to 4) this animal lives in; every save goes there. null is the admin sandbox, which saves nothing. */
@@ -145,8 +152,13 @@ export class Game {
 
     ev.on('damage', ({ target, attacker, amount, kind, ambush }) => {
       if (target instanceof EnemyActor) target.onDamaged();
-      // The pet joins a fight the player started.
-      if (target instanceof EnemyActor && attacker === playerActor) target.lastPlayerHitAt = this.clock.time;
+      // The pet joins a fight the player started; an animal remembers which of the two hit it last.
+      if (target instanceof EnemyActor && attacker === playerActor) {
+        target.lastPlayerHitAt = this.clock.time;
+        target.lastHitBy = 'player';
+      }
+      if (target instanceof EnemyActor && attacker && attacker === this.pet) target.lastHitBy = 'pet';
+      if (target === playerActor) this.playerHit = true;
       // Hurting one snake of the nest wakes all of them.
       if (target instanceof EnemyActor && target.zone?.lair) this.wakeLair(target.pos, 'The whole nest stirs!');
       const cls = target === playerActor ? 'hurt' : kind === 'bleed' ? 'bleed' : ambush ? 'ambush' : '';
@@ -214,11 +226,12 @@ export class Game {
 
     this.refreshActors();
     this.player.update(dt);
-    this.pet?.update(dt, { player: pa, enemies: this.spawner.enemies, world, combat: this.combat, fx: this.fx, now: this.clock.time });
+    this.updatePet(dt);
     this.wakeLairsByCloseness();
     this.updateSummons(dt);
 
-    const ai = { player: pa, world, combat: this.combat, fx: this.fx, rand: this.rand };
+    const pet = this.pet && this.pet.alive && !this.pet.untargetable ? this.pet : null;
+    const ai = { player: pa, pet, world, combat: this.combat, fx: this.fx, rand: this.rand };
     const awakeStates: string[] = [];
     for (const e of this.spawner.enemies) {
       // Distant animals are hidden and stop thinking (the boss always stays awake).
@@ -268,7 +281,7 @@ export class Game {
       if (!a.alive) continue;
       for (let j = i + 1; j < list.length; j++) {
         const b = list[j];
-        if (!b.alive) continue;
+        if (!b.alive || a.untargetable || b.untargetable) continue;
         const dx = b.pos.x - a.pos.x;
         const dz = b.pos.z - a.pos.z;
         const min = a.radius + b.radius;
@@ -292,6 +305,15 @@ export class Game {
     this.prompt = null;
     if (this.player.dead) return;
     const pressed = this.ctx.input.consume('KeyE');
+    this.tending = false;
+
+    // Beside the injured pet, E is held to tend to it (this comes before food and gates).
+    const pet = this.pet;
+    if (pet && pet.care.phase === 'injured' && pa.distanceTo(pet) <= PET_TUNING.tendRange + pa.radius + pet.radius) {
+      this.tending = this.ctx.input.isDown('KeyE');
+      this.prompt = { key: 'E', text: `Hold: tend to your ${pet.def.kind === 'hyena' ? 'pup' : 'cub'}`, progress: pet.care.tendHeld / PET_TUNING.tendSeconds };
+      return;
+    }
 
     // A flier must come down to eat: an eagle can take a fish by skimming the water, not from 20 m up.
     const lowEnough = withinEatingHeight(pa.flying ? pa.altitude : 0, TUNING.flight.eatAltitude);
@@ -452,6 +474,43 @@ export class Game {
   /** True once the biome the player is in has been ruled (its gate is open). */
   get biomeRuled(): boolean {
     return this.growth.profile.ruledBiomes.includes(this.world.biome.id);
+  }
+
+  /** The pet's step, and what follows from it: injured, back on its feet, or dead (the slot then has no pet). */
+  private updatePet(dt: number): void {
+    const pet = this.pet;
+    if (!pet) return;
+    const event = pet.update(dt, {
+      player: this.player.actor, enemies: this.spawner.enemies, world: this.world, combat: this.combat, fx: this.fx, now: this.clock.time,
+      tending: this.tending, playerHit: this.playerHit,
+    });
+    this.playerHit = false;
+    const name = PETS[pet.def.kind].name.toLowerCase();
+    const saved = this.growth.profile.pet;
+    if (event === 'injured') {
+      if (saved) saved.injured = true;
+      this.dirty = true;
+      this.events.emit('toast', { text: `Your ${name} is injured! Hold E beside it within ${PET_TUNING.injuredSeconds} s, or it will die.`, tone: 'bad' });
+    } else if (event === 'revived') {
+      if (saved) saved.injured = false;
+      this.dirty = true;
+      this.events.emit('toast', { text: `Your ${name} is back on its feet.`, tone: 'good' });
+    } else if (event === 'died') {
+      this.growth.profile.pet = null;
+      this.save();
+      this.events.emit('toast', { text: `Your ${name} has died.`, tone: 'bad' });
+    }
+    // A dead pet lies a moment, then is gone.
+    if (pet.care.phase === 'dead' && this.clock.time - pet.deathTime > 1.8) {
+      pet.model.dispose();
+      this.pet = null;
+      this.refreshActors();
+    }
+  }
+
+  /** Admin sandbox only: knocks the pet down, to see the injury and the tending. */
+  adminInjurePet(): void {
+    if (this.pet && this.pet.care.phase === 'healthy') this.pet.hp = 0;
   }
 
   /** Makes the pet of this kind and puts it beside the player (replacing any pet there was). */
