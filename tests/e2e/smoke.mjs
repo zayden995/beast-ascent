@@ -2574,6 +2574,11 @@ try {
     // The frozen lake: an animal walks on the ice; it does not swim in it. The checks use the lake's western circle, far from the
     // polar bears' homes, with every animal calmed.
     const lake = WL.waters.find((w) => w.frozen && w.surfaceY === undefined && w.x < -80);
+    // The shore east of that circle: the first point at least 3 m off every circle of the lake (the circles overlap).
+    const offIce = (x, z, margin) => WL.waters.every((w) => !w.frozen || w.surfaceY !== undefined || Math.hypot(x - w.x, z - w.z) >= w.radius + margin);
+    let shoreX = lake.x + lake.radius;
+    while (!offIce(shoreX, lake.z, 3)) shoreX += 1;
+    const shore = { x: shoreX, z: lake.z };
     await calmAll();
     await B.teleport(lake.x, lake.z, 0);
     await B.advance(1);
@@ -2638,7 +2643,7 @@ try {
     s = await B.state();
     check('winter: a jump at the edge climbs out onto the ice', !s.player.swimming && s.player.y > WL.waterY, `swimming ${s.player.swimming}, y ${s.player.y.toFixed(2)}`);
     // (Over 5 s in the water so far, so a seal came up. Off the lake, out of its reach, it sinks away before the seal checks start.)
-    await B.teleport(lake.x + lake.radius + 3, lake.z, 0);
+    await B.teleport(shore.x, shore.z, 0);
     const sealsLeft = () => page.evaluate(() => window.__beast.app.game.spawner.enemies.filter((e) => e.def.id === 'leopard_seal' && e.alive).length);
     for (let i = 0; i < 48 && (await sealsLeft()) > 0; i++) await B.advance(0.25);
     check('winter: once nobody is near, any seal that came up sinks away', (await sealsLeft()) === 0, `${await sealsLeft()} left`);
@@ -3051,7 +3056,7 @@ try {
       g.pet.pos.set(a, g.world.heightAt(a, b), b);
       g.pet.vx = g.pet.vz = 0;
     }, [x, z]);
-    await B.teleport(lake.x + lake.radius + 3, lake.z, 0);
+    await B.teleport(shore.x, shore.z, 0);
     await page.evaluate(() => window.__beast.app.game.setPet('liger'));
     // A hole in the ice, and the pet held in it (a long stun), so that it stays in the freezing water.
     await page.evaluate(([x, z]) => window.__beast.app.world.ice.addWear(x, z, 2.5, 1), [lake.x, lake.z]);
@@ -3082,7 +3087,7 @@ try {
     }
     check('pet in Winter: free to move, the pet swims out of the hole by itself', petGotOut, `swimming ${pn.swimming}`);
     // (Animals do not steer round holes: following the player, the pet could swim through the hole again. It is put ashore first.)
-    await putPet(lake.x + lake.radius + 4, lake.z + 2);
+    await putPet(shore.x + 1, shore.z + 2);
     await B.advance(6);
     check('pet in Winter: and the seal sinks away', (await seals()).length === 0);
     // An injured pet lying on the ice does not wear it.

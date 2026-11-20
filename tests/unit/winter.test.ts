@@ -58,7 +58,8 @@ test('mountain: the trail starts at the west foot and climbs steadily, about twi
     assert.ok((p.y - prev.y) / run < 0.3, 'never steep');
     prev = p;
   }
-  assert.ok(length > 380 && length < 650, `about 500 m long (${length.toFixed(0)} m)`);
+  // About 730 m since Winter was made bigger (2026-11-21; about 500 m before).
+  assert.ok(length > 600 && length < 850, `about 730 m long (${length.toFixed(0)} m)`);
   // Clockwise seen from above with north up: from the west it goes north first.
   assert.ok(trailPoint(m, 0.125).z < m.z - 30, 'a quarter of the first lap later it is north of the peak');
 });
@@ -111,11 +112,12 @@ function share(inside: (x: number, z: number) => boolean): number {
   return hits / n;
 }
 
-test('winter: about a fifth of the map is ice and about a third is mountain; the rest is snow', () => {
+test('winter: since it was made bigger, over a quarter of the map is ice and about two fifths mountain; the rest is snow', () => {
   const ice = share(inIce);
   const mountain = share((x, z) => mountainHeight(m, x, z) !== null);
-  assert.ok(ice >= 0.17 && ice <= 0.28, `ice ${ice.toFixed(3)}`);
-  assert.ok(mountain >= 0.28 && mountain <= 0.42, `mountain ${mountain.toFixed(3)}`);
+  // The user asked for 1.5/4 ice and 1/2 mountain; both cannot fit with the den's shore and the snow band (see the Decisions Log).
+  assert.ok(ice >= 0.26 && ice <= 0.34, `ice ${ice.toFixed(3)}`);
+  assert.ok(mountain >= 0.36 && mountain <= 0.45, `mountain ${mountain.toFixed(3)}`);
   assert.equal(share((x, z) => inIce(x, z) && mountainHeight(m, x, z) !== null), 0, 'no ice on the mountain');
 });
 
@@ -128,8 +130,8 @@ test('winter: the frozen lake is one lake in the south-west, deep under the ice 
   }
   // Every point 3 m or more inside the lake's outline is under water (no ridge where two circles overlap).
   const deepInside = (x: number, z: number) => frozen.some((w) => Math.hypot(x - w.x, z - w.z) < w.radius - 3);
-  for (let x = -112; x <= 112; x += 1) {
-    for (let z = -112; z <= 112; z += 1) {
+  for (let x = -L.worldRadius; x <= L.worldRadius; x += 1) {
+    for (let z = -L.worldRadius; z <= L.worldRadius; z += 1) {
       if (deepInside(x, z)) assert.ok(h(x, z) < L.waterY, `land inside the lake at (${x}, ${z})`);
     }
   }
