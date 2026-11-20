@@ -115,6 +115,11 @@ export class Combat {
     }
   }
 
+  /** The cold of the freezing water (Winter): damage from nobody, ignoring defense, shown like a bleed. */
+  applyCold(target: Actor, amount: number): void {
+    if (target.alive && !target.untargetable) this.applyRaw(null, target, amount, 'bleed');
+  }
+
   /** Bleed damage ticks (ignores defense). */
   update(dt: number, bleedSource: Actor | null): void {
     for (const a of this.actors()) {

@@ -26,7 +26,7 @@ export interface StatMod {
 
 export type StageId = 'juvenile' | 'adult' | 'alpha';
 /** Which body-building code draws an animal: four legs, wings, or no legs at all. */
-export type RigId = 'quadruped' | 'winged' | 'serpent';
+export type RigId = 'quadruped' | 'winged' | 'serpent' | 'seal';
 export type BiomeId = 'forest' | 'jungle' | 'plains' | 'winter';
 export type Diet = 'carnivore' | 'herbivore' | 'omnivore';
 export type FoodKind = 'carcass' | 'fish' | 'fruit' | 'plant' | 'leaf' | 'nut';
@@ -80,7 +80,10 @@ export type FeatureId =
   /** Thick horns that curve out and up, with a boss on the forehead (a buffalo's). */
   | 'bullHorns'
   | 'tailTipLight'
-  | 'tailTipDark';
+  | 'tailTipDark'
+  | 'longTusks'
+  | 'shaggy'
+  | 'hump';
 
 export interface BodyColors {
   body: number;
@@ -249,8 +252,8 @@ export interface SpeciesDef {
 
 export interface EnemyAttackDef {
   id: string;
-  kind: 'melee' | 'charge' | 'aoe';
-  /** Melee/aoe: reach in metres beyond both body radii. Charge: maximum start distance. */
+  kind: 'melee' | 'charge' | 'aoe' | 'wave';
+  /** Melee/aoe/wave: reach in metres beyond both body radii. Charge: maximum start distance. */
   range: number;
   windup: number;
   recover: number;
@@ -262,11 +265,37 @@ export interface EnemyAttackDef {
   minRange?: number;
   speed?: number;
   duration?: number;
-  /** Aoe only. */
+  /** Aoe: its radius. Wave: how far the ring spreads before it fades. */
   radius?: number;
+  /** Wave only (the Woolly Mammoth's ice shockwave): how fast the ring spreads (m/s), how wide its band is, and how much of an
+   * ice square's life it wears away as it passes. */
+  waveSpeed?: number;
+  waveWidth?: number;
+  iceWear?: number;
+}
+
+/** A flying wild animal (Winter's snowy owl): see `logic/owl.ts` and `systems/owl.ts`. */
+export interface FlierBehavior {
+  /** How high it hovers when no tree is near its home. */
+  perchHeight: number;
+  /** It hunts an animal flying within this distance (any height). */
+  huntRange: number;
+  /** It pesters an animal on the ground within this distance of its tree. */
+  pesterRange: number;
+  /** Its flying speed, and its speed in a swoop (m/s). */
+  flySpeed: number;
+  swoopSpeed: number;
+  /** It never goes after anything beyond this distance from its tree. */
+  homeRange: number;
+  /** Seconds before it pesters again. */
+  pesterCooldown: number;
 }
 
 export interface EnemyBehavior {
+  /** A flier (the snowy owl): it has its own brain, and these numbers. */
+  flier?: FlierBehavior;
+  /** Lives in a hole in Winter's ice (the leopard seal): it never leaves the hole's water, and bites only what swims in it. */
+  holeBound?: boolean;
   /** Distance at which the animal notices the player. */
   aggroRadius: number;
   /** Attacks on sight. */
@@ -454,4 +483,6 @@ export interface WaterBody {
   surfaceY?: number;
   /** How many lily pads float on it. */
   lilyPads?: number;
+  /** Frozen over (Winter's lake): animals walk on its ice. Frozen bodies may overlap; together they make one lake. */
+  frozen?: boolean;
 }

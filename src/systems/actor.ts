@@ -66,6 +66,9 @@ export class Actor {
   heavy = false;
   /** Standing at the water's edge with its head down. */
   drinking = false;
+  /** Seconds spent swimming in the freezing water of a hole in Winter's ice (0 out of it), and the cold not yet dealt. */
+  coldSeconds = 0;
+  coldAcc = 0;
   /** Cannot be hit, fought or pushed (an injured pet lying where it fell). */
   untargetable = false;
   /** Mid-charge: shoves other animals aside without being slowed by them (the Elephant's Charge). */
@@ -211,7 +214,9 @@ export function integrate(a: Actor, dt: number, world: BiomeWorld): void {
     let sx = mx / steps;
     let sz = mz / steps;
     if (maxSlope !== undefined) {
-      const feet = Math.max(a.pos.y, world.heightAt(a.pos.x, a.pos.z));
+      // An animal swimming in a hole in the ice paddles at the surface, and hauls itself out onto the ice at the hole's edge.
+      const holeSurface = a.swimming && world.iceHoleAt(a.pos.x, a.pos.z) ? world.waterSurface(a.pos.x, a.pos.z) : null;
+      const feet = Math.max(a.pos.y, world.heightAt(a.pos.x, a.pos.z), holeSurface ?? -Infinity);
       const step = climbStep(world.heightAt, a.pos.x, a.pos.z, feet, sx, sz, maxSlope);
       sx = step.dx;
       sz = step.dz;

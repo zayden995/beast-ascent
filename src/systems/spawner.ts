@@ -145,6 +145,20 @@ export class Spawner {
     return called;
   }
 
+  /** An animal that belongs to no zone (a leopard seal): it appears here and never comes back by itself once gone. */
+  spawnLoose(enemyId: string, x: number, z: number, level: number): EnemyActor {
+    const e = this.create(getEnemy(enemyId), level, 1, false, null);
+    this.place(e, x, z);
+    e.calm = false;
+    return e;
+  }
+
+  /** Takes an animal away without a death (a leopard seal sinking back under the ice). */
+  remove(e: EnemyActor): void {
+    e.model.dispose();
+    this.enemies = this.enemies.filter((x) => x !== e);
+  }
+
   /** The fight is over: the called pack goes at once (no death, no XP, no carcass). */
   dismissSummons(): void {
     for (const e of this.enemies) if (e.summoned) e.model.dispose();

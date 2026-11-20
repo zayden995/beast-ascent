@@ -1,4 +1,6 @@
 import type { AnimalModel } from '../animals/AnimalModel.ts';
+import { updateOwl } from './owl.ts';
+import { updateSeal } from './seal.ts';
 import { dampAngle, lerp } from '../core/math.ts';
 import type { EnemyAttackDef, EnemyDef, SpawnZoneDef } from '../core/types.ts';
 import { TUNING } from '../data/tuning.ts';
@@ -83,7 +85,25 @@ export class EnemyActor extends Actor {
   }
 }
 
+/** A ring spreading out from a stamp (the Woolly Mammoth's ice shockwave): the game grows it, hits, and wears the ice it crosses. */
+export interface Wave {
+  source: EnemyActor;
+  x: number;
+  z: number;
+  y: number;
+  radius: number;
+  max: number;
+  speed: number;
+  width: number;
+  damage: number;
+  knockback: number;
+  iceWear: number;
+  hit: Set<Actor>;
+}
+
 export interface AiContext {
+  /** Waves started this step are added here (the game grows them). */
+  waves: Wave[];
   player: Actor;
   /** The player's pet while it can be fought (hatched, healthy), or null. */
   pet: Actor | null;
@@ -159,7 +179,7 @@ function chooseAttack(e: EnemyActor, dist: number, player: Actor): EnemyAttackDe
       if (dist >= (atk.minRange ?? 0) && dist <= atk.range && !e.swimming) return atk;
     } else if (gap <= atk.range) {
       // Area attacks are saved for when the player is close; otherwise take the first melee option.
-      if (!best || atk.kind === 'aoe') best = atk;
+      if (!best || atk.kind === 'aoe' || atk.kind === 'wave') best = atk;
     }
   }
   return best;
@@ -174,6 +194,17 @@ function strike(e: EnemyActor, atk: EnemyAttackDef, ctx: AiContext): void {
     const reach = atk.range + 0.5;
     ctx.fx.slash(e.pos, e.yaw, reach + e.radius, atk.arcDeg ?? 90, e.model.height * 0.4, 0xffb0a0);
     ctx.combat.hitArc(e, reach, atk.arcDeg ?? 90, { damage, knockback: atk.knockback });
+    e.state = 'recover';
+    e.timer = atk.recover;
+    e.anim.attackT = 0;
+  } else if (atk.kind === 'wave') {
+    const max = atk.radius ?? 12;
+    const speed = atk.waveSpeed ?? 8;
+    ctx.fx.ring(e.pos, max, 0xcfeeff, max / speed);
+    ctx.waves.push({
+      source: e, x: e.pos.x, z: e.pos.z, y: e.pos.y, radius: 0, max, speed, width: atk.waveWidth ?? 1.5,
+      damage, knockback: atk.knockback, iceWear: atk.iceWear ?? 0, hit: new Set(),
+    });
     e.state = 'recover';
     e.timer = atk.recover;
     e.anim.attackT = 0;
@@ -201,6 +232,32 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
   if (e.anim.attackT >= 0) {
     e.anim.attackT += dt / 0.35;
     if (e.anim.attackT >= 1) e.anim.attackT = -1;
+  }
+
+  // A leopard seal stays in its hole in the ice, with a brain of its own.
+  if (e.def.behavior.holeBound) {
+    updateSeal(e, dt, ctx);
+    return;
+  }
+  // A flier (Winter's snowy owl) has a brain of its own.
+  if (e.def.behavior.flier) {
+    updateOwl(e, dt, ctx);
+    return;
+  }
+
+  // In a hole in Winter's ice, a wild animal thinks of nothing but swimming out to the nearest whole ice or shore.
+  if (e.swimming && ctx.world.iceHoleAt(e.pos.x, e.pos.z)) {
+    const foot = ctx.world.iceFooting(e.pos.x, e.pos.z);
+    if (foot) {
+      const fx = foot.x - e.pos.x;
+      const fz = foot.z - e.pos.z;
+      const d = Math.hypot(fx, fz) || 1;
+      e.vx = (fx / d) * e.stats.moveSpeed;
+      e.vz = (fz / d) * e.stats.moveSpeed;
+      e.yaw = Math.atan2(fx, fz);
+    }
+    integrate(e, dt, ctx.world);
+    return;
   }
 
   const p = ctx.player;
@@ -269,6 +326,8 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
         if (e.state === 'idle') {
           e.vx = e.vz = 0;
           if (e.drinking && e.drinkYaw !== null) e.yaw = dampAngle(e.yaw, e.drinkYaw, 6, dt);
+          // A wild animal does not stand about on Winter's ice (standing would break it): it soon walks on.
+          if (!e.calm && ctx.world.ice && ctx.world.ice.state(e.pos.x, e.pos.z) !== null) e.timer = Math.min(e.timer, 0.3);
           e.timer -= dt;
           if (e.timer <= 0) {
             e.drinking = false;
@@ -316,7 +375,7 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
           if (atk.kind === 'charge') {
             const length = (atk.speed ?? 12) * (atk.duration ?? 0.8);
             ctx.fx.chargeWarning(e.pos, e.yaw, length, e.radius * 2.2, atk.windup);
-          } else if (atk.kind === 'aoe') {
+          } else if (atk.kind === 'aoe' || atk.kind === 'wave') {
             ctx.fx.areaWarning(e.pos, atk.radius ?? 4, atk.windup);
           }
           break;

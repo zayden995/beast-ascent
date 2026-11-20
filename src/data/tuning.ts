@@ -81,6 +81,21 @@ export const TUNING = {
     /** Water this deep (metres) or deeper pushes with the full current; shallower water pushes less. */
     fullCurrentDepth: 1.0,
   },
+  /** Winter's ice (rules in `logic/ice.ts`; every number a first guess from the design of 2026-11-20). */
+  ice: {
+    cellSize: 2,
+    slowSpeed: 2,
+    breakSeconds: 5,
+    crackAt: 0.6,
+    healSeconds: 60,
+    refreezeSeconds: 60,
+    holeMargin: 0.5,
+    coldPctPerSecond: 0.02,
+    iceThickness: 0.15,
+    refRadius: 0.45,
+    sealAfterSeconds: 8,
+    sealLeaveSeconds: 4,
+  },
   /** Cliffs (a biome whose terrain has a `maxClimbSlope`). */
   cliff: {
     /** An animal that ends up on a cliff face slides down it at this speed (m/s). */

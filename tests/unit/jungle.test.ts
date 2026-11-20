@@ -55,16 +55,13 @@ test('climb: an animal on a cliff face slides down it; on ground it could walk u
   assert.equal(slideStep(() => 3, 0, 0, 1.6, 7, 0.1), null, 'flat ground');
 });
 
-test('biomes: the Forest, the Jungle and the Plains are built, each with a map, animals and a boss; Winter is not yet', () => {
-  for (const id of ['forest', 'jungle', 'plains'] as const) {
+test('biomes: all four biomes are built, each with a map, animals and a boss of its own', () => {
+  for (const id of ['forest', 'jungle', 'plains', 'winter'] as const) {
     assert.ok(BIOMES[id].implemented, `${id} is built`);
     assert.ok(BIOME_LAYOUTS[id] && BIOME_SPAWNS[id], `${id} has a map and animals`);
     const boss = BIOMES[id].bossId;
     assert.ok(boss && BOSSES[boss] && BOSSES[boss].biome === id, `${id} has its own boss`);
   }
-  assert.equal(BIOME_LAYOUTS.winter, undefined);
-  assert.throws(() => layoutOf('winter'));
-  assert.deepEqual(spawnsOf('winter'), []);
   assert.equal(nextBiome('forest'), 'jungle');
   assert.equal(previousBiome('jungle'), 'forest');
   assert.equal(previousBiome('forest'), null);

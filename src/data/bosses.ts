@@ -118,6 +118,52 @@ const list: BossDef[] = [
       xp: 1100, carcassGrowth: 100,
     },
   },
+  {
+    // Winter's boss, on the peak of the mountain: a woolly mammoth, with long curved tusks, a shaggy coat and a hump. A tusk sweep,
+    // a trunk slam, a short charge, and its ice shockwave: it rears and stamps, and a ring spreads across the frozen pool on the
+    // peak, wearing the ice it crosses, so the floor breaks up as the fight goes on (the user's idea, 2026-11-20). No helpers.
+    id: 'woolly_mammoth', biome: 'winter', title: 'Woolly Mammoth, Lord of Winter', level: 40, repeatXp: 100,
+    enemy: {
+      id: 'woolly_mammoth', name: 'Woolly Mammoth',
+      baseStats: {
+        maxHealth: 5000, stamina: 100, staminaRegen: 10, damage: 70, moveSpeed: 2.6, sprintSpeed: 6.6,
+        attackSpeed: 1, defense: 18, size: 1.6,
+      },
+      body: {
+        bodyLength: 2.6, bodyHeight: 1.7, bodyWidth: 1.35, legLength: 1.4, legThickness: 0.4,
+        neckLength: 0.3, neckAngle: 0.3, headSize: 1.0, snoutLength: 0.12,
+        ears: 'round', earSize: 0.3, tail: 'tuft', tailLength: 0.7, chestBulk: 1.1,
+      },
+      colors: { body: 0x6b4a32, belly: 0x5a3e2a, accent: 0x4a3322 },
+      features: ['trunk', 'longTusks', 'shaggy', 'hump', 'scar'],
+      behavior: {
+        aggroRadius: 18, aggressive: true, fleeOnSight: false, fleeHealthPct: 0,
+        leashRadius: 18, wanderRadius: 5, fleeBurst: 0, windedSeconds: 0, windedSpeedMult: 1,
+        woundedSpeedMult: 1,
+      },
+      attacks: [
+        {
+          id: 'tusk_sweep', kind: 'melee', range: 3.2, windup: 0.75, recover: 0.9, damageMult: 1,
+          arcDeg: 150, knockback: 9, cooldown: 2.0,
+        },
+        {
+          id: 'trunk_slam', kind: 'aoe', range: 3.2, radius: 5, windup: 0.9, recover: 1.0,
+          damageMult: 1.2, knockback: 8, cooldown: 7,
+        },
+        {
+          // The ice shockwave: a ring that crosses the pool and stops at the rim. A jump or a dodge lets it pass.
+          id: 'ice_shockwave', kind: 'wave', range: 9, radius: 13, windup: 1.2, recover: 1.2, damageMult: 0.5,
+          knockback: 3, cooldown: 8, waveSpeed: 8, waveWidth: 1.5, iceWear: 0.5,
+        },
+        {
+          // Short: the peak is 32 m across inside its rim.
+          id: 'charge', kind: 'charge', range: 16, minRange: 6, windup: 1.0, recover: 1.3,
+          damageMult: 1.6, knockback: 9, cooldown: 9, speed: 14, duration: 0.9,
+        },
+      ],
+      xp: 1500, carcassGrowth: 120,
+    },
+  },
 ];
 
 export const BOSSES: Record<string, BossDef> = Object.fromEntries(list.map((b) => [b.id, b]));

@@ -170,6 +170,18 @@ export class CompanionActor extends Actor {
     } else {
       this.think(dt, ctx);
     }
+    // In a hole in Winter's ice it swims out to the nearest whole ice or shore first.
+    if (this.swimming && this.stun <= 0 && ctx.world.iceHoleAt(this.pos.x, this.pos.z)) {
+      const foot = ctx.world.iceFooting(this.pos.x, this.pos.z);
+      if (foot) {
+        const fx = foot.x - this.pos.x;
+        const fz = foot.z - this.pos.z;
+        const d = Math.hypot(fx, fz) || 1;
+        this.vx = (fx / d) * this.stats.moveSpeed;
+        this.vz = (fz / d) * this.stats.moveSpeed;
+        this.yaw = Math.atan2(fx, fz);
+      }
+    }
     // In water it swims at the land animals' pace.
     if (this.swimming) {
       this.vx *= P.swimSpeedMult;

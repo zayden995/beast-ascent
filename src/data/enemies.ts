@@ -249,6 +249,197 @@ list.push(
   }),
 );
 
+// ---------- Winter (Milestone 3, designed with the user on 2026-11-20) ----------
+// Levels 24 to 28 on the snow and the ice, 28 to 34 on the mountain. Every number is a first guess.
+const winterPrey = {
+  aggressive: false, fleeOnSight: true, fleeHealthPct: 1, fleeBurst: 3, windedSeconds: 5, windedSpeedMult: 0.45, woundedSpeedMult: 0.7,
+  senses: { front: 1.35 },
+};
+list.push(
+  {
+    // Quick prey of the snow: white, with long ears. Bolts in bursts and tires, like the deer.
+    id: 'arctic_hare', name: 'Arctic Hare',
+    baseStats: {
+      maxHealth: 40, stamina: 100, staminaRegen: 10, damage: 0, moveSpeed: 3.0, sprintSpeed: 7.4,
+      attackSpeed: 1, defense: 0, size: 1,
+    },
+    body: {
+      bodyLength: 0.55, bodyHeight: 0.3, bodyWidth: 0.24, legLength: 0.3, legThickness: 0.05,
+      neckLength: 0.1, neckAngle: 0.6, headSize: 0.17, snoutLength: 0.07,
+      ears: 'long', earSize: 0.22, tail: 'stub', tailLength: 0.06, chestBulk: 1.12,
+    },
+    colors: { body: 0xf3f5f7, belly: 0xffffff, accent: 0x2f2f33 },
+    features: [],
+    behavior: { ...winterPrey, aggroRadius: 10, leashRadius: 50, wanderRadius: 14 },
+    attacks: [],
+    xp: 28, carcassGrowth: 12,
+  },
+  {
+    // The Forest's fox in its winter coat: it nips, and bolts when it is hurt.
+    id: 'arctic_fox', name: 'Arctic Fox',
+    baseStats: {
+      maxHealth: 70, stamina: 100, staminaRegen: 10, damage: 10, moveSpeed: 3.0, sprintSpeed: 7.0,
+      attackSpeed: 1, defense: 2, size: 1,
+    },
+    body: {
+      bodyLength: 0.62, bodyHeight: 0.25, bodyWidth: 0.22, legLength: 0.28, legThickness: 0.05,
+      neckLength: 0.15, neckAngle: 0.7, headSize: 0.18, snoutLength: 0.13,
+      ears: 'pointed', earSize: 0.08, tail: 'bushy', tailLength: 0.5, chestBulk: 1.12,
+    },
+    colors: { body: 0xeef1f4, belly: 0xffffff, accent: 0x6f7378 },
+    features: [],
+    behavior: {
+      aggroRadius: 8, aggressive: true, fleeOnSight: false, fleeHealthPct: 0.4,
+      leashRadius: 30, wanderRadius: 14, fleeBurst: 2.5, windedSeconds: 4.5, windedSpeedMult: 0.45, woundedSpeedMult: 0.7,
+    },
+    attacks: [
+      {
+        id: 'nip', kind: 'melee', range: 0.8, windup: 0.3, recover: 0.5, damageMult: 1,
+        arcDeg: 100, knockback: 2, cooldown: 1.0,
+      },
+    ],
+    xp: 34, carcassGrowth: 14,
+  },
+  {
+    // Prey of the mountain: a white goat with short curved horns, sure-footed on the shelves beside the trail.
+    id: 'mountain_goat', name: 'Mountain Goat',
+    baseStats: {
+      maxHealth: 90, stamina: 100, staminaRegen: 10, damage: 0, moveSpeed: 2.8, sprintSpeed: 7.4,
+      attackSpeed: 1, defense: 3, size: 1,
+    },
+    body: {
+      bodyLength: 1.0, bodyHeight: 0.56, bodyWidth: 0.4, legLength: 0.55, legThickness: 0.09,
+      neckLength: 0.28, neckAngle: 0.8, headSize: 0.26, snoutLength: 0.17,
+      ears: 'pointed', earSize: 0.09, tail: 'stub', tailLength: 0.1, chestBulk: 1.18,
+    },
+    colors: { body: 0xece6d6, belly: 0xf7f3e9, accent: 0x3a3530 },
+    features: ['horns'],
+    behavior: { ...winterPrey, aggroRadius: 11, leashRadius: 30, wanderRadius: 6 },
+    attacks: [],
+    xp: 45, carcassGrowth: 26,
+  },
+  {
+    // A big cat of the mountain: pale grey with dark rosettes and a long, thick tail. It lies calm on a ledge beside the trail
+    // and springs at an animal that comes within 10 m (`wakeNear` on its lair of one).
+    id: 'snow_leopard', name: 'Snow Leopard',
+    baseStats: {
+      maxHealth: 150, stamina: 100, staminaRegen: 10, damage: 15, moveSpeed: 3.0, sprintSpeed: 7.0,
+      attackSpeed: 1, defense: 6, size: 1,
+    },
+    body: {
+      bodyLength: 1.25, bodyHeight: 0.48, bodyWidth: 0.4, legLength: 0.48, legThickness: 0.1,
+      neckLength: 0.24, neckAngle: 0.4, headSize: 0.29, snoutLength: 0.13,
+      ears: 'round', earSize: 0.07, tail: 'bushy', tailLength: 1.1, chestBulk: 1.1,
+    },
+    colors: { body: 0xd6d4cc, belly: 0xf1efe9, accent: 0x45454a },
+    features: ['spots'],
+    behavior: { ...stands, aggroRadius: 12, leashRadius: 26, wanderRadius: 3 },
+    attacks: [
+      {
+        id: 'swipe', kind: 'melee', range: 1.3, windup: 0.4, recover: 0.6, damageMult: 1,
+        arcDeg: 110, knockback: 4, cooldown: 1.2,
+      },
+      {
+        id: 'pounce', kind: 'charge', range: 10, minRange: 4, windup: 0.5, recover: 0.8,
+        damageMult: 1.5, knockback: 8, cooldown: 6, speed: 14, duration: 0.6,
+      },
+    ],
+    xp: 120, carcassGrowth: 40,
+  },
+  {
+    // The Wolf's body in a white coat: a pack of three on the snow.
+    ...rival('wolf', 'default', {
+      id: 'arctic_wolf', name: 'Arctic Wolf',
+      baseStats: {
+        maxHealth: 90, stamina: 100, staminaRegen: 10, damage: 11, moveSpeed: 2.8, sprintSpeed: 7.0,
+        attackSpeed: 1, defense: 4, size: 1,
+      },
+      behavior: { ...stands, aggroRadius: 13, leashRadius: 42, wanderRadius: 16 },
+      attacks: [
+        {
+          id: 'bite', kind: 'melee', range: 1.0, windup: 0.35, recover: 0.55, damageMult: 1,
+          arcDeg: 100, knockback: 3, cooldown: 1.1,
+        },
+        {
+          id: 'lunge', kind: 'charge', range: 9, minRange: 4, windup: 0.5, recover: 0.8,
+          damageMult: 1.3, knockback: 5, cooldown: 6, speed: 13, duration: 0.55,
+        },
+      ],
+      xp: 70, carcassGrowth: 30,
+    }),
+    colors: { body: 0xe9edf0, belly: 0xffffff, accent: 0x9aa3ab },
+  },
+  {
+    // A white owl of the pines that goes after an Eagle in the air (the user: "to pester players, eagles mostly"), and now and then
+    // swoops on an animal on the ground beneath its tree for a peck. It flies slower than the Eagle, so an Eagle can always escape.
+    id: 'snowy_owl', name: 'Snowy Owl', rig: 'winged',
+    baseStats: {
+      maxHealth: 60, stamina: 100, staminaRegen: 10, damage: 9, moveSpeed: 3.0, sprintSpeed: 6.0,
+      attackSpeed: 1, defense: 2, size: 0.85,
+    },
+    body: getSpecies('eagle').body,
+    colors: { body: 0xf3f5f7, belly: 0xffffff, accent: 0x3b3b40, head: 0xffffff, tail: 0xe9ecef },
+    features: [],
+    behavior: {
+      ...stands, aggroRadius: 30, leashRadius: 40, wanderRadius: 0,
+      flier: { perchHeight: 7, huntRange: 30, pesterRange: 10, flySpeed: 10, swoopSpeed: 13, homeRange: 40, pesterCooldown: 9 },
+    },
+    attacks: [
+      {
+        id: 'talons', kind: 'melee', range: 1.0, windup: 0.3, recover: 0.6, damageMult: 1,
+        arcDeg: 90, knockback: 2, cooldown: 1.0,
+      },
+    ],
+    xp: 40, carcassGrowth: 8,
+  },
+  {
+    // It comes up from under the ice into the hole of a player or pet that has stayed in the freezing water for 8 s, bites while
+    // they swim, and cannot leave the water (the user's idea, 2026-11-20). It belongs to no zone: it never comes back by itself.
+    // It pays XP and leaves no carcass (it sinks).
+    id: 'leopard_seal', name: 'Leopard Seal', rig: 'seal',
+    baseStats: {
+      maxHealth: 160, stamina: 100, staminaRegen: 10, damage: 16, moveSpeed: 2.6, sprintSpeed: 5.0,
+      attackSpeed: 1, defense: 6, size: 1,
+    },
+    // The seal rig reads the length of the whole seal, how thick it is, and the size of its head.
+    body: {
+      bodyLength: 2.6, bodyHeight: 0.8, bodyWidth: 0.8, legLength: 0.1, legThickness: 0.1,
+      neckLength: 0.1, neckAngle: 0, headSize: 0.5, snoutLength: 0.3,
+      ears: 'round', earSize: 0.01, tail: 'stub', tailLength: 0.1, chestBulk: 1,
+    },
+    colors: { body: 0x7d848c, belly: 0xd8dde2, accent: 0x2b2f34 },
+    features: [],
+    behavior: { ...stands, aggroRadius: 6, leashRadius: 6, wanderRadius: 0, holeBound: true },
+    attacks: [
+      {
+        id: 'bite', kind: 'melee', range: 0.9, windup: 0.3, recover: 0.6, damageMult: 1,
+        arcDeg: 90, knockback: 1.5, cooldown: 1.3,
+      },
+    ],
+    xp: 110, carcassGrowth: 0,
+  },
+  rival('bear', 'polar', {
+    // Heavy hunters of the ice: they walk it, and break it when they stop to fight.
+    id: 'polar_bear', name: 'Polar Bear',
+    baseStats: {
+      maxHealth: 190, stamina: 100, staminaRegen: 10, damage: 15, moveSpeed: 2.4, sprintSpeed: 6.6,
+      attackSpeed: 1, defense: 9, size: 1,
+    },
+    behavior: { ...stands, aggroRadius: 12, leashRadius: 38, wanderRadius: 14 },
+    attacks: [
+      {
+        id: 'swipe', kind: 'melee', range: 1.5, windup: 0.7, recover: 0.9, damageMult: 1.3,
+        arcDeg: 120, knockback: 8, cooldown: 2.0,
+      },
+      {
+        id: 'slam', kind: 'aoe', range: 2.0, radius: 4.5, windup: 0.9, recover: 1.1,
+        damageMult: 1.1, knockback: 7, cooldown: 9,
+      },
+    ],
+    xp: 90, carcassGrowth: 40,
+  }),
+);
+
 // The Jungle's snakes: a few of them lie about in the undergrowth, and a nest of bigger, darker ones guards the cave
 // next to the boss's arena. They are slow to chase, quick to strike, and they strike from a rearing start.
 const snakeStats = { staminaRegen: 10, stamina: 100, attackSpeed: 1 };

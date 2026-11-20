@@ -173,6 +173,20 @@ export class ProceduralQuadruped implements AnimalModel {
         b.add(new THREE.SphereGeometry(1, 12, 6, 0, TAU, 0, reach), c.accent, [0, 0, z], [0, 0, 0], [r * w * 1.035, r * 1.035, 0.035 + (i % 3) * 0.01]);
       }
     }
+    if (this.has('hump')) {
+      // A high mound over the shoulders (a mammoth's).
+      b.add(sphere(r * 0.75), c.body, [0, r * 0.8, halfL * 0.3], [0, 0, 0], [w * 0.95, 0.8, 1.2]);
+    }
+    if (this.has('shaggy')) {
+      // A long coat that hangs in a fringe along the flanks and under the chest.
+      for (let i = 0; i < 8; i++) {
+        const z = lerp(halfL * 0.75, -halfL * 0.75, i / 7);
+        for (const s of [1, -1]) {
+          b.add(new THREE.ConeGeometry(r * 0.24, r * 0.95, 5), c.accent, [s * r * w * 0.82, -r * 0.62, z], [Math.PI, 0, s * 0.18]);
+        }
+        b.add(new THREE.ConeGeometry(r * 0.22, r * 0.8, 5), c.accent, [0, -r * 0.82, z], [Math.PI, 0, 0]);
+      }
+    }
     if (this.has('spots')) {
       // Dark spots over the flanks and rump, a few on each side, each just proud of the body.
       const marks: [number, number, number][] = [[0.34, 0.35, 1.0], [0.12, 0.6, 0.9], [-0.1, 0.3, 1.1], [-0.3, 0.55, 0.9], [-0.44, 0.2, 0.8]];
@@ -397,6 +411,18 @@ export class ProceduralQuadruped implements AnimalModel {
       for (const s of [1, -1]) {
         const from: V3 = [s * hr * 0.45, -hr * 0.4, hr * 0.7 + snout * 0.55];
         hb.segment(from, [from[0] + s * hr * 0.32, from[1] + hr * 0.75, from[2] + hr * 0.25], hr * 0.13, hr * 0.03, IVORY);
+      }
+    }
+    if (this.has('longTusks')) {
+      // A mammoth's: long tusks that sweep down and forward from the jaw, then curve up and in.
+      for (const s of [1, -1]) {
+        const p0: V3 = [s * hr * 0.45, -hr * 0.4, hr * 0.7 + snout * 0.55];
+        const p1: V3 = [p0[0] + s * hr * 0.3, p0[1] - hr * 0.55, p0[2] + hr * 0.9];
+        const p2: V3 = [p1[0] + s * hr * 0.2, p1[1] + hr * 0.15, p1[2] + hr * 1.0];
+        const p3: V3 = [p2[0] - s * hr * 0.55, p2[1] + hr * 0.9, p2[2] + hr * 0.35];
+        hb.segment(p0, p1, hr * 0.17, hr * 0.15, IVORY);
+        hb.segment(p1, p2, hr * 0.15, hr * 0.11, IVORY);
+        hb.segment(p2, p3, hr * 0.11, hr * 0.03, IVORY);
       }
     }
     if (this.has('scar')) {

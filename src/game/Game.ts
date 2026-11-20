@@ -5,7 +5,10 @@ import { PETS, PET_TUNING } from '../data/pets.ts';
 import type { PetKind } from '../data/pets.ts';
 import type { PetPhase } from '../logic/pet.ts';
 import { mulberry32 } from '../core/math.ts';
-import { BIOMES, BIOME_LAYOUTS, nextBiome, previousBiome, spawnsOf } from '../data/biomes.ts';
+import { iceWeight, sealDue, sealLeaves } from '../logic/ice.ts';
+import { waveHits } from '../logic/wave.ts';
+import type { IceStander } from '../logic/ice.ts';
+import { BIOMES, BIOME_LAYOUTS, biomeName, nextBiome, previousBiome, spawnsOf } from '../data/biomes.ts';
 import { getBoss } from '../data/bosses.ts';
 import { CAVE_FOOD, FOODS, TREE_FOOD, canEat } from '../data/food.ts';
 import { TUNING } from '../data/tuning.ts';
@@ -20,6 +23,7 @@ import { playerIsUnseen } from '../logic/stealth.ts';
 import { withArticle } from '../logic/text.ts';
 import type { Actor } from '../systems/actor.ts';
 import { EnemyActor, updateEnemy } from '../systems/ai.ts';
+import type { Wave } from '../systems/ai.ts';
 import type { ThirdPersonCamera } from '../systems/camera.ts';
 import { Combat } from '../systems/combat.ts';
 import { CompanionActor } from '../systems/companion.ts';
@@ -44,6 +48,8 @@ import type { Sky } from '../world/sky.ts';
 const NEW_EGG = "Beat the guards of a den on the Plains for a new egg.";
 
 /** What the E prompt calls each kind of tree food. */
+/** The cold of a hole in the ice is dealt in ticks this long (seconds), like a bleed. */
+const COLD_TICK = 0.5;
 const TREE_LABELS = { leaf: 'leaves', fruit: 'fruit', nut: 'nuts' } as const;
 
 export interface GameContext {
@@ -101,6 +107,9 @@ export class Game {
   /** The player was hit since the pet's last step (a hit breaks off the tending). */
   private playerHit = false;
   private lastSave = 0;
+  private lastCrackWarning = -999;
+  private waves: Wave[] = [];
+  private seals: { seal: EnemyActor; empty: number }[] = [];
 
   /** The save slot (1 to 4) this animal lives in; every save goes there. null is the admin sandbox, which saves nothing. */
   readonly slot: number | null;
@@ -148,7 +157,7 @@ export class Game {
       // Through a gate: say where this is, and what the biome does to this kind of animal.
       const mods = this.player.activeMods;
       this.events.emit('banner', {
-        title: `The ${world.biome.name}`,
+        title: biomeName(world.biome.id, true),
         subtitle: mods.length > 0 ? `${this.growth.variant.name}: ${mods.map(describeMod).join(', ')}` : 'Your kind has no advantage or weakness here.',
       });
     }
@@ -188,10 +197,16 @@ export class Game {
         return;
       }
       if (!(actor instanceof EnemyActor)) return;
+      // A flier (a snowy owl) killed in the air falls to the ground.
+      if (actor.flying) {
+        actor.flying = false;
+        actor.pos.y = this.world.heightAt(actor.pos.x, actor.pos.z);
+      }
       this.spawner.onDeath(actor);
       // A boss's called pack gives no XP and leaves no carcass, so that it cannot be farmed.
       if (actor.summoned) return;
-      this.food.dropCarcass(actor.pos, actor.def.carcassGrowth, actor.stats.size);
+      // Some animals leave nothing to eat (a leopard seal sinks).
+      if (actor.def.carcassGrowth > 0) this.food.dropCarcass(actor.pos, actor.def.carcassGrowth, actor.stats.size);
       // Only the first win over a boss pays its full XP; later wins pay the small repeat amount.
       const repeatWin = actor.isBoss && this.growth.profile.ruledBiomes.includes(this.world.biome.id);
       const xp = repeatWin && this.bossDef ? this.bossDef.repeatXp : enemyXp(actor.def.xp, actor.isBoss ? 1 : actor.level);
@@ -208,7 +223,7 @@ export class Game {
     const biome = this.world.biome;
     if (repeatWin) {
       // The biome is already ruled, so there is nothing new to unlock.
-      this.events.emit('toast', { text: `${boss.name} defeated again: +${xp} XP. It will be back when you return to the ${biome.name}.`, tone: 'good' });
+      this.events.emit('toast', { text: `${boss.name} defeated again: +${xp} XP. It will be back when you return to ${biomeName(biome.id)}.`, tone: 'good' });
       return;
     }
     const next = nextBiome(biome.id);
@@ -217,7 +232,8 @@ export class Game {
     this.events.emit('biomeRuled', { biome: biome.id });
     this.events.emit('banner', {
       title: `${biome.name} Ruled`,
-      subtitle: next ? `The gate to the ${BIOMES[next].name} is open.` : 'Every biome is yours.',
+      // TODO(ending): when the last biome is ruled, the ending (a poacher, then credits) is still to be designed with the user.
+      subtitle: next ? `The gate to ${biomeName(next)} is open.` : 'Every biome is yours.',
     });
     this.save();
   }
@@ -242,7 +258,7 @@ export class Game {
     this.updateSummons(dt);
 
     const pet = this.pet && this.pet.alive && !this.pet.untargetable ? this.pet : null;
-    const ai = { player: pa, pet, world, combat: this.combat, fx: this.fx, rand: this.rand };
+    const ai = { waves: this.waves, player: pa, pet, world, combat: this.combat, fx: this.fx, rand: this.rand };
     const awakeStates: string[] = [];
     for (const e of this.spawner.enemies) {
       // Distant animals are hidden and stop thinking (the boss always stays awake).
@@ -255,6 +271,9 @@ export class Game {
     this.player.setUnseen(playerIsUnseen(awakeStates));
 
     this.separate();
+    this.updateWaves(dt);
+    this.updateIce(dt);
+    this.updateSeals(dt);
     this.combat.update(dt, pa);
     this.spawner.update(pa.pos);
     // A fish swims away from the player only when the player is wading or swimming (a flier skimming the pond does not scare it).
@@ -374,27 +393,26 @@ export class Game {
     if (at === 'onward') {
       const next = nextBiome(here.id);
       if (!next) return;
-      const nextName = BIOMES[next].name;
       if (!this.world.isGateOpen()) {
         this.prompt = { key: '', text: `Sealed. Defeat the ${here.name} boss to open this gate.` };
       } else if (BIOME_LAYOUTS[next]) {
-        this.prompt = { key: 'E', text: this.leaveBehindWarning(`enter the ${nextName}`) ?? `Enter the ${nextName}` };
+        this.prompt = { key: 'E', text: this.leaveBehindWarning(`enter ${biomeName(next)}`) ?? `Enter ${biomeName(next)}` };
         // An animal that goes on arrives through the next biome's gate back.
         if (pressed) {
           this.leavePetBehind();
           this.ctx.travel(next, 'return');
         }
       } else {
-        this.prompt = { key: 'E', text: `Enter the ${nextName}` };
+        this.prompt = { key: 'E', text: `Enter ${biomeName(next)}` };
         if (pressed) {
-          // TODO(M3): Winter is not built yet (and with it the ending, when every biome is ruled).
-          this.events.emit('toast', { text: `The way to the ${nextName} is not open yet. The ${here.name} is yours for now.`, tone: 'info' });
+          // A biome without a map (none since Winter was built on 2026-11-20).
+          this.events.emit('toast', { text: `The way to ${biomeName(next)} is not open yet. ${biomeName(here.id, true)} is yours for now.`, tone: 'info' });
         }
       }
     } else if (at === 'return') {
       const back = previousBiome(here.id);
       if (!back) return;
-      this.prompt = { key: 'E', text: this.leaveBehindWarning(`return to the ${BIOMES[back].name}`) ?? `Return to the ${BIOMES[back].name}` };
+      this.prompt = { key: 'E', text: this.leaveBehindWarning(`return to ${biomeName(back)}`) ?? `Return to ${biomeName(back)}` };
       // An animal that goes back arrives at the gate it once left by.
       if (pressed) {
         this.leavePetBehind();
@@ -506,6 +524,113 @@ export class Game {
   }
 
   /** The pet's step, and what follows from it: injured, back on its feet, or dead (the slot then has no pet). */
+  /**
+   * The Woolly Mammoth's shockwaves: each ring spreads out, hits the player and the pet once as it passes (unless they are in the
+   * air or rolling), and wears every ice square it crosses.
+   */
+  private updateWaves(dt: number): void {
+    const targets = [this.player.actor, this.pet].filter((a): a is Actor => !!a && a.alive && !a.untargetable);
+    for (const w of this.waves) {
+      const prev = w.radius;
+      w.radius = Math.min(w.max, w.radius + w.speed * dt);
+      for (const a of targets) {
+        if (w.hit.has(a)) continue;
+        const dist = Math.hypot(a.pos.x - w.x, a.pos.z - w.z);
+        if (!waveHits(prev, w.radius, w.width, dist, a.grounded && !a.flying, a.invuln > 0)) continue;
+        w.hit.add(a);
+        this.combat.damage(w.source, a, { damage: w.damage, knockback: w.knockback }, w.x, w.z);
+      }
+      if (w.iceWear > 0) this.world.ice?.ringWear(w.x, w.z, prev, w.radius, w.iceWear);
+    }
+    this.waves = this.waves.filter((w) => w.radius < w.max && w.source.alive);
+  }
+
+  /**
+   * Winter's ice: every animal on the lake wears the squares under it while it stands, fights or creeps (not the mammoth, a flier
+   * or an injured pet), and every animal swimming in a hole loses a little health to the cold, dealt in small ticks.
+   */
+  private updateIce(dt: number): void {
+    const ice = this.world.ice;
+    if (!ice) return;
+    const T = TUNING.ice;
+    const standers: IceStander[] = [];
+    let playerCracked = false;
+    for (const a of this.actors) {
+      if (!a.alive || ice.index(a.pos.x, a.pos.z) < 0) {
+        a.coldSeconds = 0;
+        a.coldAcc = 0;
+        continue;
+      }
+      const boss = (a as { isBoss?: boolean }).isBoss === true;
+      standers.push({
+        x: a.pos.x, z: a.pos.z, radius: a.radius, weight: iceWeight(a.radius, T), speed: Math.hypot(a.vx, a.vz),
+        exempt: a.flying || a.untargetable || boss,
+      });
+      if (a.swimming && this.world.iceHoleAt(a.pos.x, a.pos.z) && !a.untargetable) {
+        a.coldSeconds += dt;
+        a.coldAcc += dt;
+        if (a.coldAcc >= COLD_TICK) {
+          a.coldAcc -= COLD_TICK;
+          this.combat.applyCold(a, Math.max(1, Math.round(a.stats.maxHealth * T.coldPctPerSecond * COLD_TICK)));
+        }
+      } else {
+        a.coldSeconds = 0;
+        a.coldAcc = 0;
+      }
+    }
+    const pa = this.player.actor;
+    for (const ev of ice.step(standers, dt)) {
+      if (ev.kind === 'crack' && Math.hypot(ev.x - pa.pos.x, ev.z - pa.pos.z) < pa.radius + 2) playerCracked = true;
+    }
+    // Warn once per stretch of standing: the ice under the player has started to crack.
+    if (playerCracked && this.clock.time - this.lastCrackWarning > 8) {
+      this.lastCrackWarning = this.clock.time;
+      this.events.emit('toast', { text: 'The ice cracks under you! Keep moving.', tone: 'bad' });
+    }
+  }
+
+  /**
+   * Leopard seals: a player or pet that has been swimming in the freezing water of a hole for `sealAfterSeconds` brings one up into
+   * that hole. It bites while they swim; once nobody has been in its hole for `sealLeaveSeconds` it sinks away (no death).
+   */
+  private updateSeals(dt: number): void {
+    if (!this.world.ice) return;
+    const T = TUNING.ice;
+    const victims = [this.player.actor, this.pet].filter((a): a is Actor => !!a && a.alive && !a.untargetable);
+    const near = (s: EnemyActor, v: Actor) => Math.hypot(s.pos.x - v.pos.x, s.pos.z - v.pos.z) < 6;
+    for (const v of victims) {
+      const up = this.seals.some((s) => s.seal.alive && near(s.seal, v));
+      if (!sealDue(v.coldSeconds, up, T)) continue;
+      // It comes up in the same hole, a couple of metres from the animal.
+      let x = v.pos.x;
+      let z = v.pos.z;
+      for (let k = 0; k < 8; k++) {
+        const cx = v.pos.x + Math.cos((k * Math.PI) / 4) * 1.8;
+        const cz = v.pos.z + Math.sin((k * Math.PI) / 4) * 1.8;
+        if (this.world.iceHoleAt(cx, cz)) {
+          x = cx;
+          z = cz;
+          break;
+        }
+      }
+      const seal = this.spawner.spawnLoose('leopard_seal', x, z, 30);
+      this.seals.push({ seal, empty: 0 });
+      v.coldSeconds = 0;
+      this.refreshActors();
+      this.events.emit('toast', { text: 'A leopard seal rises from under the ice! Get out of the water!', tone: 'bad' });
+    }
+    for (const s of this.seals) {
+      const used = victims.some((v) => v.swimming && this.world.iceHoleAt(v.pos.x, v.pos.z) && near(s.seal, v));
+      s.empty = used ? 0 : s.empty + dt;
+    }
+    const gone = this.seals.filter((s) => !s.seal.alive || !this.spawner.enemies.includes(s.seal) || sealLeaves(s.empty, T));
+    for (const s of gone) if (s.seal.alive && this.spawner.enemies.includes(s.seal)) this.spawner.remove(s.seal);
+    if (gone.length) {
+      this.seals = this.seals.filter((s) => !gone.includes(s));
+      this.refreshActors();
+    }
+  }
+
   private updatePet(dt: number): void {
     const pet = this.pet;
     if (!pet) return;

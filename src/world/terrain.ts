@@ -5,6 +5,7 @@ import type { BiomeLayout } from '../core/layout.ts';
 import type { BiomePalette } from '../core/types.ts';
 import { TRAIL_HALF_WIDTH, caveTrail, distanceToTrail } from '../logic/cave.ts';
 import { slopeAt, surfaceOf } from '../logic/heightfield.ts';
+import { trailDistance } from '../logic/mountain.ts';
 import type { HeightFn } from '../logic/heightfield.ts';
 import { sampleRiver } from '../logic/river.ts';
 import type { River } from '../logic/river.ts';
@@ -43,14 +44,20 @@ export function buildTerrainMesh(heightAt: HeightFn, layout: BiomeLayout, palett
 
     const dArena = Math.hypot(x - arena.x, z - arena.z);
     const dDen = Math.hypot(x - den.x, z - den.z);
-    const dGate = Math.hypot(x - gate.x, z - gate.z);
-    const path = Math.abs(x - gate.x) < 3.5 && z < arena.z && z > gate.z ? 1 : 0;
+    // The last biome has no gate onward, and no path to it.
+    const dGate = gate.unused ? Infinity : Math.hypot(x - gate.x, z - gate.z);
+    const path = !gate.unused && Math.abs(x - gate.x) < 3.5 && z < arena.z && z > gate.z ? 1 : 0;
     let dirtAmount = Math.max(
       1 - smoothstep(arena.radius - 2, arena.radius + 2.5, dArena),
       (1 - smoothstep(den.radius - 4, den.radius, dDen)) * 0.9,
       (1 - smoothstep(gate.radius - 2, gate.radius + 2, dGate)) * 0.9,
       path * 0.8,
     );
+    // Winter's mountain trail is packed snow.
+    if (layout.mountain) {
+      const d = trailDistance(layout.mountain, x, z);
+      if (d !== null) dirtAmount = Math.max(dirtAmount, (1 - smoothstep(layout.mountain.trailWidth / 2 - 1.2, layout.mountain.trailWidth / 2 + 0.4, d)) * 0.7);
+    }
     if (returnGate) {
       const dReturn = Math.hypot(x - returnGate.x, z - returnGate.z);
       dirtAmount = Math.max(dirtAmount, (1 - smoothstep(returnGate.radius - 2, returnGate.radius + 2, dReturn)) * 0.9);

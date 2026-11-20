@@ -50,6 +50,33 @@ export interface GateDef {
   x: number;
   z: number;
   radius: number;
+  /** The last biome's gate onward leads nowhere: it is not built, and nothing is kept clear for it (Winter). */
+  unused?: boolean;
+}
+
+/**
+ * A mountain climbed by a trail that spirals up to a flat peak (Winter). Each lap of the trail is a shelf that climbs gently with
+ * it; between a shelf and the next lap inward the ground is a cliff, so the only way up on foot is the trail. See `logic/mountain.ts`.
+ */
+export interface MountainDef {
+  /** The middle of the peak. */
+  x: number;
+  z: number;
+  /** Height of the flat peak above the land at the foot of the trail, in metres. */
+  top: number;
+  /** The peak is flat out to here. */
+  topRadius: number;
+  /** The radius of the trail's middle where it starts, at the foot. */
+  footRadius: number;
+  /** How many times the trail goes round. */
+  laps: number;
+  /** The trail starts on this side of the peak (0 = east, 90 = south, 180 = west, 270 = north) and climbs clockwise (seen from above). */
+  startDeg: number;
+  trailWidth: number;
+  /** How far out the ground takes to rise from one shelf to the next (a cliff). */
+  cliffWidth: number;
+  /** The foothill outside the first lap rises to this share of the first shelf's height before the cliff. */
+  apronShare: number;
 }
 
 /** A cave: a chamber roofed with rock, with one mouth, and carcasses inside as bait. */
@@ -69,7 +96,7 @@ export interface CaveDef {
   rockColor?: number;
 }
 
-export type BiomeStyle = 'forest' | 'jungle' | 'plains';
+export type BiomeStyle = 'forest' | 'jungle' | 'plains' | 'winter';
 
 /** Everything that is placed on a biome's map. North is -Z. All positions are in metres. */
 export interface BiomeLayout {
@@ -88,7 +115,10 @@ export interface BiomeLayout {
   hill?: HillDef;
   /** The stream that ends in a waterfall, and how far out from the cliff edge the water lands. */
   waterfall?: { river: string; run: number };
-  arena: { x: number; z: number; radius: number };
+  /** The boss's arena. `openDeg`: where its ring of stones has a gap (left out: south and north). */
+  arena: { x: number; z: number; radius: number; openDeg?: number[] };
+  /** Winter's mountain, with the boss's arena on its peak. */
+  mountain?: MountainDef;
   /** Caves: the Jungle's (next to the boss's arena) or the Plains' two dens. Left out: none. */
   caves?: CaveDef[];
   /** The gate onward to the next biome, at the north edge. It opens when the boss is beaten. */

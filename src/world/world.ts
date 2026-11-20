@@ -3,20 +3,25 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { flatShade, toonMaterial } from '../animals/toon.ts';
 import { TAU, fbm2, mulberry32 } from '../core/math.ts';
 import type { BiomeLayout, CaveDef, GateDef } from '../core/layout.ts';
-import type { BiomeDef, BiomeId } from '../core/types.ts';
+import type { BiomeDef, BiomeId, WaterBody } from '../core/types.ts';
 import { BIOMES, layoutOf } from '../data/biomes.ts';
+import { TUNING } from '../data/tuning.ts';
 import { buildRivers, createHeight, slopeAt, surfaceOf } from '../logic/heightfield.ts';
 import type { HeightFn } from '../logic/heightfield.ts';
 import { caveKeepsClear, caveRoof, caveWalls, inAnyCave, mouthHalfDeg } from '../logic/cave.ts';
 import type { CaveStone } from '../logic/cave.ts';
 import { currentAt, sampleRiver } from '../logic/river.ts';
 import type { River } from '../logic/river.ts';
-import { drinkSpot, nearAnyWater, surfaceAt } from '../logic/water.ts';
+import { IceSheet } from '../logic/ice.ts';
+import { onTrail } from '../logic/mountain.ts';
+import { bodyAt, drinkSpot, nearAnyWater, surfaceAt } from '../logic/water.ts';
 import type { WaterSet } from '../logic/water.ts';
 import { holdInLakeZone, inLakeZone } from '../logic/waterBound.ts';
 import { waterfallOf } from '../logic/waterfall.ts';
 import type { Waterfall } from '../logic/waterfall.ts';
 import { ColliderGrid } from './colliders.ts';
+import { IceView } from './ice.ts';
+import { Snowfall } from './snowfall.ts';
 import { buildTerrainMesh } from './terrain.ts';
 
 interface Placement {
@@ -69,7 +74,10 @@ export class BiomeWorld {
   readonly group = new THREE.Group();
   readonly layout: BiomeLayout;
   readonly biome: BiomeDef;
+  /** The height an animal stands at: the ground, or the top of the ice over Winter's frozen lake. */
   readonly heightAt: HeightFn;
+  /** The ground itself, under any ice (the lake's bed): what the terrain is drawn from. */
+  readonly terrainHeight: HeightFn;
   readonly colliders = new ColliderGrid();
   readonly rivers: River[];
   readonly waterfall: Waterfall | null;
@@ -91,15 +99,35 @@ export class BiomeWorld {
   private gatePortal!: THREE.Mesh;
   private grassChunks: { mesh: THREE.InstancedMesh; x: number; z: number }[] = [];
   private gateOpen = false;
+  private snowfall: Snowfall | null = null;
+  /** Winter's ice: which squares are worn, cracked or holes (null in a biome without a frozen lake). */
+  readonly ice: IceSheet | null;
+  private iceView: IceView | null = null;
+  private readonly frozen: WaterBody[];
 
   constructor(scene: THREE.Scene, biomeId: BiomeId = 'forest') {
     this.layout = layoutOf(biomeId);
     this.biome = BIOMES[biomeId];
     this.rand = mulberry32(this.layout.seed);
     this.rivers = buildRivers(this.layout);
-    this.water = { waters: this.layout.waters, rivers: this.rivers, waterY: this.layout.waterY };
+    // Frozen water is not water an animal swims in, drinks from or fishes in: it walks on the ice.
+    const frozen = this.layout.waters.filter((w) => w.frozen);
+    this.frozen = frozen;
+    this.ice = frozen.length ? new IceSheet(frozen, TUNING.ice) : null;
+    this.water = { waters: this.layout.waters.filter((w) => !w.frozen), rivers: this.rivers, waterY: this.layout.waterY };
     this.waterfall = waterfallOf(this.layout, this.rivers);
-    this.heightAt = createHeight(this.layout, this.rivers);
+    this.terrainHeight = createHeight(this.layout, this.rivers);
+    const ground = this.terrainHeight;
+    const ice = this.ice;
+    const waterY = this.layout.waterY;
+    // Over frozen water an animal stands on the ice, except where a hole has opened: there it is in the water.
+    this.heightAt = ice ? (x, z) => {
+      const h = ground(x, z);
+      const body = bodyAt(frozen, x, z);
+      if (!body) return h;
+      const top = surfaceOf(body, waterY) + TUNING.ice.iceThickness;
+      return h < top && ice.state(x, z) !== 'hole' ? top : h;
+    } : ground;
     this.boundary = this.layout.worldRadius - 3;
     const jungle = this.layout.style === 'jungle';
     const plains = this.layout.style === 'plains';
@@ -121,7 +149,7 @@ export class BiomeWorld {
             nut: { r0: 1.3, rSpan: 0.35, h0: 2.5, hSpan: 0.9, lean: 0 },
           };
 
-    this.group.add(buildTerrainMesh(this.heightAt, this.layout, this.biome.palette, this.rivers));
+    this.group.add(buildTerrainMesh(this.terrainHeight, this.layout, this.biome.palette, this.rivers));
     this.buildWater();
     this.buildTrees();
     this.buildRocks();
@@ -129,7 +157,7 @@ export class BiomeWorld {
     this.buildBushes();
     this.buildDen();
     this.buildCaves();
-    this.buildGate(this.layout.gate, 1, true);
+    if (!this.layout.gate.unused) this.buildGate(this.layout.gate, 1, true);
     if (this.layout.returnGate) this.buildGate(this.layout.returnGate, -1, false);
     // Everything below has its own random sequence, so that adding to it never moves a tree or a rock.
     this.buildRivers();
@@ -139,6 +167,10 @@ export class BiomeWorld {
       this.buildUndergrowth();
       this.buildVines();
     }
+    if (this.layout.style === 'winter') {
+      this.snowfall = new Snowfall(mulberry32(this.layout.seed + 71));
+      this.group.add(this.snowfall.points);
+    }
     scene.add(this.group);
   }
 
@@ -146,13 +178,28 @@ export class BiomeWorld {
 
   /** Height of the water surface over a point (the pond or river it lies in), or null on dry land. */
   waterSurface(x: number, z: number): number | null {
-    return surfaceAt(this.water, x, z);
+    const surface = surfaceAt(this.water, x, z);
+    if (surface !== null || !this.ice) return surface;
+    // A hole in the ice is water; whole ice is footing.
+    if (!this.iceHoleAt(x, z)) return null;
+    const body = bodyAt(this.frozen, x, z);
+    return body ? surfaceOf(body, this.layout.waterY) : null;
   }
 
-  /** Depth of water at a point (0 on dry land). */
+  /** Depth of water at a point (0 on dry land and on the ice). */
   waterDepth(x: number, z: number): number {
-    const surface = surfaceAt(this.water, x, z);
+    const surface = this.waterSurface(x, z);
     return surface === null ? 0 : Math.max(0, surface - this.heightAt(x, z));
+  }
+
+  /** True over a hole in Winter's ice. */
+  iceHoleAt(x: number, z: number): boolean {
+    return !!this.ice && this.ice.state(x, z) === 'hole' && !!bodyAt(this.frozen, x, z);
+  }
+
+  /** The nearest whole ice or shore to a point in a hole, where an animal climbs out (null if none is near). */
+  iceFooting(x: number, z: number): { x: number; z: number } | null {
+    return this.ice ? this.ice.nearestFooting(x, z) : null;
   }
 
   /** True in the water or within `strip` metres of its shore: the zone of a lake-bound animal (see `logic/waterBound.ts`). */
@@ -227,12 +274,16 @@ export class BiomeWorld {
     if (Math.hypot(x - playerSpawn.x, z - playerSpawn.z) < 5 + margin) return false;
     if (Math.hypot(x - arena.x, z - arena.z) < arena.radius + 3 + margin) return false;
     for (const w of waters) if (Math.hypot(x - w.x, z - w.z) < w.radius - 1 + margin) return false;
+    // Nothing grows or lies on Winter's mountain trail.
+    if (this.layout.mountain && onTrail(this.layout.mountain, x, z, margin)) return false;
     for (const river of this.rivers) {
       const s = sampleRiver(river, x, z);
       if (s && s.dist < s.halfWidth - 1 + margin) return false;
     }
-    if (Math.hypot(x - gate.x, z - gate.z) < gate.radius + margin) return false;
-    if (Math.abs(x - gate.x) < 4 + margin * 0.5 && z < arena.z && z > gate.z - 2) return false;
+    if (!gate.unused) {
+      if (Math.hypot(x - gate.x, z - gate.z) < gate.radius + margin) return false;
+      if (Math.abs(x - gate.x) < 4 + margin * 0.5 && z < arena.z && z > gate.z - 2) return false;
+    }
     if (returnGate) {
       if (Math.hypot(x - returnGate.x, z - returnGate.z) < returnGate.radius + margin) return false;
       // The way in from the gate back to the last biome is kept clear.
@@ -253,7 +304,7 @@ export class BiomeWorld {
   /** The gate an animal is standing at (within reach of its opening), or null. */
   gateAt(x: number, z: number): 'onward' | 'return' | null {
     const { gate, returnGate } = this.layout;
-    if (Math.hypot(x - gate.x, z - (gate.z + 3)) < 6) return 'onward';
+    if (!gate.unused && Math.hypot(x - gate.x, z - (gate.z + 3)) < 6) return 'onward';
     if (returnGate && Math.hypot(x - returnGate.x, z - (returnGate.z - 3)) < 6) return 'return';
     return null;
   }
@@ -261,7 +312,8 @@ export class BiomeWorld {
   setGateOpen(open: boolean): void {
     this.gateOpen = open;
     this.gateBarrier.visible = !open;
-    (this.gatePortal.material as THREE.MeshBasicMaterial).color.set(open ? 0xdfffb5 : 0x0e140d);
+    // The last biome has no gate onward to light up.
+    if (this.gatePortal) (this.gatePortal.material as THREE.MeshBasicMaterial).color.set(open ? 0xdfffb5 : 0x0e140d);
   }
 
   isGateOpen(): boolean {
@@ -286,6 +338,8 @@ export class BiomeWorld {
     for (const chunk of this.grassChunks) {
       chunk.mesh.visible = Math.hypot(chunk.x - cameraPos.x, chunk.z - cameraPos.z) < 105;
     }
+    this.snowfall?.update(time, cameraPos);
+    this.iceView?.update();
   }
 
   dispose(): void {
@@ -297,6 +351,8 @@ export class BiomeWorld {
       }
     });
     for (const flow of this.flows) flow.texture.dispose();
+    this.snowfall?.dispose();
+    this.iceView?.dispose();
     this.group.removeFromParent();
   }
 
@@ -305,7 +361,13 @@ export class BiomeWorld {
   private buildWater(): void {
     const mat = toonMaterial({ color: this.biome.palette.water, transparent: true, opacity: 0.8 });
     mat.depthWrite = false;
+    // Winter's lake is frozen over: its ice is drawn by `IceView`, from the squares of the `IceSheet`.
+    if (this.ice) {
+      this.iceView = new IceView(this.ice, this.frozen, this.layout.waterY, TUNING.ice, this.biome.palette.water);
+      this.group.add(this.iceView.group);
+    }
     for (const w of this.layout.waters) {
+      if (w.frozen) continue;
       const geo = new THREE.CircleGeometry(w.radius, 48);
       geo.rotateX(-Math.PI / 2);
       const water = new THREE.Mesh(geo, mat);
@@ -336,11 +398,12 @@ export class BiomeWorld {
     const p = this.biome.palette;
     const jungle = this.layout.style === 'jungle';
     const plains = this.layout.style === 'plains';
+    const winter = this.layout.style === 'winter';
     // The Jungle is denser than the Forest: its trees stand closer and it has only a few small clearings. The Plains have few
-    // trees, far apart, and no clearings at all (it is all clearing).
-    const spacing = jungle ? 3.1 : plains ? 8 : 3.6;
-    const clearingAbove = jungle ? 0.52 : plains ? 1 : 0.3;
-    const secondShare = jungle ? 0.3 : plains ? 0.45 : 0.4;
+    // trees, far apart, and no clearings at all (it is all clearing). Winter has scattered stands of firs and pines.
+    const spacing = jungle ? 3.1 : plains ? 8 : winter ? 5 : 3.6;
+    const clearingAbove = jungle ? 0.52 : plains ? 1 : winter ? 0.2 : 0.3;
+    const secondShare = jungle ? 0.3 : plains ? 0.45 : winter ? 0.5 : 0.4;
     const placed: (Placement & { pine: boolean })[] = [];
     const maxR = worldRadius + 18;
     for (let attempts = 0; placed.length < trees && attempts < trees * 14; attempts++) {
@@ -352,12 +415,12 @@ export class BiomeWorld {
       // Leave open meadows inside the playable area.
       if (d < worldRadius && fbm2(x * 0.03, z * 0.03, seed + 33, 2) > clearingAbove) continue;
       // No tree grows on a cliff.
-      if (jungle && slopeAt(this.heightAt, x, z) > 1) continue;
+      if ((jungle || winter) && slopeAt(this.heightAt, x, z) > 1) continue;
       if (placed.some((t) => Math.hypot(t.x - x, t.z - z) < spacing)) continue;
       placed.push({ x, z, s: 0.85 + this.rand() * 0.7, pine: this.rand() < secondShare });
     }
 
-    const look = jungle ? jungleTrees() : plains ? plainsTrees() : forestTrees();
+    const look = jungle ? jungleTrees() : plains ? plainsTrees() : winter ? winterTrees() : forestTrees();
     const crowns: Instance[] = [];
     const seconds: Instance[] = [];
     const trunks: Instance[] = [];
@@ -413,20 +476,20 @@ export class BiomeWorld {
       placed++;
     }
 
-    // Standing stones ring the boss arena, with gaps at the south entrance and the north exit.
+    // Standing stones ring the boss arena, with gaps at the south entrance and the north exit (or where `openDeg` says: on
+    // Winter's peak, one gap on the west where the trail arrives).
     const ring = 22;
+    const openings = (arena.openDeg ?? [90, 270]).map((deg) => (deg * Math.PI) / 180);
     for (let i = 0; i < ring; i++) {
       const a = (i / ring) * TAU;
-      const fromSouth = Math.abs(Math.atan2(Math.sin(a - Math.PI / 2), Math.cos(a - Math.PI / 2)));
-      const fromNorth = Math.abs(Math.atan2(Math.sin(a + Math.PI / 2), Math.cos(a + Math.PI / 2)));
-      if (fromSouth < 0.3 || fromNorth < 0.3) continue;
+      if (openings.some((o) => Math.abs(Math.atan2(Math.sin(a - o), Math.cos(a - o))) < 0.3)) continue;
       const x = arena.x + Math.cos(a) * (arena.radius + 2);
       const z = arena.z + Math.sin(a) * (arena.radius + 2);
       addRock(x, z, 1.3, 2.6 + this.rand() * 1.4, 1.2, true);
     }
 
-    // Boulders walling in the gate.
-    for (const side of [-1, 1]) {
+    // Boulders walling in the gate (the last biome has none).
+    for (const side of gate.unused ? [] : [-1, 1]) {
       for (let i = 0; i < 4; i++) {
         addRock(gate.x + side * (6.5 + i * 3.4), gate.z - 0.5 + i * 0.9, 2.6, 3.2 + this.rand() * 1.5, 2.4, true);
       }
@@ -898,6 +961,7 @@ export class BiomeWorld {
 }
 
 const STILL = { x: 0, z: 0 };
+
 /** Metres of river (or of falling water) that one copy of the streak texture covers. */
 const FLOW_TILE = 10;
 
@@ -912,6 +976,28 @@ interface TreeLook {
   /** Trunk radius and height of the top of the trunk, at size 1. */
   size: { radius: number; top: number };
   secondSize: { radius: number; top: number };
+}
+
+/** Winter: firs heavy with snow, and dark pines (which carry the cones). */
+function winterTrees(): TreeLook {
+  return {
+    // A fir under snow: rounded, drooping tiers.
+    crown: flatShade(mergeGeometries([
+      new THREE.ConeGeometry(1.8, 2.4, 7).translate(0, 2.6, 0),
+      new THREE.ConeGeometry(1.4, 2.2, 7).translate(0, 4.0, 0),
+      new THREE.ConeGeometry(0.95, 2.0, 7).translate(0, 5.3, 0),
+      new THREE.ConeGeometry(0.5, 1.4, 7).translate(0, 6.4, 0),
+    ])),
+    second: flatShade(mergeGeometries([
+      new THREE.ConeGeometry(1.7, 2.8, 8).translate(0, 3.4, 0),
+      new THREE.ConeGeometry(1.3, 2.5, 8).translate(0, 5.0, 0),
+      new THREE.ConeGeometry(0.85, 2.2, 8).translate(0, 6.5, 0),
+    ])),
+    trunk: new THREE.CylinderGeometry(0.18, 0.32, 3.4, 7).translate(0, 1.5, 0),
+    secondColor: 0x2c5446,
+    size: { radius: 0.36, top: 3.2 },
+    secondSize: { radius: 0.36, top: 3.2 },
+  };
 }
 
 /** The Forest: round-crowned broadleaf trees and pines on short trunks. */

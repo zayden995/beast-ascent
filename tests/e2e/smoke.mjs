@@ -864,6 +864,11 @@ try {
   await settle();
   check('lion HUD shows "No modifier here"', /No modifier here/.test(await page.locator('.hud-biome').innerText()));
   const lionSpot = await pickTree('fruit');
+  // A leafy plant that happens to grow beside the tree would be the nearest food (a flake of the kind fixed for the berry bush).
+  await page.evaluate(([px, pz]) => {
+    const food = window.__beast.app.game.food;
+    for (const item of [...food.items]) if (item.kind === 'plant' && Math.hypot(item.pos.x - px, item.pos.z - pz) < 8) food.consume(item);
+  }, [lionSpot.x + 2.6, lionSpot.z]);
   await B.teleport(lionSpot.x + 2.6, lionSpot.z);
   await B.advance(0.1);
   const lionPrompt = (await B.state()).prompt?.text ?? '';
@@ -1268,6 +1273,11 @@ try {
   check('some trees bear fruit and some pines bear nuts', nFruit >= 15 && nNuts >= 15, `${nFruit} fruit trees, ${nNuts} nut trees`);
   const treeFeast = async (kind, word, growth) => {
     const tree = await pickTree(kind);
+    // A wild leafy plant beside the tree would be the nearest food (the same flake as for the lion's tree): clear any first.
+    await page.evaluate(([px, pz]) => {
+      const food = window.__beast.app.game.food;
+      for (const item of [...food.items]) if (item.kind === 'plant' && item.reserve === undefined && Math.hypot(item.pos.x - px, item.pos.z - pz) < 8) food.consume(item);
+    }, [tree.x + 2.6, tree.z]);
     await B.teleport(tree.x + 2.6, tree.z);
     await B.advance(0.1);
     s = await B.state();
@@ -1304,6 +1314,11 @@ try {
   const produce = s.food.filter((f) => f.reserve !== undefined);
   check('each reserve holds six different fruits and vegetables', [0, 1].every((r) => produce.filter((f) => f.reserve === r).length === 6) && new Set(produce.map((f) => f.label)).size === 6, [...new Set(produce.map((f) => f.label))].join(', '));
   const firstProduce = produce.find((f) => f.reserve === 0);
+  // A wild leafy plant beside the reserve would be the nearest food (the same flake as at the berry bush): clear any first.
+  await page.evaluate(([px, pz]) => {
+    const food = window.__beast.app.game.food;
+    for (const item of [...food.items]) if (item.kind === 'plant' && item.reserve === undefined && Math.hypot(item.pos.x - px, item.pos.z - pz) < 8) food.consume(item);
+  }, [firstProduce.x + 1.6, firstProduce.z]);
   await B.teleport(firstProduce.x + 1.6, firstProduce.z);
   await B.call('setHp', s.player.maxHp);
   await B.advance(2);
@@ -1871,7 +1886,7 @@ try {
     (await page.getByRole('button', { name: 'Forest', exact: true }).getAttribute('aria-pressed')) === 'true'
     && (await page.getByRole('button', { name: 'Jungle', exact: true }).getAttribute('aria-pressed')) === 'false'
     && (await page.getByRole('button', { name: 'Plains', exact: true }).getAttribute('aria-pressed')) === 'false'
-    && (await page.getByRole('button', { name: 'Winter', exact: true }).count()) === 0);
+    && (await page.getByRole('button', { name: 'Winter', exact: true }).getAttribute('aria-pressed')) === 'false');
   await page.getByRole('button', { name: 'Jungle', exact: true }).click();
   await page.locator('.admin-card').waitFor();
   await B.advance(0.2);
@@ -2523,12 +2538,476 @@ try {
   await B.teleport(PL.layout.gate.x, PL.layout.gate.z + 4, Math.PI);
   await B.advance(0.2);
   s = await B.state();
-  check('plains: the open gate offers Winter', s.prompt?.key === 'E' && /Enter the Winter/.test(s.prompt.text), s.prompt?.text);
+  check('plains: the open gate offers Winter', s.prompt?.key === 'E' && /Enter Winter/.test(s.prompt.text), s.prompt?.text);
   await tap('KeyE');
   await B.advance(0.2);
   await page.waitForTimeout(100);
   s = await B.state();
-  check('plains: Winter is not built yet: the gate says so and the animal stays in the Plains', s.biome === 'plains' && /The way to the Winter is not open yet/.test(await page.locator('.hud-toasts').innerText()));
+
+  // ---------- Winter (Milestone 3, 2026-11-20): through the Plains' gate ----------
+  check('plains: the open gate leads to Winter, and the banner names it', s.biome === 'winter' && /Winter/.test(await page.locator('.hud').innerText()), s.biome);
+  const WL = await page.evaluate(() => window.__beast.app.world.layout);
+  check('winter: the animal arrives just inside the gate back to the Plains, at the south edge',
+    Math.hypot(s.player.x - WL.returnGate.x, s.player.z - (WL.returnGate.z - 10)) < 2, `${s.player.x.toFixed(1)}, ${s.player.z.toFixed(1)}`);
+  await B.call('setTimeOfDay', 0.42);
+  await shot('29-winter-arrival');
+  check('winter: snow is falling', await page.evaluate(() => { const w = window.__beast.app.world; return !!w.snowfall && w.snowfall.points.parent === w.group; }));
+  check('winter: the last biome has no gate onward', await page.evaluate(() => {
+    const w = window.__beast.app.world;
+    return w.layout.gate.unused === true && w.gateAt(w.layout.gate.x, w.layout.gate.z + 3) === null;
+  }));
+  {
+    const M = WL.mountain;
+    const trail = (along) => {
+      const span = M.laps * 2 * Math.PI;
+      const phi = along * span;
+      const r = M.footRadius - (M.footRadius - (M.topRadius + M.trailWidth / 2)) * phi / span;
+      const a = (M.startDeg * Math.PI) / 180 + phi;
+      return { x: M.x + Math.cos(a) * r, z: M.z + Math.sin(a) * r };
+    };
+    const base = await page.evaluate(([x, z]) => window.__beast.app.world.heightAt(x, z), [trail(0).x, trail(0).z]);
+    const mammoth = (await B.state()).enemies.find((e) => e.boss);
+    check('winter: the Woolly Mammoth waits on the peak of the mountain, level 40',
+      !!mammoth && mammoth.kind === 'woolly_mammoth' && mammoth.level === 40 && Math.hypot(mammoth.x - M.x, mammoth.z - M.z) < WL.arena.radius,
+      mammoth ? `${mammoth.kind} level ${mammoth.level} at ${mammoth.x.toFixed(0)}, ${mammoth.z.toFixed(0)}` : 'no boss');
+
+    // The frozen lake: an animal walks on the ice; it does not swim in it. The checks use the lake's western circle, far from the
+    // polar bears' homes, with every animal calmed.
+    const lake = WL.waters.find((w) => w.frozen && w.surfaceY === undefined && w.x < -80);
+    await calmAll();
+    await B.teleport(lake.x, lake.z, 0);
+    await B.advance(1);
+    s = await B.state();
+    check('winter: an animal on the frozen lake stands on the ice and does not swim', !s.player.swimming && !s.player.wet && Math.abs(s.player.y - (WL.waterY + 0.15)) < 0.2,
+      `y ${s.player.y.toFixed(2)}, swimming ${s.player.swimming}`);
+    await shot('29b-winter-lake');
+
+    // ----- 4b: the ice wears, cracks, breaks and freezes over -----
+    const iceAt = (x, z) => page.evaluate(([a, b]) => {
+      const w = window.__beast.app.world;
+      return { state: w.ice.state(a, b), wear: w.ice.wearAt(a, b), holes: w.ice.holes() };
+    }, [x, z]);
+    const maxWear = () => page.evaluate(() => Math.max(...window.__beast.app.world.ice.wear));
+    // Walk straight across the lake, starting on the shore (an animal still getting up to speed counts as slow). The wear left by
+    // standing on the lake in the check before is cleared first.
+    await page.evaluate(() => window.__beast.app.world.ice.wear.fill(0));
+    await B.teleport(lake.x - lake.radius - 4, lake.z, Math.PI / 2);
+    await B.lookAt(lake.x + 20, lake.z);
+    await page.keyboard.down('KeyW');
+    await B.advance(5);
+    await page.keyboard.up('KeyW');
+    const pathWear = () => page.evaluate(([x0, x1, z]) => {
+      const ice = window.__beast.app.world.ice;
+      let worst = 0;
+      for (let x = x0; x <= x1; x += 1) worst = Math.max(worst, ice.wearAt(x, z), ice.wearAt(x, z - 1), ice.wearAt(x, z + 1));
+      return worst;
+    }, [lake.x - lake.radius, lake.x + lake.radius, lake.z]);
+    check('winter: walking across the ice leaves no wear at all', (await pathWear()) === 0, `wear ${(await pathWear()).toFixed(3)} on the path`);
+    // Stand still on it.
+    await B.teleport(lake.x, lake.z, 0);
+    const radius = await page.evaluate(() => window.__beast.app.game.player.actor.radius);
+    const weight = Math.min(3, Math.max(0.15, (radius / 0.45) ** 2));
+    const breakAfter = 5 / weight;
+    await B.advance(breakAfter * 0.75);
+    let here = await iceAt(lake.x, lake.z);
+    s = await B.state();
+    check('winter: standing still on the ice cracks it first', here.state === 'cracked' && !s.player.swimming, `${here.state}, wear ${here.wear.toFixed(2)} after ${(breakAfter * 0.75).toFixed(1)} s (weight ${weight.toFixed(2)})`);
+    await shot('29e-winter-cracks');
+    await B.advance(breakAfter * 0.3 + 0.3);
+    here = await iceAt(lake.x, lake.z);
+    s = await B.state();
+    check('winter: then it breaks, and the animal falls into the water', here.state === 'hole' && s.player.swimming, `${here.state}, swimming ${s.player.swimming}`);
+    await shot('29f-winter-hole');
+    const hp0 = await page.evaluate(() => window.__beast.app.game.player.actor.hp);
+    const maxHp = await page.evaluate(() => window.__beast.app.game.player.actor.stats.maxHealth);
+    await B.advance(3);
+    const hp1 = await page.evaluate(() => window.__beast.app.game.player.actor.hp);
+    const lost = (hp0 - hp1) / maxHp;
+    check('winter: the freezing water takes about 2% of the animal\'s health a second', lost > 0.04 && lost < 0.08, `${(lost * 100).toFixed(1)}% in 3 s`);
+    // Swim out to the edge of the hole and climb onto the ice.
+    const foot = await page.evaluate(([a, b]) => window.__beast.app.world.iceFooting(a, b), [lake.x, lake.z]);
+    await B.lookAt(foot.x, foot.z);
+    await page.keyboard.down('KeyW');
+    await B.advance(2.5);
+    await page.keyboard.up('KeyW');
+    s = await B.state();
+    check('winter: an animal swims to the edge of the hole and climbs out onto the ice', !s.player.swimming && s.player.y > WL.waterY, `swimming ${s.player.swimming}, y ${s.player.y.toFixed(2)}`);
+    // ----- 4e: a leopard seal comes for an animal that stays in the freezing water -----
+    const seals = async () => (await B.state()).enemies.filter((e) => e.kind === 'leopard_seal' && e.alive);
+    await B.teleport(lake.x, lake.z, 0);
+    await B.advance(0.3);
+    check('winter: no leopard seal comes in the first seconds in the water', (await seals()).length === 0 && (await B.state()).player.swimming);
+    await page.evaluate(() => { const a = window.__beast.app.game.player.actor; a.hp = a.stats.maxHealth; });
+    await B.advance(8.5);
+    let sealsUp = await seals();
+    check('winter: after 8 s in the freezing water a leopard seal rises in the same hole', sealsUp.length === 1 && sealsUp[0].dist < 5 && /leopard seal/i.test(await page.locator('.hud-toasts').innerText()),
+      `${sealsUp.length} seals${sealsUp[0] ? `, ${sealsUp[0].dist.toFixed(1)} m away` : ''}`);
+    await shot('29k-winter-seal');
+    const sealHp0 = (await B.state()).player.hp;
+    await B.advance(3);
+    const sealLost = (sealHp0 - (await B.state()).player.hp) / (await B.state()).player.maxHp;
+    check('winter: the seal bites the animal in the water (more than the cold alone)', sealLost > 0.09, `${(sealLost * 100).toFixed(1)}% in 3 s`);
+    // Climb out: the seal cannot follow, and sinks away.
+    const out = await page.evaluate(([a, b]) => window.__beast.app.world.iceFooting(a, b), [lake.x, lake.z]);
+    await B.lookAt(out.x, out.z);
+    await page.keyboard.down('KeyW');
+    await B.advance(2.5);
+    await page.keyboard.up('KeyW');
+    // (Off the lake altogether, on its shore, so that the check does not depend on how far the swim got.)
+    await B.teleport(lake.x + lake.radius + 3, lake.z, 0);
+    const sealDist = (await seals())[0]?.dist ?? 0;
+    await B.advance(5);
+    check('winter: once the animal climbs out the seal cannot follow it, and sinks away', !(await B.state()).player.swimming && (await seals()).length === 0, `${(await seals()).length} seals left, the last ${sealDist.toFixed(1)} m away`);
+    // Back in: a seal comes again, and killing one pays XP. (Healed first, so that the test's animal cannot die here.)
+    await page.evaluate(() => { const a = window.__beast.app.game.player.actor; a.hp = a.stats.maxHealth; });
+    await B.teleport(lake.x, lake.z, 0);
+    await B.advance(8.6);
+    sealsUp = await seals();
+    await watchXp();
+    if (sealsUp[0]) {
+      await page.evaluate((id) => {
+        const g = window.__beast.app.game;
+        g.combat.damage(g.player.actor, g.spawner.enemies.find((e) => e.id === id), { damage: 1e6, knockback: 0 });
+      }, sealsUp[0].id);
+    }
+    await B.advance(0.3);
+    const sealXp = await page.evaluate(() => window.__xp);
+    check('winter: a leopard seal can be killed, and pays XP', sealsUp.length === 1 && sealXp.length === 1 && sealXp[0] > 0, sealXp.join());
+    await page.evaluate(() => { const a = window.__beast.app.game.player.actor; a.hp = a.stats.maxHealth; });
+
+    // Go away, off the ice (standing on it would break it again); after a minute the hole freezes over.
+    await B.teleport(WL.playerSpawn.x, WL.playerSpawn.z, 0);
+    await B.advance(62);
+    here = await iceAt(lake.x, lake.z);
+    const nearHole = await page.evaluate(([x, z]) => window.__beast.app.game.actors.filter((a) => Math.hypot(a.pos.x - x, a.pos.z - z) < 10)
+      .map((a) => `${a.def?.id ?? 'player/pet'} ${Math.hypot(a.pos.x - x, a.pos.z - z).toFixed(1)} m${a.swimming ? ' swimming' : ''}`), [lake.x, lake.z]);
+    check('winter: a hole left empty freezes over after about a minute', here.state === 'ice', `${here.state}; near it: ${nearHole.join(', ') || 'nobody'}`);
+    // Dying in the freezing water: the animal wakes at Winter's den. Its level and wound are put back afterwards, so that the checks
+    // after this one meet the same animal as before (a second death would cost it a life stage).
+    const progressBefore = await page.evaluate(() => JSON.stringify(window.__beast.app.game.growth.progress));
+    await B.teleport(lake.x, lake.z, 0);
+    await B.advance(breakAfter + 0.5);
+    await page.evaluate(() => {
+      const g = window.__beast.app.game;
+      g.combat.damage(g.spawner.enemies.find((e) => e.alive), g.player.actor, { damage: 1e7, knockback: 0 });
+    });
+    await B.advance(5);
+    s = await B.state();
+    check('winter: an animal that dies in the freezing water wakes at Winter\'s den', s.biome === 'winter' && s.player.alive && Math.hypot(s.player.x - WL.playerSpawn.x, s.player.z - WL.playerSpawn.z) < 1,
+      `${s.biome} at ${s.player.x.toFixed(1)}, ${s.player.z.toFixed(1)}`);
+    await page.evaluate((json) => {
+      const g = window.__beast.app.game;
+      g.growth.adminEdit((p) => Object.assign(p, JSON.parse(json)));
+      g.player.actor.hp = g.player.actor.stats.maxHealth;
+    }, progressBefore);
+
+    // Walk the trail with real keys, from the foot to the peak.
+    await B.teleport(trail(0).x - 6, trail(0).z, Math.PI / 2);
+    await page.keyboard.down('KeyW');
+    let along = 0;
+    let top = -Infinity;
+    for (let i = 0; i < 900 && along < 1; i++) {
+      const p = await page.evaluate(() => window.__beast.app.game.player.actor.pos);
+      // Steer at a point a little further along the trail than the nearest one.
+      let best = along;
+      let bestD = Infinity;
+      for (let k = Math.max(0, along - 0.02); k <= Math.min(1, along + 0.05); k += 0.002) {
+        const t = trail(k);
+        const d = Math.hypot(t.x - p.x, t.z - p.z);
+        if (d < bestD) { bestD = d; best = k; }
+      }
+      along = Math.max(along, best);
+      const aim = trail(Math.min(1, along + 0.012));
+      await B.lookAt(aim.x, aim.z);
+      await B.advance(0.25);
+      top = Math.max(top, p.y);
+      // The last few metres are a flat landing level with the peak: from there, walk straight in.
+      if (along > 0.97) break;
+    }
+    await page.keyboard.up('KeyW');
+    await B.lookAt(M.x, M.z);
+    await page.keyboard.down('KeyW');
+    await B.advance(1.5);
+    await page.keyboard.up('KeyW');
+    s = await B.state();
+    check('winter: an animal walks the trail from the foot all the way up to the peak, with real keys',
+      Math.hypot(s.player.x - M.x, s.player.z - M.z) < M.topRadius && s.player.y > base + M.top - 2,
+      `along ${along.toFixed(3)}, at ${s.player.x.toFixed(1)}, ${s.player.z.toFixed(1)}, height ${(s.player.y - base).toFixed(1)} of ${M.top}`);
+    await shot('29c-winter-peak');
+
+    // A cliff between two laps cannot be climbed: on the first lap's shelf (east side), walk straight in toward the peak.
+    const shelf = trail(0.25);
+    await B.teleport(shelf.x, shelf.z, 0);
+    await B.lookAt(M.x, M.z);
+    const startY = (await B.state()).player.y;
+    await page.keyboard.down('KeyW');
+    await B.advance(5);
+    await page.keyboard.up('KeyW');
+    s = await B.state();
+    check('winter: the cliff up to the next lap cannot be climbed', s.player.y < startY + 3, `from ${startY.toFixed(1)} to ${s.player.y.toFixed(1)}`);
+    await B.teleport(shelf.x, shelf.z, 0);
+    await B.lookAt(M.x, M.z);
+    await shot('29d-winter-cliff');
+
+    // ----- 4c: Winter's animals and the Woolly Mammoth -----
+    await B.call('setTimeOfDay', 0.42);
+    s = await B.state();
+    const winterKinds = new Set(s.enemies.map((e) => e.kind));
+    check('winter: its own animals, rivals and boss, and none from the other biomes',
+      ['arctic_hare', 'arctic_fox', 'arctic_wolf', 'polar_bear', 'mountain_goat', 'snow_leopard', 'woolly_mammoth'].every((k) => winterKinds.has(k))
+      && !['deer', 'boar', 'capybara', 'antelope', 'hyena', 'buffalo'].some((k) => winterKinds.has(k)), [...winterKinds].join(', '));
+    check('winter: every wild animal is level 24 or higher, and the mountain\'s 28 or higher',
+      s.enemies.filter((e) => !e.boss).every((e) => e.level >= 24) && s.enemies.filter((e) => e.kind === 'mountain_goat' || e.kind === 'snow_leopard').every((e) => e.level >= 28),
+      s.enemies.filter((e) => !e.boss).map((e) => `${e.kind} ${e.level}`).join(', '));
+
+    // A snow leopard lies calm on its ledge until an animal comes within 10 m.
+    await calmAll();
+    const leopard = s.enemies.find((e) => e.kind === 'snow_leopard' && e.alive);
+    // Put it back on its ledge (an earlier check may have stirred it), lying calm.
+    await page.evaluate((id) => {
+      const g = window.__beast.app.game;
+      const e = g.spawner.enemies.find((a) => a.id === id);
+      e.pos.set(e.homeX, g.world.heightAt(e.homeX, e.homeZ), e.homeZ);
+      e.vx = e.vz = 0;
+      e.state = 'idle';
+      e.calm = true;
+    }, leopard.id);
+    await B.teleport(leopard.homeX, leopard.homeZ + 14, Math.PI);
+    await B.advance(0.5);
+    let cat = (await B.state()).enemies.find((e) => e.id === leopard.id);
+    check('winter: a snow leopard 14 m away stays calm on its ledge', cat.calm, cat.state);
+    await page.evaluate(() => window.__beast.setRender(true));
+    await B.lookAt(leopard.homeX, leopard.homeZ);
+    await shot('29g-winter-leopard');
+    await B.teleport(leopard.homeX, leopard.homeZ + 9, Math.PI);
+    await B.advance(0.5);
+    cat = (await B.state()).enemies.find((e) => e.id === leopard.id);
+    check('winter: within 10 m it springs at the animal', !cat.calm && ['chase', 'windup', 'charging', 'recover'].includes(cat.state), `${cat.calm ? 'calm' : 'awake'}, ${cat.state}`);
+    await B.teleport(WL.playerSpawn.x, WL.playerSpawn.z);
+    await calmAll();
+    await B.advance(2);
+
+    // A polar bear standing still on the ice breaks it (held still by a long stun).
+    const bear = (await B.state()).enemies.find((e) => e.kind === 'polar_bear' && e.alive);
+    const bearSpot = WL.waters.find((w) => w.frozen && w.surfaceY === undefined);
+    await page.evaluate(([id, x, z]) => {
+      const g = window.__beast.app.game;
+      const e = g.spawner.enemies.find((a) => a.id === id);
+      e.pos.set(x, g.world.heightAt(x, z), z);
+      e.vx = e.vz = 0;
+      e.stun = 6;
+    }, [bear.id, bearSpot.x + 6, bearSpot.z]);
+    const bearRadius = await page.evaluate((id) => window.__beast.app.game.spawner.enemies.find((a) => a.id === id).radius, bear.id);
+    await B.advance(4);
+    const underBear = await iceAt(bearSpot.x + 6, bearSpot.z);
+    check('winter: a polar bear (heavy) that stands still on the ice breaks it within about 4 s', underBear.state === 'hole', `${underBear.state}, radius ${bearRadius.toFixed(2)}`);
+
+    // Each animal's Winter buff or nerf (bible section 4.4).
+    let wm = await modsAs('Polar Bear', WL.playerSpawn.x, WL.playerSpawn.z);
+    check('winter: the Polar Bear is at home here (+25% max health)', wm.biome === 'winter' && wm.mods === 'maxHealth:0.25', wm.mods);
+    wm = await modsAs('Bald Eagle', WL.playerSpawn.x, WL.playerSpawn.z);
+    check('winter: the Eagle is quicker here (+20% speed)', wm.mods === 'speed:0.2', wm.mods);
+
+    // ----- 4d: the snowy owl -----
+    const owlInfo = () => page.evaluate(() => {
+      const g = window.__beast.app.game;
+      return g.spawner.enemies.filter((e) => e.def.id === 'snowy_owl').map((e) => ({
+        id: e.id, x: e.pos.x, y: e.pos.y, z: e.pos.z, ground: g.world.heightAt(e.pos.x, e.pos.z), state: e.state, alive: e.alive, homeX: e.homeX, homeZ: e.homeZ,
+      }));
+    });
+    await calmAll();
+    await page.evaluate(() => { for (const e of window.__beast.app.game.spawner.enemies) if (e.def.id === 'snowy_owl') e.calm = false; });
+    // Far-away animals sleep, so each owl is visited in turn.
+    let owls = await owlInfo();
+    const perched = [];
+    for (const o of owls) {
+      await B.teleport(o.homeX + 12, o.homeZ, 0);
+      await B.advance(3);
+      const now = (await owlInfo()).find((x) => x.id === o.id);
+      perched.push(now.y - now.ground);
+    }
+    owls = await owlInfo();
+    check('winter: snowy owls sit up in the pines', owls.length >= 3 && perched.every((h) => h > 3), perched.map((h) => h.toFixed(1)).join(', '));
+    // An Eagle flying near an owl's tree is chased and struck.
+    const o1 = owls[0];
+    await B.teleport(o1.homeX + 14, o1.homeZ, 0);
+    await B.lookAt(o1.homeX, o1.homeZ);
+    const eagleHp0 = (await B.state()).player.hp;
+    let chased = false;
+    for (let i = 0; i < 28; i++) {
+      await tap('Space', i < 6 ? 0.25 : 0.12);
+      await B.advance(0.15);
+      const o = (await owlInfo()).find((x) => x.id === o1.id);
+      if (o.state === 'chase' || o.state === 'charging' || o.state === 'recover') chased = true;
+    }
+    s = await B.state();
+    check('winter: an Eagle flying near a snowy owl\'s pine is chased and struck', chased && s.player.flying && s.player.hp < eagleHp0, `chased ${chased}, flying ${s.player.flying}, hp ${eagleHp0} to ${s.player.hp}`);
+    await shot('29j-winter-owl');
+    // The Eagle out-flies it: sprinting away in the air, it leaves the owl behind, and the owl goes home.
+    await B.lookAt(o1.homeX + 200, o1.homeZ);
+    await page.keyboard.down('KeyW');
+    await page.keyboard.down('ShiftLeft');
+    for (let i = 0; i < 24; i++) {
+      await tap('Space', 0.1);
+      await B.advance(0.15);
+    }
+    await page.keyboard.up('ShiftLeft');
+    await page.keyboard.up('KeyW');
+    s = await B.state();
+    const o1now = (await owlInfo()).find((x) => x.id === o1.id);
+    check('winter: the Eagle out-flies the owl, which gives up and goes home', Math.hypot(s.player.x - o1now.x, s.player.z - o1now.z) > 25 && ['return', 'idle'].includes(o1now.state),
+      `${Math.hypot(s.player.x - o1now.x, s.player.z - o1now.z).toFixed(1)} m apart, owl ${o1now.state}`);
+    wm = await modsAs('Savanna Lion', WL.playerSpawn.x, WL.playerSpawn.z);
+    check('winter: the Lion is slowed here (-20% speed)', wm.mods === 'speed:-0.2', wm.mods);
+    wm = await modsAs('Bush Elephant', WL.playerSpawn.x, WL.playerSpawn.z);
+    check('winter: the Elephant is slowed here (-20% speed)', wm.mods === 'speed:-0.2', wm.mods);
+    wm = await modsAs('Crocodile', WL.playerSpawn.x, WL.playerSpawn.z);
+    check('winter: the Crocodile is slowed here (-30% speed)', wm.mods === 'speed:-0.3', wm.mods);
+    wm = await modsAs('Grey Wolf', WL.playerSpawn.x, WL.playerSpawn.z);
+    check('winter: the Wolf has no modifier here', wm.mods === '', wm.mods);
+    await page.keyboard.press('KeyJ');
+    await page.locator('.admin-card').waitFor();
+    await page.getByRole('button', { name: 'Max all' }).click();
+    await page.keyboard.press('Escape');
+    await page.locator('.admin-card').waitFor({ state: 'detached' });
+    await B.advance(0.2);
+
+    // A wolf walking under an owl's pine is pecked once, and the owl goes back to its tree.
+    owls = await owlInfo();
+    const o2 = owls[1];
+    await B.teleport(o2.homeX + 5, o2.homeZ, 0);
+    const wolfHp0 = (await B.state()).player.hp;
+    let pecked = false;
+    for (let i = 0; i < 40 && !pecked; i++) {
+      await B.advance(0.25);
+      pecked = (await B.state()).player.hp < wolfHp0;
+    }
+    await B.advance(3);
+    const o2now = (await owlInfo()).find((x) => x.id === o2.id);
+    s = await B.state();
+    check('winter: an animal under a snowy owl\'s pine is pecked, lightly, and the owl flies back to its tree', pecked && wolfHp0 - s.player.hp < s.player.maxHp * 0.1 && ['return', 'idle'].includes(o2now.state),
+      `pecked ${pecked}, lost ${(wolfHp0 - s.player.hp).toFixed(0)}, owl ${o2now.state}`);
+    // An owl killed in the air falls to the ground.
+    await page.evaluate((id) => {
+      const g = window.__beast.app.game;
+      const e = g.spawner.enemies.find((a) => a.id === id);
+      g.combat.damage(g.player.actor, e, { damage: 1e6, knockback: 0 });
+    }, o2.id);
+    await B.advance(0.2);
+    const fallen = (await owlInfo()).find((x) => x.id === o2.id);
+    check('winter: a snowy owl killed in the air falls to the ground', !fallen || (!fallen.alive && fallen.y - fallen.ground < 0.5), fallen ? `${(fallen.y - fallen.ground).toFixed(2)} m up` : 'removed');
+    await B.teleport(WL.playerSpawn.x, WL.playerSpawn.z);
+    await calmAll();
+
+    // A hunt: an arctic hare flees, and an Alpha Wolf runs it down.
+    const hareHunt = await hunt('arctic_hare', 150);
+    check('winter: an arctic hare flees, and an Alpha Wolf can run it down', hareHunt.killed && hareHunt.fled, `${hareHunt.seconds}s`);
+    await calmAll();
+
+    // The Woolly Mammoth on the peak: its shockwave cracks the frozen pool, and a maxed Alpha Wolf can beat it.
+    s = await B.state();
+    const mam = s.enemies.find((e) => e.boss);
+    await page.evaluate(() => window.__beast.app.world.ice.wear.fill(0));
+    await B.teleport(M.x + 11, M.z, Math.PI / 2);
+    await B.advance(0.1);
+    await page.evaluate(() => {
+      // Make it stamp at once: its other attacks wait, and the shockwave is ready.
+      const e = window.__beast.app.game.spawner.enemies.find((a) => a.isBoss);
+      e.calm = false;
+      for (const atk of e.def.attacks) e.cooldowns[atk.id] = atk.kind === 'wave' ? 0 : 30;
+    });
+    let poolWorn = 0;
+    for (let i = 0; i < 24 && poolWorn === 0; i++) {
+      await B.advance(0.25);
+      poolWorn = await page.evaluate(([x, z]) => {
+        const ice = window.__beast.app.world.ice;
+        let worn = 0;
+        for (let dx = -8; dx <= 8; dx += 2) for (let dz = -8; dz <= 8; dz += 2) if (Math.hypot(dx, dz) < 8 && ice.wearAt(x + dx, z + dz) > 0) worn++;
+        return worn;
+      }, [M.x, M.z]);
+    }
+    // Let the ring cross the whole pool, then count again.
+    await B.advance(2);
+    poolWorn = await page.evaluate(([x, z]) => {
+      const ice = window.__beast.app.world.ice;
+      let worn = 0;
+      for (let dx = -8; dx <= 8; dx += 2) for (let dz = -8; dz <= 8; dz += 2) if (Math.hypot(dx, dz) < 8 && ice.wearAt(x + dx, z + dz) > 0) worn++;
+      return worn;
+    }, [M.x, M.z]);
+    check('winter: the Woolly Mammoth stamps, and its shockwave cracks the ice of the pool on the peak', poolWorn > 12, `${poolWorn} squares worn`);
+    await shot('29h-winter-mammoth');
+    await B.teleport(mam.x, mam.z + 6);
+    await watchXp();
+    const mammothFight = await fight('boss', { maxSeconds: 480, keepAlive: true });
+    s = await B.state();
+    check('winter: the Woolly Mammoth can be defeated', mammothFight.killed && mammothFight.hurt, `${mammothFight.seconds}s, states ${[...mammothFight.states].join(', ')}`);
+    const winterXp = await page.evaluate(() => window.__xp);
+    check('winter: the first win pays 1500 XP', winterXp.includes(1500), winterXp.join());
+    check('"Winter Ruled": Winter is ruled, and the banner says every biome is yours',
+      s.ruled.includes('winter') && /Winter Ruled/.test(await page.locator('.hud').innerText()) && /Every biome is yours/.test(await page.locator('.hud').innerText()),
+      `ruled ${s.ruled.join()}`);
+    await shot('29i-winter-ruled');
+
+    // ----- 4f: the pet in Winter -----
+    await calmAll();
+    const petNow = () => page.evaluate(() => {
+      const p = window.__beast.app.game.pet;
+      return p && { x: p.pos.x, z: p.pos.z, hp: p.hp, max: p.stats.maxHealth, swimming: p.swimming, injured: p.untargetable };
+    });
+    const putPet = (x, z) => page.evaluate(([a, b]) => {
+      const g = window.__beast.app.game;
+      g.pet.pos.set(a, g.world.heightAt(a, b), b);
+      g.pet.vx = g.pet.vz = 0;
+    }, [x, z]);
+    await B.teleport(lake.x + lake.radius + 3, lake.z, 0);
+    await page.evaluate(() => window.__beast.app.game.setPet('liger'));
+    // A hole in the ice, and the pet held in it (a long stun), so that it stays in the freezing water.
+    await page.evaluate(([x, z]) => window.__beast.app.world.ice.addWear(x, z, 2.5, 1), [lake.x, lake.z]);
+    await putPet(lake.x, lake.z);
+    await page.evaluate(() => { window.__beast.app.game.pet.stun = 9.5; });
+    const petHp0 = (await petNow()).hp;
+    await B.advance(4);
+    let pn = await petNow();
+    check('pet in Winter: in a hole in the ice the pet swims and loses health to the cold', pn.swimming && pn.hp < petHp0, `swimming ${pn.swimming}, hp ${petHp0.toFixed(0)} to ${pn.hp.toFixed(0)}`);
+    await B.advance(5);
+    sealsUp = await seals();
+    check('pet in Winter: after 8 s in the water a leopard seal comes for the pet too', sealsUp.length === 1 && Math.hypot(sealsUp[0].x - pn.x, sealsUp[0].z - pn.z) < 5, `${sealsUp.length} seals`);
+    // Free to move, it swims out of the hole by itself. (The seal is stunned and the pet healed first, so that the seal's bites
+    // cannot injure it here: an injured pet lies still.)
+    await page.evaluate(() => {
+      const g = window.__beast.app.game;
+      for (const e of g.spawner.enemies) if (e.def.id === 'leopard_seal') e.stun = 12;
+      g.pet.stun = 0;
+      g.pet.hp = g.pet.stats.maxHealth;
+    });
+    await B.advance(4);
+    pn = await petNow();
+    check('pet in Winter: free to move, the pet swims out of the hole by itself', !pn.swimming, `swimming ${pn.swimming}`);
+    // (Animals do not steer round holes: following the player, the pet could swim through the hole again. It is put ashore first.)
+    await putPet(lake.x + lake.radius + 4, lake.z + 2);
+    await B.advance(6);
+    check('pet in Winter: and the seal sinks away', (await seals()).length === 0);
+    // An injured pet lying on the ice does not wear it.
+    await page.evaluate(() => window.__beast.app.game.setPet('liger', 'injured'));
+    await page.evaluate(() => window.__beast.app.world.ice.wear.fill(0));
+    await putPet(lake.x - 8, lake.z + 6);
+    await B.advance(10);
+    const petWear = await page.evaluate(([x, z]) => window.__beast.app.world.ice.wearAt(x, z), [lake.x - 8, lake.z + 6]);
+    check('pet in Winter: an injured pet lying on the ice does not wear it, so it can be tended there', petWear === 0 && (await petNow()).injured, `wear ${petWear}`);
+    await page.evaluate(() => window.__beast.app.game.setPet(null));
+    await B.teleport(WL.playerSpawn.x, WL.playerSpawn.z);
+  }
+
+  // Back to the Plains through the gate at the south edge.
+  await B.teleport(WL.returnGate.x, WL.returnGate.z - 4, 0);
+  await B.advance(0.2);
+  s = await B.state();
+  check('winter: the gate at the south edge offers the way back to the Plains', s.prompt?.key === 'E' && /Return to the Plains/.test(s.prompt.text), s.prompt?.text);
+  await tap('KeyE');
+  await B.advance(0.2);
+  await page.waitForTimeout(100);
+  s = await B.state();
+  check('winter: the way back leads to the Plains, at its gate onward', s.biome === 'plains' && Math.hypot(s.player.x - PL.layout.gate.x, s.player.z - (PL.layout.gate.z + 10)) < 2, s.biome);
 
   // Death in the Plains: the animal wakes at the Plains' den.
   await page.evaluate(() => {

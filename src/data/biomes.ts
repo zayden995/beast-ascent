@@ -2,6 +2,7 @@ import type { BiomeLayout } from '../core/layout.ts';
 import type { BiomeDef, BiomeId, SpawnZoneDef, TitleAnimalDef, TitleViewDef, WaterBody } from '../core/types.ts';
 import { JUNGLE_LAYOUT, JUNGLE_SPAWNS } from './jungle.ts';
 import { PLAINS_LAYOUT, PLAINS_SPAWNS } from './plains.ts';
+import { WINTER_LAYOUT, WINTER_SPAWNS } from './winter.ts';
 
 /** Order in which biomes unlock (bible section 4.5, tunable). */
 export const BIOME_ORDER: BiomeId[] = ['forest', 'jungle', 'plains', 'winter'];
@@ -38,17 +39,26 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
     },
     fogNear: 70, fogFar: 260,
   },
-  // TODO(M3): Winter is a palette stub only. No terrain, enemies or boss yet.
+  // Winter (Milestone 3): its map is `WINTER_LAYOUT` in winter.ts.
   winter: {
-    id: 'winter', name: 'Winter', order: 3, implemented: false, bossId: null,
+    id: 'winter', name: 'Winter', order: 3, implemented: true, bossId: 'woolly_mammoth',
     palette: {
-      ground: 0xeef4f8, groundAlt: 0xdde9f2, dirt: 0xa9b4bd, rock: 0x8c98a3,
-      foliage: 0x3f6f5f, foliageAlt: 0x4f8070, trunk: 0x5b4636, water: 0x9fd0e6,
+      ground: 0xeef4f8, groundAlt: 0xdde9f2, dirt: 0xc4ced6, rock: 0x7f8b97,
+      // Firs heavy with snow (the pines are their own darker green, in the world's tree look).
+      foliage: 0xdbe6eb, foliageAlt: 0xc6d6de, trunk: 0x5b4636, water: 0x9fd0e6,
       skyTop: 0x7fb2dc, skyHorizon: 0xeaf4fa, fog: 0xdcebf5, sun: 0xffffff,
+      shore: 0xdfe8ee, deepWater: 0x6f8fa0, grassTip: 0xe6eef2,
     },
-    fogNear: 35, fogFar: 160,
+    fogNear: 45, fogFar: 210,
   },
 };
+
+/** A biome's name as said in a sentence: "the Forest", "the Plains", but just "Winter". `capital` starts it with a capital. */
+export function biomeName(id: BiomeId, capital = false): string {
+  const name = BIOMES[id].name;
+  if (id === 'winter') return name;
+  return `${capital ? 'The' : 'the'} ${name}`;
+}
 
 export function nextBiome(id: BiomeId): BiomeId | null {
   const i = BIOME_ORDER.indexOf(id);
@@ -106,8 +116,10 @@ export const FOREST_LAYOUT: BiomeLayout = {
   nearWaterMargin: 8,
 };
 
-/** The map of every biome that is built. Winter has none yet. */
-export const BIOME_LAYOUTS: Partial<Record<BiomeId, BiomeLayout>> = { forest: FOREST_LAYOUT, jungle: JUNGLE_LAYOUT, plains: PLAINS_LAYOUT };
+/** The map of every biome. */
+export const BIOME_LAYOUTS: Partial<Record<BiomeId, BiomeLayout>> = {
+  forest: FOREST_LAYOUT, jungle: JUNGLE_LAYOUT, plains: PLAINS_LAYOUT, winter: WINTER_LAYOUT,
+};
 
 export function layoutOf(id: BiomeId): BiomeLayout {
   const layout = BIOME_LAYOUTS[id];
@@ -133,7 +145,9 @@ export const FOREST_SPAWNS: SpawnZoneDef[] = [
 ];
 
 /** The wild animals of every biome that is built. */
-export const BIOME_SPAWNS: Partial<Record<BiomeId, SpawnZoneDef[]>> = { forest: FOREST_SPAWNS, jungle: JUNGLE_SPAWNS, plains: PLAINS_SPAWNS };
+export const BIOME_SPAWNS: Partial<Record<BiomeId, SpawnZoneDef[]>> = {
+  forest: FOREST_SPAWNS, jungle: JUNGLE_SPAWNS, plains: PLAINS_SPAWNS, winter: WINTER_SPAWNS,
+};
 
 export function spawnsOf(id: BiomeId): SpawnZoneDef[] {
   return BIOME_SPAWNS[id] ?? [];

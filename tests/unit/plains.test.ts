@@ -23,15 +23,13 @@ const hill = L.hill!;
 
 const placeholder = (z: { enemyId: string }) => z.enemyId;
 
-test('plains: the Plains are built, with a map, animals and the Hyena Matriarch; Winter is not yet', () => {
+test('plains: the Plains are built, with a map, animals and the Hyena Matriarch, and lead on to Winter', () => {
   assert.ok(BIOMES.plains.implemented);
   assert.ok(BIOME_LAYOUTS.plains && BIOME_SPAWNS.plains);
   assert.equal(BIOMES.plains.bossId, 'hyena_matriarch');
   assert.equal(BOSSES.hyena_matriarch.biome, 'plains');
   assert.equal(layoutOf('plains'), PLAINS_LAYOUT);
   assert.equal(spawnsOf('plains'), PLAINS_SPAWNS);
-  assert.equal(BIOMES.winter.implemented, false);
-  assert.throws(() => layoutOf('winter'));
   assert.equal(nextBiome('jungle'), 'plains');
   assert.equal(nextBiome('plains'), 'winter');
   assert.equal(previousBiome('plains'), 'jungle');

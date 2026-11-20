@@ -2,6 +2,7 @@ import { fbm2, lerp, smoothstep } from '../core/math.ts';
 import type { BiomeLayout, HillDef } from '../core/layout.ts';
 import type { WaterBody } from '../core/types.ts';
 import { FOREST_LAYOUT } from '../data/biomes.ts';
+import { mountainHeight, trailPoint } from './mountain.ts';
 import { buildRiver, sampleRiver } from './river.ts';
 import type { River } from './river.ts';
 
@@ -54,7 +55,7 @@ export function hillWeight(hill: HillDef, x: number, z: number): number {
  * side) that can carry its own pond and stream; and steep slopes at the world edge.
  */
 export function createHeight(layout: BiomeLayout, rivers: River[] = buildRivers(layout)): HeightFn {
-  const { seed, den, arena, gate, returnGate, waters, waterY, worldRadius, terrain: T, hill } = layout;
+  const { seed, den, arena, gate, returnGate, waters, waterY, worldRadius, terrain: T, hill, mountain } = layout;
   const base: HeightFn = (x, z) =>
     T.base + fbm2(x * T.rollScale, z * T.rollScale, seed, T.rollOctaves) * T.rollHeight + fbm2(x * T.bumpScale, z * T.bumpScale, seed + 7, T.bumpOctaves) * T.bumpHeight;
 
@@ -63,8 +64,15 @@ export function createHeight(layout: BiomeLayout, rivers: River[] = buildRivers(
   const returnH = returnGate ? base(returnGate.x, returnGate.z) : 0;
   const caveFloors = (layout.caves ?? []).map((cave) => ({ cave, floor: base(cave.x, cave.z) }));
 
-  const lowWaters = waters.filter((w) => surfaceOf(w, waterY) === waterY);
-  const highWaters = waters.filter((w) => surfaceOf(w, waterY) !== waterY);
+  // The mountain stands on the land's own height where its trail starts, so the trail leaves the land without a step.
+  const start = mountain ? trailPoint(mountain, 0) : null;
+  const mountainBase = start ? base(start.x, start.z) : 0;
+
+  const frozen = waters.filter((w) => w.frozen && surfaceOf(w, waterY) === waterY);
+  const lowWaters = waters.filter((w) => !w.frozen && surfaceOf(w, waterY) === waterY);
+  const highWaters = waters.filter((w) => !w.frozen && surfaceOf(w, waterY) !== waterY);
+  // A frozen pool on raised ground (the pool on Winter's peak) is carved into the mountain once it is built.
+  const raisedFrozen = waters.filter((w) => w.frozen && surfaceOf(w, waterY) !== waterY);
   const lowRivers = rivers.filter((r) => !r.raised);
   const highRivers = rivers.filter((r) => r.raised);
 
@@ -80,6 +88,25 @@ export function createHeight(layout: BiomeLayout, rivers: River[] = buildRivers(
       }
     }
     return h;
+  };
+
+  /**
+   * A frozen lake is several overlapping circles that make one lake: the land eases down to the shore outside all of them, and
+   * inside, the bed is the deepest of the bowls the point lies in (so there is no ridge where two circles overlap).
+   */
+  const carveFrozen = (h: number, x: number, z: number): number => {
+    let bowl = Infinity;
+    let nearest = Infinity;
+    let shoreH = waterY + POND_SHORE;
+    for (const w of frozen) {
+      const dp = Math.hypot(x - w.x, z - w.z);
+      shoreH = surfaceOf(w, waterY) + POND_SHORE;
+      nearest = Math.min(nearest, dp - w.radius);
+      // The bed reaches its depth within about 8 m of the shore, so a hole in the ice anywhere but the very edge is deep water.
+      if (dp < w.radius) bowl = Math.min(bowl, shoreH - smoothstep(0, Math.min(0.75, 8 / w.radius), 1 - dp / w.radius) * (w.depth + POND_SHORE));
+    }
+    if (bowl < Infinity) return bowl;
+    return flatten(h, nearest, 0, 9, shoreH);
   };
 
   /** Each river is a channel: the ground eases down to the banks, then sinks to the river's depth in the middle. */
@@ -101,11 +128,12 @@ export function createHeight(layout: BiomeLayout, rivers: River[] = buildRivers(
     let h = base(x, z);
     h = flatten(h, Math.hypot(x - den.x, z - den.z), den.radius, 8, denH);
     h = flatten(h, Math.hypot(x - arena.x, z - arena.z), arena.radius + 2, 10, arenaH);
-    h = flatten(h, Math.hypot(x - gate.x, z - gate.z), gate.radius, 8, arenaH);
+    if (!gate.unused) h = flatten(h, Math.hypot(x - gate.x, z - gate.z), gate.radius, 8, arenaH);
     if (returnGate) h = flatten(h, Math.hypot(x - returnGate.x, z - returnGate.z), returnGate.radius, 8, returnH);
     // Each cave stands on level ground: the land's own height at its middle, flattened over the floor and the walls.
     for (const { cave, floor } of caveFloors) h = flatten(h, Math.hypot(x - cave.x, z - cave.z), cave.radius + 3.5, 7, floor);
 
+    if (frozen.length) h = carveFrozen(h, x, z);
     h = carvePonds(h, x, z, lowWaters);
     if (lowRivers.length) h = carveRivers(h, x, z, lowRivers, lowWaters);
 
@@ -119,6 +147,17 @@ export function createHeight(layout: BiomeLayout, rivers: River[] = buildRivers(
         if (highRivers.length) top = carveRivers(top, x, z, highRivers, highWaters);
         h = lerp(h, top, w);
       }
+    }
+
+    if (mountain) {
+      const m = mountainHeight(mountain, x, z);
+      if (m !== null) h = Math.max(h, mountainBase + m);
+    }
+    for (const w of raisedFrozen) {
+      const dp = Math.hypot(x - w.x, z - w.z);
+      if (dp >= w.radius) continue;
+      const shoreH = surfaceOf(w, waterY) + POND_SHORE;
+      h = Math.min(h, shoreH - smoothstep(0, Math.min(0.75, 8 / w.radius), 1 - dp / w.radius) * (w.depth + POND_SHORE));
     }
 
     const r = Math.hypot(x, z);

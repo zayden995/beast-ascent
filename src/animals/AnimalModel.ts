@@ -2,6 +2,7 @@ import type * as THREE from 'three';
 import type { BodyColors, BodyPlan, FeatureId, RigId } from '../core/types.ts';
 import { ProceduralBird } from './ProceduralBird.ts';
 import { ProceduralQuadruped } from './ProceduralQuadruped.ts';
+import { ProceduralSeal } from './ProceduralSeal.ts';
 import { ProceduralSnake } from './ProceduralSnake.ts';
 
 /** What gameplay tells a model each frame. Models never read game state directly. */
@@ -72,5 +73,6 @@ export function createAnimalModel(appearance: AnimalAppearance): AnimalModel {
   // TODO(M5): optional glTF models.
   if (appearance.rig === 'winged') return new ProceduralBird(appearance);
   if (appearance.rig === 'serpent') return new ProceduralSnake(appearance);
+  if (appearance.rig === 'seal') return new ProceduralSeal(appearance);
   return new ProceduralQuadruped(appearance);
 }
