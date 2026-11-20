@@ -1,6 +1,7 @@
 import type { AnimalModel } from '../animals/AnimalModel.ts';
 import { updateOwl } from './owl.ts';
 import { updateSeal } from './seal.ts';
+import type { SealMind } from '../logic/seal.ts';
 import { dampAngle, lerp } from '../core/math.ts';
 import type { EnemyAttackDef, EnemyDef, SpawnZoneDef } from '../core/types.ts';
 import { TUNING } from '../data/tuning.ts';
@@ -43,6 +44,8 @@ export class EnemyActor extends Actor {
   lastPlayerHitAt = -999;
   /** Called by a boss to fight for it: it gives no XP, leaves no carcass, never comes back, and goes when the fight ends. */
   summoned = false;
+  /** A leopard seal's state of mind (`systems/seal.ts`); null for every other animal. */
+  sealMind: SealMind | null = null;
   fleeTime = 0;
   chargeHit = false;
   chargeX = 0;

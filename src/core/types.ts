@@ -294,7 +294,8 @@ export interface FlierBehavior {
 export interface EnemyBehavior {
   /** A flier (the snowy owl): it has its own brain, and these numbers. */
   flier?: FlierBehavior;
-  /** Lives in a hole in Winter's ice (the leopard seal): it never leaves the hole's water, and bites only what swims in it. */
+  /** Lives in a hole in Winter's ice (the leopard seal): it bites what swims in its hole, and chases an animal on the ice near it for
+   * about 5 m before going back into the water (see `logic/seal.ts`). It feels no cold. */
   holeBound?: boolean;
   /** Distance at which the animal notices the player. */
   aggroRadius: number;

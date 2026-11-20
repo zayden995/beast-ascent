@@ -17,6 +17,7 @@ import { withinEatingHeight } from '../logic/flight.ts';
 import { foxesToProvoke } from '../logic/foxReserve.ts';
 import { lairWakes } from '../logic/lair.ts';
 import { newSummonState, stepSummon } from '../logic/summon.ts';
+import { newPoolSealState, stepPoolSeals } from '../logic/seal.ts';
 import { nightVisionFactor } from '../logic/vision.ts';
 import { enemyXp, growthNeeded } from '../logic/progression.ts';
 import { playerIsUnseen } from '../logic/stealth.ts';
@@ -38,6 +39,7 @@ import type { Input } from '../systems/input.ts';
 import { PlayerController } from '../systems/player.ts';
 import { writeSave } from '../systems/save.ts';
 import { Spawner } from '../systems/spawner.ts';
+import { isPoolSeal, makePoolSeal, sealInWater, sealMind } from '../systems/seal.ts';
 import { TreeFoodSystem } from '../systems/treeFood.ts';
 import { Hud } from '../ui/hud.ts';
 import { WorldLabels } from '../ui/worldLabels.ts';
@@ -110,6 +112,10 @@ export class Game {
   private lastCrackWarning = -999;
   private waves: Wave[] = [];
   private seals: { seal: EnemyActor; empty: number }[] = [];
+  /** The mammoth's frozen pool: whether its next break brings seals up (see `logic/seal.ts`). */
+  private poolSeals = newPoolSealState();
+  /** Seconds since the mammoth last fought (its pool's seals go 2 s after the fight ends). */
+  private poolFightOff = 0;
 
   /** The save slot (1 to 4) this animal lives in; every save goes there. null is the admin sandbox, which saves nothing. */
   readonly slot: number | null;
@@ -428,6 +434,15 @@ export class Game {
     if (item.bait) this.wakeLair(item.pos, 'The snakes of the cave rear up: you took their bait!');
   }
 
+  /** True while the biome's boss is fighting the player: alive, engaged, and the player alive, near its arena and not in the den. */
+  private bossFighting(): boolean {
+    const boss = this.spawner.boss;
+    const pa = this.player.actor;
+    if (!boss) return false;
+    const fromHome = Math.hypot(pa.pos.x - boss.homeX, pa.pos.z - boss.homeZ);
+    return boss.alive && boss.engaged && pa.alive && fromHome <= boss.def.behavior.leashRadius + 6 && !this.world.inRefuge(pa.pos.x, pa.pos.z);
+  }
+
   /**
    * A boss with a `summon` rule calls its pack when the fight starts, calls the next one `waitSeconds` after the last of a pack
    * has died, and loses the pack when the fight ends: the boss dies, the player dies, or the player is out of its reach
@@ -436,12 +451,7 @@ export class Game {
   private updateSummons(dt: number): void {
     const rule = this.bossDef?.summon;
     const boss = this.spawner.boss;
-    const pa = this.player.actor;
-    let fighting = false;
-    if (rule && boss) {
-      const fromHome = Math.hypot(pa.pos.x - boss.homeX, pa.pos.z - boss.homeZ);
-      fighting = boss.alive && boss.engaged && pa.alive && fromHome <= boss.def.behavior.leashRadius + 6 && !this.world.inRefuge(pa.pos.x, pa.pos.z);
-    }
+    const fighting = !!rule && this.bossFighting();
     const action = stepSummon(this.summonState, { fighting, summonsAlive: this.spawner.summonsAlive() }, { waitSeconds: rule?.waitSeconds ?? 0 }, dt);
     if (action === 'dismiss') this.spawner.dismissSummons();
     else if (action === 'call' && rule) {
@@ -556,7 +566,9 @@ export class Game {
     const standers: IceStander[] = [];
     let playerCracked = false;
     for (const a of this.actors) {
-      if (!a.alive || ice.index(a.pos.x, a.pos.z) < 0) {
+      // A leopard seal belongs in the freezing water: it feels no cold, wears nothing and does not keep a hole open.
+      const seal = a instanceof EnemyActor && !!a.def.behavior.holeBound;
+      if (!a.alive || seal || ice.index(a.pos.x, a.pos.z) < 0) {
         a.coldSeconds = 0;
         a.coldAcc = 0;
         continue;
@@ -566,7 +578,9 @@ export class Game {
         x: a.pos.x, z: a.pos.z, radius: a.radius, weight: iceWeight(a.radius, T), speed: Math.hypot(a.vx, a.vz),
         exempt: a.flying || a.untargetable || boss,
       });
-      if (a.swimming && this.world.iceHoleAt(a.pos.x, a.pos.z) && !a.untargetable) {
+      // The mammoth feels no cold either (the user, 2026-11-21): only the player, the pet and the ordinary wild animals do.
+      const coldProof = boss;
+      if (a.swimming && this.world.iceHoleAt(a.pos.x, a.pos.z) && !a.untargetable && !coldProof) {
         a.coldSeconds += dt;
         a.coldAcc += dt;
         if (a.coldAcc >= COLD_TICK) {
@@ -590,15 +604,30 @@ export class Game {
   }
 
   /**
-   * Leopard seals: a player or pet that has been swimming in the freezing water of a hole for `sealAfterSeconds` brings one up into
-   * that hole. It bites while they swim; once nobody has been in its hole for `sealLeaveSeconds` it sinks away (no death).
+   * Leopard seals. In the lake (and the pool when the mammoth is not fighting), a player or pet that has been swimming in the
+   * freezing water of a hole for `sealAfterSeconds` brings one up into that hole; it chases once onto the ice, and sinks away (no
+   * death) once it is back in the water and nobody has been in its hole for `sealLeaveSeconds`. During the mammoth's fight, the
+   * frozen pool brings up `poolCount` seals the first time it breaks, and again only once every hole in it has frozen over and it
+   * breaks once more (the user, 2026-11-21); they stay until their hole freezes over or the fight ends, give no XP and leave no
+   * carcass. Any seal whose hole has frozen over sinks away.
    */
   private updateSeals(dt: number): void {
     if (!this.world.ice) return;
     const T = TUNING.ice;
     const victims = [this.player.actor, this.pet].filter((a): a is Actor => !!a && a.alive && !a.untargetable);
     const near = (s: EnemyActor, v: Actor) => Math.hypot(s.pos.x - v.pos.x, s.pos.z - v.pos.z) < 6;
+    const arena = this.world.layout.arena;
+    const pool = this.world.layout.waters.find((w) => w.frozen && Math.hypot(w.x - arena.x, w.z - arena.z) < arena.radius);
+    const fighting = !!pool && this.bossFighting();
+    this.poolFightOff = fighting ? 0 : this.poolFightOff + dt;
+    const inPool = (v: Actor) => !!pool && Math.hypot(v.pos.x - pool.x, v.pos.z - pool.z) < pool.radius + 1;
+    let changed = false;
     for (const v of victims) {
+      // In the pool during the fight the pool's own rule brings the seals up.
+      if (fighting && inPool(v)) {
+        v.coldSeconds = 0;
+        continue;
+      }
       const up = this.seals.some((s) => s.seal.alive && near(s.seal, v));
       if (!sealDue(v.coldSeconds, up, T)) continue;
       // It comes up in the same hole, a couple of metres from the animal.
@@ -616,19 +645,61 @@ export class Game {
       const seal = this.spawner.spawnLoose('leopard_seal', x, z, 30);
       this.seals.push({ seal, empty: 0 });
       v.coldSeconds = 0;
-      this.refreshActors();
+      changed = true;
       this.events.emit('toast', { text: 'A leopard seal rises from under the ice! Get out of the water!', tone: 'bad' });
     }
+    if (pool) {
+      const spots = this.world.ice.holeSpotsIn(pool.x, pool.z, pool.radius);
+      const count = stepPoolSeals(this.poolSeals, spots.length, fighting, TUNING.seal);
+      if (count > 0) {
+        // Spread out over the pool's holes: the first at random, each next one as far as it can be from those before.
+        const picked: { x: number; z: number }[] = [];
+        for (let n = 0; n < count; n++) {
+          let best = spots[Math.floor(Math.random() * spots.length)];
+          if (picked.length) {
+            let bestD = -1;
+            for (const p of spots) {
+              const d = Math.min(...picked.map((q) => Math.hypot(p.x - q.x, p.z - q.z)));
+              if (d > bestD) {
+                bestD = d;
+                best = p;
+              }
+            }
+          }
+          picked.push(best);
+          const seal = this.spawner.spawnLoose('leopard_seal', best.x, best.z, 30);
+          seal.summoned = true;
+          makePoolSeal(seal);
+          this.seals.push({ seal, empty: 0 });
+        }
+        changed = true;
+        this.events.emit('toast', { text: 'The broken ice stirs: leopard seals rise in the pool!', tone: 'bad' });
+      }
+    }
     for (const s of this.seals) {
-      const used = victims.some((v) => v.swimming && this.world.iceHoleAt(v.pos.x, v.pos.z) && near(s.seal, v));
+      const used = sealMind(s.seal).mode !== 'water' || victims.some((v) => v.swimming && this.world.iceHoleAt(v.pos.x, v.pos.z) && near(s.seal, v));
       s.empty = used ? 0 : s.empty + dt;
     }
-    const gone = this.seals.filter((s) => !s.seal.alive || !this.spawner.enemies.includes(s.seal) || sealLeaves(s.empty, T));
+    const goes = (s: { seal: EnemyActor; empty: number }): boolean => {
+      const e = s.seal;
+      if (!e.alive || !this.spawner.enemies.includes(e)) return true;
+      const mind = sealMind(e);
+      // Its hole froze over: under it while in the water, or the hole it got out of while out on the ice.
+      if (mind.mode === 'water' && !sealInWater(e, this) && !this.world.iceHoleAt(e.pos.x, e.pos.z)) return true;
+      if (mind.mode !== 'water' && !this.world.iceHoleAt(mind.exitX, mind.exitZ)) return true;
+      // A seal kept out of the water far longer than a chase (held up on its way back) slips away all the same.
+      if (mind.mode !== 'water' && mind.outT > TUNING.seal.chaseSeconds + 10) return true;
+      // The pool's seals go when the fight is over, wherever they are (like a boss's called pack).
+      if (isPoolSeal(e)) return this.poolFightOff >= 2;
+      return mind.mode === 'water' && sealLeaves(s.empty, T);
+    };
+    const gone = this.seals.filter(goes);
     for (const s of gone) if (s.seal.alive && this.spawner.enemies.includes(s.seal)) this.spawner.remove(s.seal);
     if (gone.length) {
       this.seals = this.seals.filter((s) => !gone.includes(s));
-      this.refreshActors();
+      changed = true;
     }
+    if (changed) this.refreshActors();
   }
 
   private updatePet(dt: number): void {

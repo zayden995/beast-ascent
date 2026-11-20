@@ -148,6 +148,17 @@ export class IceSheet {
     return n;
   }
 
+  /** The middles of the hole squares whose middles lie within `radius` of a point (the mammoth's pool, for its seals). */
+  holeSpotsIn(x: number, z: number, radius: number): { x: number; z: number }[] {
+    const spots: { x: number; z: number }[] = [];
+    for (let k = 0; k < this.hole.length; k++) {
+      if (!this.lake[k] || !this.hole[k]) continue;
+      const c = this.centreOf(k);
+      if (Math.hypot(c.x - x, c.z - z) <= radius) spots.push(c);
+    }
+    return spots;
+  }
+
   /** The lake squares a circle covers: every square whose middle is inside it, and the square its middle is in. */
   private covered(x: number, z: number, radius: number, visit: (k: number) => void): void {
     const c = this.cell;

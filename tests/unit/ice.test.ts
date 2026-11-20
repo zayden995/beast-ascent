@@ -131,3 +131,14 @@ test('seal: a leopard seal comes for an animal 8 s in the freezing water, and si
   assert.equal(sealLeaves(3.9, T), false);
   assert.equal(sealLeaves(4, T), true);
 });
+
+test('ice: the holes in a circle can be listed (the mammoth pool counts its own holes, not the lake\'s)', () => {
+  const ice = new IceSheet([{ x: 0, z: 0, radius: 10 }, { x: 60, z: 0, radius: 10 }], T);
+  assert.deepEqual(ice.holeSpotsIn(0, 0, 10), []);
+  ice.addWear(60, 0, 1.5, 1);
+  assert.equal(ice.holeSpotsIn(0, 0, 10).length, 0, 'a hole in the other pool does not count');
+  ice.addWear(2, 2, 1.5, 1);
+  const spots = ice.holeSpotsIn(0, 0, 10);
+  assert.ok(spots.length > 0);
+  for (const s of spots) assert.equal(ice.state(s.x, s.z), 'hole');
+});

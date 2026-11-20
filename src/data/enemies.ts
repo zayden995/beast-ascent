@@ -393,9 +393,10 @@ list.push(
     xp: 40, carcassGrowth: 8,
   },
   {
-    // It comes up from under the ice into the hole of a player or pet that has stayed in the freezing water for 8 s, bites while
-    // they swim, and cannot leave the water (the user's idea, 2026-11-20). It belongs to no zone: it never comes back by itself.
-    // It pays XP and leaves no carcass (it sinks).
+    // It comes up from under the ice into the hole of a player or pet that has stayed in the freezing water for 5 s, bites while
+    // they swim, and chases one on the ice near it for about 5 m before diving back (the user's idea, 2026-11-20; the chase and
+    // the 5 s since their playtest, 2026-11-21). Two also come up in the mammoth's pool when it breaks during the fight. It
+    // belongs to no zone: it never comes back by itself. It pays XP (the pool's pay none) and leaves no carcass (it sinks).
     id: 'leopard_seal', name: 'Leopard Seal', rig: 'seal',
     baseStats: {
       maxHealth: 160, stamina: 100, staminaRegen: 10, damage: 16, moveSpeed: 2.6, sprintSpeed: 5.0,

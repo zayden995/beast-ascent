@@ -93,8 +93,17 @@ export const TUNING = {
     coldPctPerSecond: 0.02,
     iceThickness: 0.15,
     refRadius: 0.45,
-    sealAfterSeconds: 8,
+    // 5 s since the user's playtest of 2026-11-21 (8 s at first).
+    sealAfterSeconds: 5,
     sealLeaveSeconds: 4,
+  },
+  /** Leopard seals out of the water, and the mammoth's pool (rules in `logic/seal.ts`; the user's playtest of 2026-11-21). */
+  seal: {
+    chaseMetres: 5,
+    chaseSeconds: 3,
+    landSpeed: 4,
+    restSeconds: 4,
+    poolCount: 2,
   },
   /** Cliffs (a biome whose terrain has a `maxClimbSlope`). */
   cliff: {
