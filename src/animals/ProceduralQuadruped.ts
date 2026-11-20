@@ -9,6 +9,8 @@ type V3 = [number, number, number];
 const DARK = 0x1c1a18;
 const IVORY = 0xf1ead2;
 const SCAR = 0x8a2f2a;
+/** Healed scars on the body: paler than the fresh one over the eye, so that they show on dark coats too. */
+const SCAR_PALE = 0xc7877b;
 
 /** Collects primitives for one rigid part and bakes them into a single vertex-coloured mesh. */
 export class PartBuilder {
@@ -196,6 +198,17 @@ export class ProceduralQuadruped implements AnimalModel {
           b.add(sphere(r * 0.2 * k), c.accent, [s * x, r * yf, halfL * zf], [0, 0, 0], [0.3, 1, 1]);
         }
       }
+    }
+    if (this.has('scar')) {
+      // An Alpha's battle scars on the body (the user, 2026-11-21), besides the one over its eye: three claw marks raked down the
+      // left flank and one long slash over the right shoulder, each a thin pale line just proud of the coat.
+      const onFlank = (yf: number) => r * w * Math.sqrt(Math.max(0.05, 1 - yf * yf)) * 1.02;
+      for (let k = 0; k < 3; k++) {
+        const zf = -0.12 + k * 0.13;
+        const yf = 0.22 - k * 0.04;
+        b.add(new THREE.BoxGeometry(r * 0.06, r * 0.62, r * 0.07), SCAR_PALE, [onFlank(yf), r * yf, halfL * zf], [0.55, 0, -0.12]);
+      }
+      b.add(new THREE.BoxGeometry(r * 0.06, r * 0.85, r * 0.08), SCAR_PALE, [-onFlank(0.38), r * 0.38, halfL * 0.42], [-0.7, 0, 0.2]);
     }
     this.torso = b.build(this.material);
     this.body.add(this.torso);
