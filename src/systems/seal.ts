@@ -122,6 +122,11 @@ export function updateSeal(e: EnemyActor, dt: number, ctx: AiContext): void {
     } else if (walker) {
       e.state = 'chase';
       wait = goFor(e, walker.a, T.landSpeed, wait, ctx);
+      // Still in its hole: it hops out onto the ice (a swimmer has to jump to get out).
+      if (e.swimming && e.grounded) {
+        e.vy = TUNING.player.jumpVelocity * 0.75;
+        e.grounded = false;
+      }
     }
   }
   // The clock of time out of the water runs on the way back too (the game lets a seal held up out there slip away).

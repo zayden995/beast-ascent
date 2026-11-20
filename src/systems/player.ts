@@ -311,7 +311,8 @@ export class PlayerController {
 
     if (growth.species.rig === 'winged') {
       this.updateFlight(dt, stunned, busy);
-    } else if (input.consume('Space') && !stunned && a.grounded && !a.swimming && !this.dodge && !busy && a.stamina >= T.jumpStaminaCost) {
+    } else if (input.consume('Space') && !stunned && a.grounded && (!a.swimming || world.iceHoleAt(a.pos.x, a.pos.z)) && !this.dodge && !busy && a.stamina >= T.jumpStaminaCost) {
+      // (In a hole in Winter's ice the jump is how it climbs out.)
       a.vy = T.jumpVelocity;
       a.grounded = false;
       a.stamina -= T.jumpStaminaCost;

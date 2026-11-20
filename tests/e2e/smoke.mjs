@@ -2624,20 +2624,30 @@ try {
     const hp1 = await page.evaluate(() => window.__beast.app.game.player.actor.hp);
     const lost = (hp0 - hp1) / maxHp;
     check('winter: the freezing water takes about 2% of the animal\'s health a second', lost > 0.04 && lost < 0.08, `${(lost * 100).toFixed(1)}% in 3 s`);
-    // Swim out to the edge of the hole and climb onto the ice.
+    // Swim to the edge of the hole: the ice stops a swimmer, and only a jump climbs out (the user, 2026-11-21).
     const foot = await page.evaluate(([a, b]) => window.__beast.app.world.iceFooting(a, b), [lake.x, lake.z]);
     await B.lookAt(foot.x, foot.z);
     await page.keyboard.down('KeyW');
     await B.advance(2.5);
+    s = await B.state();
+    check('winter: swimming into the edge of the hole, the animal cannot walk out onto the ice', s.player.swimming, `swimming ${s.player.swimming}, y ${s.player.y.toFixed(2)}`);
+    check('winter: at the edge, the prompt says to jump', /Jump to climb out/.test(s.prompt?.text ?? ''), `prompt "${s.prompt?.text ?? ''}"`);
+    await tap('Space');
+    await B.advance(1.2);
     await page.keyboard.up('KeyW');
     s = await B.state();
-    check('winter: an animal swims to the edge of the hole and climbs out onto the ice', !s.player.swimming && s.player.y > WL.waterY, `swimming ${s.player.swimming}, y ${s.player.y.toFixed(2)}`);
+    check('winter: a jump at the edge climbs out onto the ice', !s.player.swimming && s.player.y > WL.waterY, `swimming ${s.player.swimming}, y ${s.player.y.toFixed(2)}`);
+    // (Over 5 s in the water so far, so a seal came up. Off the lake, out of its reach, it sinks away before the seal checks start.)
+    await B.teleport(lake.x + lake.radius + 3, lake.z, 0);
+    const sealsLeft = () => page.evaluate(() => window.__beast.app.game.spawner.enemies.filter((e) => e.def.id === 'leopard_seal' && e.alive).length);
+    for (let i = 0; i < 48 && (await sealsLeft()) > 0; i++) await B.advance(0.25);
+    check('winter: once nobody is near, any seal that came up sinks away', (await sealsLeft()) === 0, `${await sealsLeft()} left`);
     // ----- 4e: a leopard seal comes for an animal that stays in the freezing water -----
     const seals = async () => (await B.state()).enemies.filter((e) => e.kind === 'leopard_seal' && e.alive);
     // The first living seal straight from the game: where it is, whether it swims, its health, and whether a boss called it.
     const sealInfo = () => page.evaluate(() => {
       const e = window.__beast.app.game.spawner.enemies.find((a) => a.def.id === 'leopard_seal' && a.alive);
-      return e ? { x: e.pos.x, z: e.pos.z, swimming: e.swimming, hp: e.hp, summoned: e.summoned } : null;
+      return e ? { x: e.pos.x, z: e.pos.z, swimming: e.swimming, hp: e.hp, summoned: e.summoned, mode: e.sealMind?.mode } : null;
     });
     const sealHpNow = async () => (await sealInfo())?.hp ?? -1;
     await B.teleport(lake.x, lake.z, 0);
@@ -2683,12 +2693,13 @@ try {
       if (!sl) break;
       if (!sl.swimming && !sealOut) sealOut = sl;
       if (sealOut) sealFarthest = Math.max(sealFarthest, Math.hypot(sl.x - sealNow.x, sl.z - sealNow.z));
-      if (sealOut && sl.swimming) { sealBackIn = true; break; }
+      // (Back in for good once its chase is over: mid-chase it may drop into the water and bite from the edge.)
+      if (sealOut && sl.mode === 'water') { sealBackIn = true; break; }
     }
     check('winter: with the animal on the ice near its hole, the seal hops out after it', !!sealOut, sealOut ? `out, ${Math.hypot(sealOut.x - iceSpot.x, sealOut.z - iceSpot.z).toFixed(1)} m from the animal` : 'it stayed in the water');
     await shot('29l-winter-seal-out');
     check('winter: it chases no farther than about 5 m, then goes back into the water', sealBackIn && sealFarthest < 6.5, `farthest ${sealFarthest.toFixed(1)} m from where it was, back in ${sealBackIn}`);
-    for (let i = 0; i < 22; i++) { await wipeWear(); await B.advance(0.25); }
+    for (let i = 0; i < 28 && (await seals()).length > 0; i++) { await wipeWear(); await B.advance(0.25); }
     check('winter: after its one chase it does not come out again, and sinks away', (await seals()).length === 0, `${(await seals()).length} seals left`);
     // Back in: a seal comes again, and killing one pays XP. (Healed first, so that the test's animal cannot die here.)
     await page.evaluate(() => { const a = window.__beast.app.game.player.actor; a.hp = a.stats.maxHealth; });

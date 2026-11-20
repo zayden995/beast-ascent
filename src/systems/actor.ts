@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { holeStepAllowed } from '../logic/ice.ts';
 import { createAnimState } from '../animals/AnimalModel.ts';
 import type { AnimalModel, AnimState } from '../animals/AnimalModel.ts';
 import type { StatMod, Stats } from '../core/types.ts';
@@ -214,12 +215,19 @@ export function integrate(a: Actor, dt: number, world: BiomeWorld): void {
     let sx = mx / steps;
     let sz = mz / steps;
     if (maxSlope !== undefined) {
-      // An animal swimming in a hole in the ice paddles at the surface, and hauls itself out onto the ice at the hole's edge.
-      const holeSurface = a.swimming && world.iceHoleAt(a.pos.x, a.pos.z) ? world.waterSurface(a.pos.x, a.pos.z) : null;
+      // An animal in a hole in the ice paddles at the surface. Swimming, the edge of the ice stops it (it slides along the edge): it
+      // has to jump to get out (the user, 2026-11-21). Jumping from the water, it measures from the surface, so it lands on the ice.
+      const overHole = world.iceHoleAt(a.pos.x, a.pos.z);
+      const holeSurface = overHole ? world.waterSurface(a.pos.x, a.pos.z) : null;
       const feet = Math.max(a.pos.y, world.heightAt(a.pos.x, a.pos.z), holeSurface ?? -Infinity);
       const step = climbStep(world.heightAt, a.pos.x, a.pos.z, feet, sx, sz, maxSlope);
       sx = step.dx;
       sz = step.dz;
+      if (overHole && !holeStepAllowed(a.swimming, true, world.iceHoleAt(a.pos.x + sx, a.pos.z + sz))) {
+        if (world.iceHoleAt(a.pos.x + sx, a.pos.z)) sz = 0;
+        else if (world.iceHoleAt(a.pos.x, a.pos.z + sz)) sx = 0;
+        else sx = sz = 0;
+      }
     }
     a.pos.x += sx;
     a.pos.z += sz;

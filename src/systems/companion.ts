@@ -6,6 +6,7 @@ import type { PetDef, PetKind } from '../data/pets.ts';
 import { TUNING } from '../data/tuning.ts';
 import { followPlan, newPetCare, petStats, pickPetTarget, stepPetCare } from '../logic/pet.ts';
 import type { PetCare, PetCareEvent, PetPhase } from '../logic/pet.ts';
+import { HOP_REACH } from '../logic/ice.ts';
 import type { BiomeWorld } from '../world/world.ts';
 import { Actor, integrate } from './actor.ts';
 import type { EnemyActor } from './ai.ts';
@@ -180,6 +181,11 @@ export class CompanionActor extends Actor {
         this.vx = (fx / d) * this.stats.moveSpeed;
         this.vz = (fz / d) * this.stats.moveSpeed;
         this.yaw = Math.atan2(fx, fz);
+        // At the edge it hops out (a swimmer has to jump to get out onto the ice).
+        if (d < HOP_REACH && this.grounded) {
+          this.vy = TUNING.player.jumpVelocity;
+          this.grounded = false;
+        }
       }
     }
     // In water it swims at the land animals' pace.

@@ -65,6 +65,17 @@ export function sealDue(coldSeconds: number, sealUp: boolean, t: IceTuning): boo
   return !sealUp && coldSeconds >= t.sealAfterSeconds;
 }
 
+/**
+ * Whether a step may go from `fromHole` to `toHole` (each: is that spot a hole in the ice). A swimmer in a hole cannot walk out onto
+ * the ice: it has to jump (the user's playtest, 2026-11-21). Anything not swimming (jumping, wading, walking) may step anywhere.
+ */
+export function holeStepAllowed(swimming: boolean, fromHole: boolean, toHole: boolean): boolean {
+  return !(swimming && fromHole && !toHole);
+}
+
+/** A swimmer this close to the middle of the nearest whole ice square (or shore) is at the edge of its hole: an animal hops out. */
+export const HOP_REACH = 1.8;
+
 /** True once a seal's hole has been empty long enough for it to sink away. */
 export function sealLeaves(emptySeconds: number, t: IceTuning): boolean {
   return emptySeconds >= t.sealLeaveSeconds;

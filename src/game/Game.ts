@@ -352,6 +352,15 @@ export class Game {
       return;
     }
 
+    // Swimming in a hole in the ice, near its edge: a jump climbs out (the user, 2026-11-21).
+    if (pa.swimming && this.world.iceHoleAt(pa.pos.x, pa.pos.z)) {
+      const foot = this.world.iceFooting(pa.pos.x, pa.pos.z);
+      if (foot && Math.hypot(foot.x - pa.pos.x, foot.z - pa.pos.z) < 2.6) {
+        this.prompt = { key: 'Space', text: this.growth.species.rig === 'winged' ? 'Take off to get out' : 'Jump to climb out' };
+        return;
+      }
+    }
+
     // An egg in a beaten den (only while the slot has no pet).
     const egg = this.growth.profile.pet ? null : this.eggs.nearest(pa.pos.x, pa.pos.z, PET_TUNING.tendRange + pa.radius);
     if (egg) {

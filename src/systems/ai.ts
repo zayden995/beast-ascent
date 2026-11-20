@@ -7,6 +7,7 @@ import type { EnemyAttackDef, EnemyDef, SpawnZoneDef } from '../core/types.ts';
 import { TUNING } from '../data/tuning.ts';
 import { guardWanderRadius, isGuardZone } from '../logic/foxReserve.ts';
 import { chooseFoe } from '../logic/pet.ts';
+import { HOP_REACH } from '../logic/ice.ts';
 import { noticeMultiplier } from '../logic/senses.ts';
 import type { StatInputs } from '../logic/stats.ts';
 import type { BiomeWorld } from '../world/world.ts';
@@ -258,6 +259,11 @@ export function updateEnemy(e: EnemyActor, dt: number, ctx: AiContext): void {
       e.vx = (fx / d) * e.stats.moveSpeed;
       e.vz = (fz / d) * e.stats.moveSpeed;
       e.yaw = Math.atan2(fx, fz);
+      // At the edge it hops out (a swimmer has to jump to get out onto the ice).
+      if (d < HOP_REACH && e.grounded) {
+        e.vy = TUNING.player.jumpVelocity;
+        e.grounded = false;
+      }
     }
     integrate(e, dt, ctx.world);
     return;

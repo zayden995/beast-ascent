@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { IceSheet, iceWeight, sealDue, sealLeaves, wearRate } from '../../src/logic/ice.ts';
+import { IceSheet, holeStepAllowed, iceWeight, sealDue, sealLeaves, wearRate } from '../../src/logic/ice.ts';
 import type { IceStander, IceTuning } from '../../src/logic/ice.ts';
 
 const T: IceTuning = {
@@ -141,4 +141,11 @@ test('ice: the holes in a circle can be listed (the mammoth pool counts its own 
   const spots = ice.holeSpotsIn(0, 0, 10);
   assert.ok(spots.length > 0);
   for (const s of spots) assert.equal(ice.state(s.x, s.z), 'hole');
+});
+
+test('ice: a swimmer in a hole cannot walk out onto the ice; it has to jump (the user, 2026-11-21)', () => {
+  assert.equal(holeStepAllowed(true, true, false), false, 'swimming, from the hole onto the ice');
+  assert.equal(holeStepAllowed(true, true, true), true, 'swimming about in the hole');
+  assert.equal(holeStepAllowed(false, true, false), true, 'jumping (not swimming) out of the hole');
+  assert.equal(holeStepAllowed(false, false, true), true, 'walking into a hole falls in');
 });
